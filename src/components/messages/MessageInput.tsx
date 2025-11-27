@@ -9,10 +9,20 @@ export default function MessageInput() {
 
   const initialValue = [{ type: 'paragraph', children: [{ text: '' }]}]
 
+  // BUGS:
+  // - spoilers and code blocks have their ending symbol (|| or `) within the main markdown content block if there's a preceeding markdown thing
+  // - multiline functionality does not exist (presumably due to the function being processed at a line-level scope rather than an editor-level scope)
+  // - using the same kind of markdown twice in a row breaks for some reason (e.g. **hi** **hru**)
+  // TODO:
+  // - experiment with filler magic to see if they're working properly
+  // - fix bugs
+  // - user/channel/server mentions
+  // - emoji
   function tokenizeMarkdown(text: string) {
     const rules = [
       { type: "bold", regex: /(?<filler>^|[^*])(?<mds>\*\*)([^*]*)(?<esc>[^*])(?<mds2>\*\*)(?<endFiller>$|[^*])/gm },
       { type: "italic", regex: /(?<filler>^|[^_\w])(?<mds>_)([^_]*)(?<esc>[^_])(?<mds2>_)(?<endFiller>$|[^_\w])/gm },
+      { type: "italic", regex: /(?<filler>^|[^*])(?<mds>\*)([^*]*)(?<esc>[^*])(?<mds2>\*)(?<endFiller>$|[^*])/gm },
       { type: "italicbold", regex: /(?<filler>^|[^*])(?<mds>\*\*\*)([^*]*)(?<esc>[^*])(?<mds2>\*\*\*)(?<endFiller>$|[^*])/gm },
       { type: "underline", regex: /(?<filler>^|[^_])(?<mds>__)([^_]*)(?<esc>[^_])(?<mds2>__)(?<endFiller>$|[^_])/gm },
       { type: "strikethrough", regex: /(?<mds>~~)(.*)(?<esc>.)(?<mds2>~~)/gm },
