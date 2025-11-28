@@ -55,7 +55,7 @@ export default function LoginScreen() {
         <h2>{isRegister() ? "Create an account" : "Login"}</h2>
 
         <div class="form-group">
-          <label>Username/Email</label>
+          <label>{isRegister() ? "Email" : "Username/Email"}</label>
           <input
             type="email"
             value={email()}

@@ -20,7 +20,9 @@ export interface User {
   username: string;
   passwordHash: string;
   bio?: string | null;
+  pronouns?: string | null;
   avatar?: string | null;
+  nameFont?: string | null;
   joinedAt: string;
   lastSeen: string;
   isDeleted: boolean;
@@ -28,10 +30,13 @@ export interface User {
 }
 
 export interface Member {
-  //id: number;
   user: User;
   serverId: number;
   nickname?: string | null;
+  bio?: string | null;
+  pronouns?: string | null;
+  avatar?: string | null;
+  nameFont?: string | null;
   joinedAt: string;
   roles: number[];
 }

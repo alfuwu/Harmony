@@ -4,7 +4,7 @@ import TextChannel from "../svgs/TextChannel";
 
 export default function ChannelList() {
   return (
-    <div>
+    <div class="channel-list">
       <div class="server-header uno">
         {serverState.currentServer()?.name ?? "No server selected"}
       </div>

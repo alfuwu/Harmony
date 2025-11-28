@@ -46,9 +46,7 @@ export default function App() {
         <Show when={me() || authState.user()} fallback={<LoginScreen />}>
           <div class="app">
             <ServerList />
-            <div class="channel-list">
-              <ChannelList />
-            </div>
+            <ChannelList />
             <div class="valign">
               <TitleBar />
               <div class="halign">
