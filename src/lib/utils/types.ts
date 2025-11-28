@@ -15,20 +15,20 @@ export interface Message {
 
 /// users
 export interface User {
-    id: number;
-    displayName: string | null;
-    username: string;
-    passwordHash: string;
-    bio: string;
-    avatar: string | null;
-    joinedAt: string;
-    lastSeen: string;
-    isDeleted: boolean;
-    flags: number
+  id: number;
+  displayName?: string | null;
+  username: string;
+  passwordHash: string;
+  bio?: string | null;
+  avatar?: string | null;
+  joinedAt: string;
+  lastSeen: string;
+  isDeleted: boolean;
+  flags: number
 }
 
 export interface Member {
-  id: number;
+  //id: number;
   user: User;
   serverId: number;
   nickname?: string | null;
@@ -74,18 +74,15 @@ export interface RolePrerequisite {}
 export interface AbstractChannel {
   id: number;
   channelType: ChannelType;
-  lastMessage: number | null;
+  lastMessage?: number | null;
 }
 
 export interface Channel extends AbstractChannel {
   serverId: number;
-  server: Server;
   parentId: number;
-  parent: Channel;
-  children: Channel[];
   name: string;
-  description: string | null;
-  icon: string | null;
+  description?: string | null;
+  icon?: string | null;
   position: number;
   slowmode: number;
   createdAt: string;
@@ -98,10 +95,10 @@ export interface DmChannel extends AbstractChannel {
 
 export interface GroupDmChannel extends AbstractChannel {
   ownerId: number;
-  name: string | null;
-  description: string | null;
-  icon: string | null;
-  inviteUrls: string[] | null;
+  name?: string | null;
+  description?: string | null;
+  icon?: string | null;
+  inviteUrls?: string[] | null;
   members: number[];
   createdAt: string;
 }
@@ -136,6 +133,8 @@ export interface Server {
   name: string;
   description?: string | null;
   icon?: string | null;
+  banner?: string | null;
+  inviteBanner?: string | null;
   tags?: string[] | null;
   inviteUrls?: string[] | null;
   roles: Role[];
@@ -155,6 +154,6 @@ export interface Reaction {
 }
 
 export interface Emoji {
-  id: number | null;
+  id?: number | null;
   name: string;
 }

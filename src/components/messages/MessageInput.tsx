@@ -1,41 +1,71 @@
 import { Editable, RenderLeafProps, Slate, withSolid } from '@slate-solid/core'
 import { Text, Node, Transforms, createEditor } from 'slate'
 import { withHistory } from 'slate-history'
-import { createMemo } from 'solid-js'
-import { sendMessage } from '../../lib/api/messageApi';
+import { Accessor, createMemo, createSignal, Setter } from 'solid-js'
+import { channelState } from '../../lib/state/channels';
+import { messageState } from '../../lib/state/messages';
+import { authState } from '../../lib/state/auth';
 
 export default function MessageInput() {
   const editor = createMemo(() => withHistory(withSolid(createEditor())), []);
 
   const initialValue = [{ type: 'paragraph', children: [{ text: '' }]}]
+  const [globalRanges, setGlobalRanges]: [Accessor<any>, Setter<any>] = createSignal([]);
+  let [gBlocks, gBlockStrings]: [any[] | null, string[] | null] = [null, null];
+
+  const colors = [
+    "red", "orange", "yellow", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
+    "brown", "lavender", "teal", "magenta", "lime", "navy", "silver", "maroon", "fuchsia", "olive", "aqua",
+    "aliceblue", "antiquewhite", "aquamarine", "azure", "beige", "bisque", "blanchedalmond", "blueviolet",
+    "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue", "cornsilk", "crimson",
+    "cyan", "darkblue", "darkcyan", "darkgoldenrod", "darkgray", "darkgrey", "darkgreen", "darkkhaki",
+    "darkmagenta", "darkolivegreen", "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
+    "darkslateblue", "darkslategray", "darkslategrey", "darkturquoise", "darkviolet", "deeppink", "deepskyblue",
+    "dimgray", "dimgrey", "dodgerblue", "firebrick", "floralwhite", "forestgreen", "gainsboro", "ghostwhite",
+    "gold", "goldenrod", "greenyellow", "honeydew", "hotpink", "indianred", "ivory", "khaki", "lavenderblush",
+    "lawngreen", "lemonchiffon", "lightblue", "lightcoral", "lightcyan", "lightgoldrenrodyellow", "lightgray",
+    "lightgrey", "lightgreen", "lightpink", "lightsalmon", "lightseaegreen", "lightskyblue", "lightslategray",
+    "lightslategrey", "lightsteelblue", "lightyellow", "limegreen", "linen", "mediumaquamarine", "mediumblue",
+    "mediumorchid", "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen", "mediumturquoise",
+    "mediumvioletred", "midnightblue", "mintcream", "mistyrose", "moccasin", "navajowhite", "oldlace",
+    "olivedrab", "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise", "palevioletred",
+    "papayawhip", "peachpuff", "peru", "plum", "powederblue", "rebeccapurple", "rosybrown", "royalblue",
+    "saddlebrown", "salmon", "sandybrown", "seagreen", "seashell", "sienna", "skyblue", "slateblue",
+    "slategray", "slategrey", "snow", "springgreen", "steelblue", "tan", "thistle", "tomato", "turquoise",
+    "wheat", "whitesmoke", "yellowgreen"
+  ]
 
   // BUGS:
-  // - spoilers and code blocks have their ending symbol (|| or `) within the main markdown content block if there's a preceeding markdown thing
-  // - multiline functionality does not exist (presumably due to the function being processed at a line-level scope rather than an editor-level scope)
-  // - using the same kind of markdown twice in a row breaks for some reason (e.g. **hi** **hru**)
+  // - using the same kind of markdown twice in a row without two characters of some kind in between breaks (e.g. **hi** **hru**)
+  //   ^^^ almost certainly due to filler shenanigans
   // TODO:
-  // - experiment with filler magic to see if they're working properly
-  // - fix bugs
-  // - user/channel/server mentions
-  // - emoji
+  // - render user/channel/server mentions
+  // - render emoji
   function tokenizeMarkdown(text: string) {
     const rules = [
-      { type: "bold", regex: /(?<filler>^|[^*])(?<mds>\*\*)([^*]*)(?<esc>[^*])(?<mds2>\*\*)(?<endFiller>$|[^*])/gm },
-      { type: "italic", regex: /(?<filler>^|[^_\w])(?<mds>_)([^_]*)(?<esc>[^_])(?<mds2>_)(?<endFiller>$|[^_\w])/gm },
-      { type: "italic", regex: /(?<filler>^|[^*])(?<mds>\*)([^*]*)(?<esc>[^*])(?<mds2>\*)(?<endFiller>$|[^*])/gm },
-      { type: "italicbold", regex: /(?<filler>^|[^*])(?<mds>\*\*\*)([^*]*)(?<esc>[^*])(?<mds2>\*\*\*)(?<endFiller>$|[^*])/gm },
-      { type: "underline", regex: /(?<filler>^|[^_])(?<mds>__)([^_]*)(?<esc>[^_])(?<mds2>__)(?<endFiller>$|[^_])/gm },
-      { type: "strikethrough", regex: /(?<mds>~~)(.*)(?<esc>.)(?<mds2>~~)/gm },
-      { type: "spoiler", regex: /(?<filler>^|.+)(?<mds>\|\|)(.*)(?<esc>.)(?<mds2>\|\|)/gm },
-      { type: "code", regex: /(?<filler>^|[^`])(?<mds>`)([^`]*)(?<esc>[^`])(?<mds2>`)(?<endFiller>$|[^`])/g },
-      { type: "multicode", regex: /(?<filler>^|[^`])(?<mds>```)([\s\S]*)(?<esc>[^`])(?<mds2>```)(?<endFiller>$|[^`])/gm },
-      { type: "header", regex: /^(?<mds>#{1,6})\s.+/gm },
-      { type: "subheader", regex: /^(?<mds>-#)\s.+/gm },
-      { type: "quote", regex: /^(?<mds>>)\s.?/gm },
-      { type: "list", regex: /^(\s*)(?<mds>[-*+])\s.?/gm },
+      { type: "bold", regex: /(?<filler>^|[^*])(?<mds>\*\*)(?<content>[^*]*)(?<esc>[^*])(?<mds2>\*\*)(?<endFiller>$|[^*])/gm },
+      { type: "italic", regex: /(?<filler>^|[^_\w])(?<mds>_)(?<content>[^_]*)(?<esc>[^_])(?<mds2>_)(?<endFiller>$|[^_\w])/gm },
+      { type: "italic", regex: /(?<filler>^|[^*])(?<mds>\*)(?<content>[^*]*)(?<esc>[^*])(?<mds2>\*)(?<endFiller>$|[^*])/gm },
+      { type: "italicbold", regex: /(?<filler>^|[^*])(?<mds>\*\*\*)(?<content>[^*]*)(?<esc>[^*])(?<mds2>\*\*\*)(?<endFiller>$|[^*])/gm },
+      { type: "underline", regex: /(?<filler>^|[^_])(?<mds>__)(?<content>[^_]*)(?<esc>[^_])(?<mds2>__)(?<endFiller>$|[^_])/gm },
+      { type: "italicunderline", regex: /(?<filler>^|[^_])(?<mds>___)(?<content>[^_]*)(?<esc>[^_])(?<mds2>___)(?<endFiller>$|[^_])/gm },
+      { type: "strikethrough", regex: /(?<mds>~~)(?<content>.*)(?<esc>.)(?<mds2>~~)/gm },
+      { type: "spoiler", regex: /(?<mds>\|\|)(?<content>[^|]*)(?<esc>.)(?<mds2>\|\|)/gm },
+      { type: "code", regex: /(?<filler>^|[^`])(?<mds>`)(?<content>[^`\x0A]*)(?<esc>[^`])(?<mds2>`)(?<endFiller>$|[^`])/g }, // \x0A is \n
+      { type: "multicode", regex: /(?<filler>^|[^`])(?<mds>```)(?<content>[\s\S]*)(?<esc>[^`])(?<mds2>```)?(?<endFiller>$|[^`])/gm },
+      { type: "header", regex: /^(?<mds>#{1,6})(?<content>\s.+)/gm },
+      { type: "subheader", regex: /^(?<mds>-#)(?<content>\s.+)/gm },
+      { type: "quote", regex: /^(?<mds>>)(?<content>\s.?)/gm },
+      { type: "list", regex: /^(\s*)(?<mds>[-*+])(?<content>\s.?)/gm },
+      { type: "mention_user", regex: /<@(?<id>[0-9]+)>/gm },
+      { type: "mention_role", regex: /<@&(?<id>[0-9]+)>/gm },
+      { type: "mention_channel", regex: /<#(?<id>[0-9]+)>/gm },
+      { type: "mention_server", regex: /<~(?<id>[0-9]+)>/gm },
+      { type: "emoji", regex: /<:(?<name>[a-zA-Z0-9_]{1,32}):(?<id>[0-9]+)>/gm },
+      { type: "color", regex: /(?<mds><(?:color|c):(?<hex>#[0-9A-Fa-f]{3,6}|[a-zA-Z]{0,9})>)(?<content>[\s\S]*?)(?<mds2><\/(?:color|c)>)/gm },
     ];
 
-    const ranges: { anchor: number; focus: number; type: string }[] = [];
+    const ranges: { anchor: number; focus: number; type: string, hex?: string }[] = [];
 
     for (const rule of rules) {
       let match: RegExpExecArray | null;
@@ -44,6 +74,9 @@ export default function MessageInput() {
         const fillerSub = match.groups?.endFiller?.length ?? 0;
         let start = match.index + fillerAdd;
         let end = start + match[0].length;
+
+        if (rule.type === "color" && match.groups?.hex?.charAt(0) !== '#' && !colors.includes(match.groups?.hex ?? ""))
+          continue;
         
         // symbol styling
         if (match.groups?.filler === "\\") {
@@ -52,11 +85,14 @@ export default function MessageInput() {
             focus: start,
             type: "mds"
           });
-          continue;
-        } else if (match.groups?.esc === "\\") {
+
+          if (match.groups?.esc !== "\\")
+            continue;
+        }
+        if (match.groups?.esc === "\\") {
           ranges.push({
-            anchor: end - match.groups?.mds2?.length - fillerSub - 1,
-            focus: end - match.groups?.mds2?.length - fillerSub,
+            anchor: end - match.groups?.mds2?.length - fillerAdd - fillerSub - 1,
+            focus: end - match.groups?.mds2?.length - fillerAdd - fillerSub,
             type: "mds"
           });
           continue;
@@ -67,7 +103,7 @@ export default function MessageInput() {
             focus: start + match.groups.mds.length,
             type: "mds"
           });
-          if (rule.type !== "header" && rule.type !== "subheader")
+          if (rule.type !== "header" && rule.type !== "subheader" && rule.type !== "multicode")
             start += match.groups.mds.length;
         }
         if (match.groups?.mds2) {
@@ -76,8 +112,22 @@ export default function MessageInput() {
             focus: end - fillerAdd - fillerSub,
             type: "mds"
           });
-          if (rule.type !== "header" && rule.type !== "subheader")
+          if (rule.type !== "header" && rule.type !== "subheader" && rule.type !== "multicode")
             end -= match.groups.mds2.length;
+        }
+
+        if (rule.type === "color" && match.groups) {
+          const hex = match.groups.hex;
+          if (!hex)
+            continue;
+
+          ranges.push({
+            anchor: start,
+            focus: end,
+            type: "color",
+            hex
+          });
+          continue;
         }
 
         // other stuff
@@ -92,17 +142,59 @@ export default function MessageInput() {
     return ranges;
   }
 
+  const getFullText = (): [any[], string[], string] => {
+    const blocks = editor().children as any[];
+    const blockStrings = blocks.map(b => Node.string(b));
+    return [blocks, blockStrings, blockStrings.join('\n')];
+  }
+
   const decorate = ([node, path]: any) => {
-    if (!Text.isText(node))
+    if (!Text.isText(node) || path == undefined)
       return [];
 
-    const tokens = tokenizeMarkdown(node.text);
+    let [blocks, blockStrings] = gBlocks == null || gBlockStrings == null ?
+      getFullText() :
+      [gBlocks, gBlockStrings];
 
-    return tokens.map(t => ({
-      [t.type]: true,
-      anchor: { path, offset: t.anchor },
-      focus: { path, offset: t.focus }
-    }));
+    // path: [blockIndex, textNodeIndex]
+    const blockIndex = path[0];
+    const textNodeIndex = path[1];
+
+    let priorBlocksLen = 0;
+    for (let i = 0; i < blockIndex; i++) {
+      priorBlocksLen += blockStrings[i].length + 1;
+    }
+
+    const block = blocks[blockIndex];
+    let priorTextsLen = 0;
+    for (let i = 0; i < textNodeIndex; i++) {
+      priorTextsLen += Node.string(block.children[i]).length;
+    }
+
+    const nodeStartAbsolute = priorBlocksLen + priorTextsLen;
+    const nodeText = Node.string(node);
+    const nodeEndAbsolute = nodeStartAbsolute + nodeText.length;
+
+    const tokens = globalRanges();
+
+    // evil magic
+    const results: any[] = [];
+    for (const t of tokens) {
+      const overlapStart = Math.max(t.anchor, nodeStartAbsolute);
+      const overlapEnd = Math.min(t.focus, nodeEndAbsolute);
+      if (overlapStart < overlapEnd) {
+        results.push({
+          [t.type]: true,
+          anchor: { path, offset: overlapStart - nodeStartAbsolute },
+          focus: { path, offset: overlapEnd - nodeStartAbsolute },
+          hex: t.hex
+        });
+      }
+    }
+
+    gBlocks = gBlockStrings = null;
+    
+    return results;
   };
 
   const Leaf = (props: RenderLeafProps) => {
@@ -111,13 +203,15 @@ export default function MessageInput() {
     return (
       <span
         {...props.attributes}
+        // @ts-expect-error special attr
+        style={{ color: leaf.hex ?? "" }}
         classList={{
           // @ts-expect-error special attr
           "b": leaf.bold || leaf.italicbold,
           // @ts-expect-error special attr
-          "i": leaf.italic || leaf.italicbold,
+          "i": leaf.italic || leaf.italicbold || leaf.italicunderline,
           // @ts-expect-error special attr
-          "u": leaf.underline,
+          "u": leaf.underline || leaf.italicunderline,
           // @ts-expect-error special attr
           "s": leaf.strikethrough,
           // @ts-expect-error special attr
@@ -155,11 +249,20 @@ export default function MessageInput() {
   return (
     <div class="real-wrap">
       <div class="msg-wrap">
-        <Slate editor={editor()} initialValue={initialValue}>
+        <Slate editor={editor()} initialValue={initialValue} onChange={() => {
+          const [b, bs, fullText] = getFullText();
+          if (fullText === '') // yeah idk what's going on here
+            return;
+          gBlocks = b;
+          gBlockStrings = bs;
+          const ranges = tokenizeMarkdown(fullText);
+          setGlobalRanges(ranges);
+        }}>
           <Editable
             class="msg-input"
-            placeholder={"Send a message"}
+            placeholder={channelState.currentChannel() ? "Send a message in #" + channelState.currentChannel()?.name : "Send a message"}
             decorate={decorate}
+            
             renderLeaf={Leaf}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -175,13 +278,35 @@ export default function MessageInput() {
                 const point = { path: [0, 0], offset: 0 }
                 editor().selection = { anchor: point, focus: point };
                 editor().children = [{
+                  // @ts-expect-error
                   type: 'paragraph',
                   children: [{ text: '' }]
                 }];
                 editor().history = { redos: [], undos: [] };
 
-                if (false) // currently testing stuff so don't send message
-                  sendMessage(1, text);
+                const chan = channelState.currentChannel();
+                if (chan == null)
+                  return;
+                const user = authState.user();
+                if (user == null)
+                  return;
+                const msgs = messageState.messages();
+                messageState.setMessages([...msgs, {
+                  id: -1,
+                  channelId: chan.id,
+                  authorId: user.id,
+                  mentions: [],
+                  reactions: [],
+                  content: text,
+                  previousContent: null,
+                  timestamp: Date().toString(),
+                  editedTimestamp: null,
+                  isDeleted: false,
+                  isPinned: false
+                }]);
+
+                //if (false) // currently testing stuff so don't send message
+                //  sendMessage(chan.id, text);
               }
             }}
           />

@@ -59,10 +59,10 @@ importers:
         version: 5.6.3
       vite:
         specifier: ^6.0.3
-        version: 6.4.1
+        version: 6.4.1(yaml@2.8.1)
       vite-plugin-solid:
         specifier: ^2.11.0
-        version: 2.11.10(solid-js@1.9.10)(vite@6.4.1)
+        version: 2.11.10(solid-js@1.9.10)(vite@6.4.1(yaml@2.8.1))
 
 packages:
 
@@ -907,6 +907,11 @@ packages:
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
+  yaml@2.8.1:
+    resolution: {integrity: sha512-lcYcMxX2PO9XMGvAJkJ3OsNMw+/7FKes7/hgerGUYWIoWu5j/+YQqcZr5JnPZWzOsEBgMbSbiSTn/dv/69Mkpw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
 snapshots:
 
   '@babel/code-frame@7.27.1':
@@ -1571,7 +1576,7 @@ snapshots:
       querystringify: 2.2.0
       requires-port: 1.0.0
 
-  vite-plugin-solid@2.11.10(solid-js@1.9.10)(vite@6.4.1):
+  vite-plugin-solid@2.11.10(solid-js@1.9.10)(vite@6.4.1(yaml@2.8.1)):
     dependencies:
       '@babel/core': 7.28.5
       '@types/babel__core': 7.20.5
@@ -1579,12 +1584,12 @@ snapshots:
       merge-anything: 5.1.7
       solid-js: 1.9.10
       solid-refresh: 0.6.3(solid-js@1.9.10)
-      vite: 6.4.1
-      vitefu: 1.1.1(vite@6.4.1)
+      vite: 6.4.1(yaml@2.8.1)
+      vitefu: 1.1.1(vite@6.4.1(yaml@2.8.1))
     transitivePeerDependencies:
       - supports-color
 
-  vite@6.4.1:
+  vite@6.4.1(yaml@2.8.1):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.3)
@@ -1594,10 +1599,11 @@ snapshots:
       tinyglobby: 0.2.15
     optionalDependencies:
       fsevents: 2.3.3
+      yaml: 2.8.1
 
-  vitefu@1.1.1(vite@6.4.1):
+  vitefu@1.1.1(vite@6.4.1(yaml@2.8.1)):
     optionalDependencies:
-      vite: 6.4.1
+      vite: 6.4.1(yaml@2.8.1)
 
   webidl-conversions@3.0.1: {}
 
@@ -1609,3 +1615,6 @@ snapshots:
   ws@7.5.10: {}
 
   yallist@3.1.1: {}
+
+  yaml@2.8.1:
+    optional: true

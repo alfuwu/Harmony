@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import { authState } from "../../lib/state/auth";
+import { userState } from "../../lib/state/users";
 import { login, registerUser } from "../../lib/api/authApi";
 import { api } from "../../lib/api/http";
 
@@ -23,6 +24,7 @@ export default function LoginScreen() {
       });
 
       authState.setUser(me);
+      userState.setUsers([...userState.users(), me]);
 
     } catch (e: any) {
       setError(e.message || "Login failed");
@@ -40,6 +42,7 @@ export default function LoginScreen() {
 
       const me = await api("/users/@me");
       authState.setUser(me);
+      userState.setUsers([...userState.users(), me]);
 
     } catch (e: any) {
       setError(e.message || "Registration failed");
