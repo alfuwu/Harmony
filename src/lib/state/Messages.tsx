@@ -1,7 +1,7 @@
 import React, { useContext, useState, createContext } from "react";
 import { Message } from "../utils/types";
 
-interface MessageState {
+export interface MessageState {
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
 }

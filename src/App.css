@@ -22,6 +22,11 @@
   --text-3: hsl(0, 0%, 100%); /* normal text */
   --text-4: hsl(221, 14%, 70%); /* icon buttons and channels */
   --text-5: hsl(0, 0%, 50%); /* muted channels/chats and timestamps */
+  --text-gray-1: hsl(0, 0%, 100%);
+  --text-gray-2: hsl(0, 0%, 100%);
+  --text-gray-3: hsl(0, 0%, 100%);
+  --text-gray-4: hsl(221, 14%, 70%);
+  --text-gray-5: hsl(0, 0%, 50%);
 
   /* background and dark colors */
   --bg-1: hsla(220, 15%, 20%, 1); /* dark buttons when clicked */
@@ -535,6 +540,9 @@ button,
 .content {
   white-space: pre-wrap;
 }
+.content.sending {
+  color: color-mix(in hsl, currentColor, transparent);
+}
 
 .deleted {
   font-style: italic;
@@ -575,6 +583,13 @@ button,
 .mention:hover::after {
   width: calc(100% - 4px);
   left: 2px;
+}
+.mention > .icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 2px;
+  top: 4px;
+  position: relative;
 }
 
 /* title bar */
@@ -656,6 +671,43 @@ button,
 .msg-input:focus {
   border-color: var(--border-hover);
   outline: none;
+}
+
+.mention-popup {
+  background-color: var(--bg-3);
+  padding: 2px;
+  border-radius: 5px;
+  border: 2px solid var(--border);
+}
+.mention-title {
+  font-weight: 700;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-gray-5);
+}
+.mention-item.active, .mention-item:hover {
+  background-color: color-mix(in hsl, var(--bg-2), transparent 60%);
+}
+.mention-item {
+  padding: 4px 8px;
+  display: flex;
+  gap: 8px;
+}
+.mention-item > .avatar {
+  width: 24px;
+  height: 24px;
+}
+.mention-item > .icon {
+  width: 20px;
+  height: 20px;
+  position: relative;
+  top: 2px;
+}
+.mention-item > .username {
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-gray-5);
 }
 
 /* login screen layout */

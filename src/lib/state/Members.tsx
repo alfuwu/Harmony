@@ -1,7 +1,7 @@
 import React, { useContext, useState, createContext } from "react";
 import { Member } from "../utils/types";
 
-interface MemberState {
+export interface MemberState {
   members: Member[];
   setMembers: React.Dispatch<React.SetStateAction<Member[]>>;
 }

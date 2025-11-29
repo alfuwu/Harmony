@@ -4,10 +4,10 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
 import { parseMarkdown } from "../../lib/utils/Markdown";
+import { getAvatar, getNameFont, getPronouns, getRoleColor } from "../../lib/utils/UserUtils";
+import { User } from "../../lib/utils/types";
 
 const MERGE_WINDOW = 7 * 60 * 1000; // 7 minutes in ms
-const DEFAULT_AVATAR =
-  "https://cdn.discordapp.com/avatars/1038466644353232967/2cf70b3cc2b0314758dd9f8155228c89.png?size=1024";
 
 export default function MessageList() {
   const { messages } = useMessageState();
@@ -74,8 +74,8 @@ export default function MessageList() {
           username: "Unknown User",
           avatar: null,
           nameFont: null,
-        };
-        const avatar = author.avatar || DEFAULT_AVATAR;
+        } as User;
+        const avatar = getAvatar(author);
         let showHeader = true;
         const prevMsg = channelMessages[i - 1];
         if (prevMsg && prevMsg.authorId === msg.authorId) {
@@ -86,6 +86,7 @@ export default function MessageList() {
         }
 
         const hover = hoveredMessages[msg.id + msg.timestamp] || false;
+        const pronouns = getPronouns(author);
 
         return (
           <div key={msg.id + msg.timestamp + "idx:" + i} className={"message" + (msg.isDeleted ? " deleted" : "")}> 
@@ -95,7 +96,10 @@ export default function MessageList() {
                 <div className="header-meta">
                   <span
                     className="author int"
-                    style={{ fontFamily: !hover ? (author.nameFont?.startsWith("https://") ? `url(${author.nameFont})` : author.nameFont || undefined) : undefined }}
+                    style={{
+                      fontFamily: !hover ? getNameFont(author) ?? undefined : undefined,
+                      color: getRoleColor(serverState, author) ?? undefined
+                    }}
                     onMouseEnter={() => setHover(msg.id + msg.timestamp, true)}
                     onMouseLeave={() => setHover(msg.id + msg.timestamp, false)}
                     data-hover={hover}
@@ -107,6 +111,10 @@ export default function MessageList() {
                     <span className="mr uno">•</span>
                     {formatMessageTimestamp(msg.timestamp)}
                   </span>
+                  {pronouns && <span className="timestamp">
+                    <span className="mr ml uno">•</span>
+                    {pronouns}
+                  </span>}
                 </div>
               </div>
             )}
@@ -116,7 +124,7 @@ export default function MessageList() {
                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </span>
               )}
-              <span className="content">{parseMarkdown(msg.content, {
+              <span className={"content" + (msg.sending ? " sending" : "")}>{parseMarkdown(msg.content, {
                 serverState,
                 channelState,
                 userState

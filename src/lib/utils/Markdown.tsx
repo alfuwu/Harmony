@@ -1,5 +1,7 @@
 import React from "react";
 import { Channel, Server, User } from "./types";
+import TextChannel from "../../components/svgs/TextChannel";
+import { getChannelIcon } from "./ChannelUtils";
 
 export const COLORS = [
   "red", "orange", "yellow", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
@@ -338,8 +340,7 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      //const [shown, setShown] = React.useState(false);
-      return <span className={"spoiler"} onClick={() => {}/*setShown(true)*/}>{match.children}</span>;
+      return <span className={"spoiler"} onClick={(e) => e.currentTarget.classList.toggle("shown")}>{match.children}</span>;
     },
     
     leafRender: ({ attributes, children }) => {
@@ -722,8 +723,8 @@ export const RULES: MarkdownRule[] = [
     render(match) {
       const fallback = `<#${match.match.groups!.id}>`;
       const c = match.attributes?.channelState.channels.filter((c: Channel) => c.id == Number(match.match.groups!.id))[0];
-      const name = c?.name ? "#" + c?.name : fallback;
-      return <span className="mention int">{name}</span>
+      const name = c?.name ?? fallback;
+      return <span className="mention int">{c?.name && getChannelIcon(c, { className: "icon" })}{name}</span>
     }
   },
   // server mentions

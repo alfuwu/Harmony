@@ -1,7 +1,7 @@
 import React, { useContext, useState, createContext } from "react";
 import { User } from "../utils/types";
 
-interface AuthState {
+export interface AuthState {
   user: User | null;
   setUser: React.Dispatch<React.SetStateAction<User | null>>;
   token: string | null;

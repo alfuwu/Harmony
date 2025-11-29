@@ -1,7 +1,7 @@
 import React, { useContext, useState, createContext } from "react";
 import { User } from "../utils/types";
 
-interface UserState {
+export interface UserState {
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
 }

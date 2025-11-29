@@ -1,7 +1,7 @@
 import React, { useContext, useState, createContext } from "react";
 import { Server } from "../utils/types";
 
-interface ServerState {
+export interface ServerState {
   currentServer: Server | null;
   setCurrentServer: React.Dispatch<React.SetStateAction<Server | null>>;
   servers: Server[];

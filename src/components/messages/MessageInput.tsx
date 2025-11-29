@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Slate, Editable, withReact, ReactEditor } from "slate-react";
+import { Slate, Editable, withReact } from "slate-react";
 import { createEditor, Node, Editor, Transforms, Range, Text } from "slate";
 import { withHistory } from "slate-history";
 import ReactDOM from "react-dom";
@@ -9,18 +9,25 @@ import { useAuthState } from "../../lib/state/Auth";
 import { useUserState } from "../../lib/state/Users";
 import { LEAF_RULES, tokenizeMarkdown } from "../../lib/utils/Markdown";
 // @ts-ignore
-import { AbstractChannel, Role, Server, User } from "../../lib/utils/types";
+import { AbstractChannel, Channel, Role, Server, User } from "../../lib/utils/types";
+import { getAvatar, getNameFont } from "../../lib/utils/UserUtils";
+import { useServerState } from "../../lib/state/Servers";
+import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 
 const withMentions = (editor: Editor) => {
-  const { isInline, isVoid } = editor;
+  const { isInline, isVoid, markableVoid } = editor;
 
-  editor.isInline = (element) =>
+  editor.isInline = element =>
     // @ts-expect-error
     element.type?.startsWith("mention") ? true : isInline(element);
 
-  editor.isVoid = (element) =>
+  editor.isVoid = element =>
     // @ts-expect-error
     element.type?.startsWith("mention") ? true : isVoid(element);
+    
+  editor.markableVoid = element =>
+    // @ts-expect-error
+    element.type?.startsWith("mention") || markableVoid(element);
 
   return editor;
 };
@@ -35,7 +42,6 @@ const insertUserMention = (editor: Editor, user: User) => {
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
-
 const insertRoleMention = (editor: Editor, role: Role) => {
   const mention = {
     type: "mention_role",
@@ -46,7 +52,6 @@ const insertRoleMention = (editor: Editor, role: Role) => {
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
-
 const insertChannelMention = (editor: Editor, channel: AbstractChannel) => {
   const mention = {
     type: "mention_channel",
@@ -57,7 +62,6 @@ const insertChannelMention = (editor: Editor, channel: AbstractChannel) => {
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
-
 const insertServerMention = (editor: Editor, server: Server) => {
   const mention = {
     type: "mention_server",
@@ -75,10 +79,11 @@ export default function MessageInput() {
     []
   );
 
-  const { currentChannel } = useChannelState();
+  const { channels, currentChannel } = useChannelState();
   const { user } = useAuthState();
   const { messages, setMessages } = useMessageState();
   const { users } = useUserState();
+  const { servers } = useServerState();
 
   const editableRef = useRef<HTMLDivElement | null>(null);
 
@@ -88,8 +93,10 @@ export default function MessageInput() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (document.activeElement === editableRef.current) return;
-      if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter") return;
+      if (document.activeElement === editableRef.current)
+        return;
+      if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter")
+        return;
       editableRef.current?.focus();
     };
 
@@ -128,7 +135,7 @@ export default function MessageInput() {
       const nodeText = Node.string(node);
       const nodeEndAbsolute = nodeStartAbsolute + nodeText.length;
 
-      const tokens = tokenizeMarkdown(getFullText()[2]);
+      const tokens = tokenizeMarkdown(blockStrings.join("\n"));
 
       const results: any[] = [];
       for (const t of tokens) {
@@ -173,10 +180,32 @@ export default function MessageInput() {
 
   const mentionResults = () => {
     const s = search.toLowerCase();
-    if (!s) return [];
-    return users.filter((u) =>
-      (u.displayName ?? u.username).toLowerCase().startsWith(s)
-    ).slice(0, 10);
+    console.log(s);
+    if (!s)
+      return [];
+
+    if (search.startsWith("#")) {
+      const chans = channels.filter(c => c.serverId === currentChannel?.serverId);
+      // channel mentions
+      return chans
+        .filter(c => c.name.toLowerCase().startsWith(s.slice(1)))
+        .slice(0, 10)
+        .map(c => ({ ...c, type: "channel" }));
+    } else if (search.startsWith("~")) {
+      // server mentions
+      return servers
+        .filter(srv => srv.name.toLowerCase().startsWith(s.slice(1)))
+        .slice(0, 10)
+        .map(srv => ({ ...srv, type: "server" }));
+    } else if (search.startsWith("@")) {
+      // user & role mentions
+      return users
+        .filter(u => u?.displayName?.toLowerCase()?.startsWith(s.slice(1)) || u.username.toLowerCase().startsWith(s.slice(1)))
+        .slice(0, 10)
+        .map(u => ({ ...u, type: "user" }));
+    } else {
+      return [];
+    }
   };
 
   const skipMention = (reverse: boolean) => {
@@ -197,7 +226,7 @@ export default function MessageInput() {
       case "mention_role":
         return <span {...props.attributes} contentEditable={false} className="mention int">@{element.role?.name}</span>;
       case "mention_channel":
-        return <span {...props.attributes} contentEditable={false} className="mention int">#{element.channel?.name}</span>;
+        return <span {...props.attributes} contentEditable={false} className="mention int">{getChannelIcon(element.channel, { className: "icon" })}{element.channel?.name}</span>;
       case "mention_server":
         return <span {...props.attributes} contentEditable={false} className="mention int">~{element.server?.name}</span>;
       default:
@@ -217,26 +246,34 @@ export default function MessageInput() {
 
             if (selection && Range.isCollapsed(selection)) {
               try {
-                const [start] = Range.edges(selection);
-                const wordBefore = Editor.before(editor, start, { unit: "word" });
-                const before = wordBefore && Editor.before(editor, wordBefore);
-                const beforeRange = before && Editor.range(editor, before, start);
-                const beforeText = beforeRange && Editor.string(editor, beforeRange);
-                const beforeMatch = beforeText && beforeText.match(/^@([\w\d_-]+)$/);
+                const start = selection.anchor;
 
-                const after = Editor.after(editor, start);
-                const afterRange = Editor.range(editor, start, after);
-                const afterText = Editor.string(editor, afterRange);
-                const afterMatch = afterText.match(/^(\s|$)/);
+                let from = start;
+                while (true) {
+                  const prev = Editor.before(editor, from, { distance: 1 });
+                  if (!prev)
+                    break;
+                  const r = Editor.range(editor, prev, from);
+                  const ch = Editor.string(editor, r);
+                  if (/[\s]/.test(ch))
+                    break; // stop at whitespace (maybe refactor so that servers with whitespace can be more fully typed out?)
+                  from = prev;
+                }
 
-                if (beforeMatch && afterMatch) {
-                  setTarget(beforeRange!);
-                  setSearch(beforeMatch[1]);
+                const mentionRange = Editor.range(editor, from, start);
+                const mentionText = Editor.string(editor, mentionRange);
+
+                const m = mentionText.match(/^([@#~])([\w-]*)$/);
+                if (m) {
+                  setTarget(mentionRange);
+                  setSearch(mentionText);
                   setIndex(0);
                 } else {
                   setTarget(null);
                 }
-              } catch {}
+              } catch {
+                // lalala yeah i eat transient errors bite me
+              }
             } else {
               setTarget(null);
             }
@@ -248,28 +285,87 @@ export default function MessageInput() {
                 ref={(el) => {
                   if (!el)
                     return;
-                  // @ts-expect-error
-                  const domRange = ReactEditor.toDOMRange(editor, target);
-                  const rect = domRange.getBoundingClientRect();
-                  el.style.position = "absolute";
-                  el.style.top = `${rect.top + window.pageYOffset + 24}px`;
-                  el.style.left = `${rect.left + window.pageXOffset}px`;
+                  
+                  requestAnimationFrame(() => {
+                    // @ ts-expect-error
+                    //const domRange = ReactEditor.toDOMRange(editor, target);
+                    //const rect = domRange.getBoundingClientRect();
+                    const inputWrapper = document.querySelector(".msg-wrap");
+                    if (!inputWrapper)
+                      return;
+
+                    const rect = inputWrapper.getBoundingClientRect();
+                    const popupHeight = el.offsetHeight;
+
+                    el.style.position = "absolute";
+                    el.style.top = `${rect.top + window.pageYOffset - popupHeight - 4}px`; // above input
+                    el.style.left = `${rect.left + window.pageXOffset}px`;
+                    el.style.width = `${rect.width - 8}px`;
+                  });
                 }}
-                className="mention-popup"
+                className="ven-colors mention-popup"
               >
-                {mentionResults().map((user, i) => (
-                  <div
-                    key={user.id}
-                    className={`mention-item ${i === index ? "active" : ""}`}
-                    onClick={() => {
-                      Transforms.select(editor, target);
-                      insertUserMention(editor, user);
-                      setTarget(null);
-                    }}
-                  >
-                    @{user.displayName ?? user.username}
-                  </div>
-                ))}
+                <span className="mention-title">{search[0] === "@" ?
+                  "MEMBERS" : search[0] === "#" ?
+                  "CHANNELS" : search[0] === "~" ?
+                  "SERVERS" : search[0] === ":" ?
+                  "EMOJIS" : "UNKNOWN"}
+                </span>
+                {mentionResults().map((item, i) => {
+                  switch (item.type) {
+                    case "user":
+                      const u = item as User;
+                      return (
+                        <div
+                          key={u.id}
+                          className={`mention-item int ${i === index ? "active" : ""}`}
+                          onClick={() => {
+                            Transforms.select(editor, target);
+                            insertUserMention(editor, u);
+                            setTarget(null);
+                          }}
+                          onMouseEnter={() => setIndex(i)}
+                        >
+                          <img className="avatar" src={getAvatar(u)} alt="avatar" />
+                          <span style={{ fontFamily: getNameFont(u) ?? undefined }}>{u.displayName ?? u.username}</span>
+                          <span className="username">@{u.username}</span>
+                        </div>
+                      );
+                    case "channel":
+                      const c = item as Channel;
+                      return (
+                        <div
+                          key={c.id}
+                          className={`mention-item int ${i === index ? "active" : ""}`}
+                          onClick={() => {
+                            Transforms.select(editor, target);
+                            insertChannelMention(editor, c);
+                            setTarget(null);
+                          }}
+                          onMouseEnter={() => setIndex(i)}
+                        >
+                          {getChannelIcon(c, { className: "icon" })}
+                          <span>{c.name}</span>
+                        </div>
+                      );
+                    case "server":
+                      const s = item as Server;
+                      return (
+                        <div
+                          key={s.id}
+                          className={`mention-item int ${i === index ? "active" : ""}`}
+                          onClick={() => {
+                            Transforms.select(editor, target);
+                            insertServerMention(editor, s);
+                            setTarget(null);
+                          }}
+                          onMouseEnter={() => setIndex(i)}
+                        >
+                          <span>~{s.name}</span>
+                        </div>
+                      );
+                  }
+                })}
               </div>,
               document.body
             )}
@@ -298,7 +394,20 @@ export default function MessageInput() {
                   case "Enter":
                     e.preventDefault();
                     Transforms.select(editor, t);
-                    insertUserMention(editor, results[index]);
+                    switch (results[index].type) {
+                      case "channel":
+                        insertChannelMention(editor, results[index] as Channel);
+                        break;
+                      case "user":
+                        insertUserMention(editor, results[index] as User);
+                        break;
+                      case "role":
+                        //insertRoleMention(editor, results[index] as Role);
+                        break;
+                      case "server":
+                        insertServerMention(editor, results[index] as Server);
+                        break;
+                    }
                     setTarget(null);
                     return;
                   case "Escape":
@@ -330,6 +439,8 @@ export default function MessageInput() {
                     editedTimestamp: null,
                     isDeleted: false,
                     isPinned: false,
+                    sending: true,
+                    nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
                   },
                 ]);
               }

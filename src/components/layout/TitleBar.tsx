@@ -1,13 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
-import TextChannelLocked from '../svgs/TextChannelLocked';
 import { useChannelState } from '../../lib/state/Channels';
+import { getChannelIcon } from '../../lib/utils/ChannelUtils';
 
 export default function TitleBar() {
   const { currentChannel } = useChannelState();
   return (
     <div className="title-bar">
       <div className="title uno">
-        <TextChannelLocked />
+        {currentChannel && getChannelIcon(currentChannel, { className: "icon" })}
         <span>
           {(currentChannel && currentChannel.name) || "No channel"}
         </span>

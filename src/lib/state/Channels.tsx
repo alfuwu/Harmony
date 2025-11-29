@@ -1,7 +1,7 @@
 import React, { useContext, useState, createContext } from "react";
 import { Channel } from "../utils/types";
 
-interface ChannelState {
+export interface ChannelState {
   currentChannel: Channel | null;
   setCurrentChannel: React.Dispatch<React.SetStateAction<Channel | null>>;
   channels: Channel[];
