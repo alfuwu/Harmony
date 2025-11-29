@@ -1,0 +1,24 @@
+diff --git a/dist/utils/logger.js b/dist/utils/logger.js
+index 69ec6f427eaa37992c759379c4a491ed0edcecab..11a1c27b450d367e1c85e526920538d151cd6590 100644
+--- a/dist/utils/logger.js
++++ b/dist/utils/logger.js
+@@ -4,15 +4,15 @@ export class Logger {
+     }
+     _label;
+     debug = (...args) => {
+-        console.debug(this._label, ...args);
++        //console.debug(this._label, ...args);
+     };
+     group = (...label) => {
+-        console.group(this._label, ...label);
++        //console.group(this._label, ...label);
+     };
+     groupCollapsed = (...label) => {
+-        console.groupCollapsed(this._label, ...label);
++        //console.groupCollapsed(this._label, ...label);
+     };
+     groupEnd = () => {
+-        console.groupEnd();
++        //console.groupEnd();
+     };
+ }

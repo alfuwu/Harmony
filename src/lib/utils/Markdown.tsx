@@ -1,0 +1,713 @@
+import { createSignal } from "solid-js";
+import { JSX } from "solid-js/jsx-runtime";
+import { userState } from "../state/users";
+
+export const COLORS = [
+  "red", "orange", "yellow", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
+  "brown", "lavender", "teal", "magenta", "lime", "navy", "silver", "maroon", "fuchsia", "olive", "aqua",
+  "aliceblue", "antiquewhite", "aquamarine", "azure", "beige", "bisque", "blanchedalmond", "blueviolet",
+  "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue", "cornsilk", "crimson",
+  "cyan", "darkblue", "darkcyan", "darkgoldenrod", "darkgray", "darkgrey", "darkgreen", "darkkhaki",
+  "darkmagenta", "darkolivegreen", "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
+  "darkslateblue", "darkslategray", "darkslategrey", "darkturquoise", "darkviolet", "deeppink", "deepskyblue",
+  "dimgray", "dimgrey", "dodgerblue", "firebrick", "floralwhite", "forestgreen", "gainsboro", "ghostwhite",
+  "gold", "goldenrod", "greenyellow", "honeydew", "hotpink", "indianred", "ivory", "khaki", "lavenderblush",
+  "lawngreen", "lemonchiffon", "lightblue", "lightcoral", "lightcyan", "lightgoldrenrodyellow", "lightgray",
+  "lightgrey", "lightgreen", "lightpink", "lightsalmon", "lightseaegreen", "lightskyblue", "lightslategray",
+  "lightslategrey", "lightsteelblue", "lightyellow", "limegreen", "linen", "mediumaquamarine", "mediumblue",
+  "mediumorchid", "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen", "mediumturquoise",
+  "mediumvioletred", "midnightblue", "mintcream", "mistyrose", "moccasin", "navajowhite", "oldlace",
+  "olivedrab", "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise", "palevioletred",
+  "papayawhip", "peachpuff", "peru", "plum", "powederblue", "rebeccapurple", "rosybrown", "royalblue",
+  "saddlebrown", "salmon", "sandybrown", "seagreen", "seashell", "sienna", "skyblue", "slateblue",
+  "slategray", "slategrey", "snow", "springgreen", "steelblue", "tan", "thistle", "tomato", "turquoise",
+  "wheat", "whitesmoke", "yellowgreen"
+];
+
+export interface DecorationRange {
+  anchor: number;
+  focus: number;
+  type: string;
+  attributes?: any;
+}
+
+export interface MarkdownRule {
+  name: string;
+  regex: RegExp;
+  parseInner?: (match: RegExpExecArray) => boolean;
+
+  // determines which parts of the editor's input to render sepecially
+  decorate(match: RegExpExecArray, ctx: { matchIndex: number, text: string }): DecorationRange[];
+
+  // permanent parsing (for sent messages)
+  render(match: { match: RegExpExecArray; children: (JSX.Element | string)[]; }): JSX.Element | string;
+
+  // how to render a range with "type" set to this rule's name
+  leafRender?: (props: {
+    attributes: any;
+    children: any;
+    leaf: any;
+  }) => JSX.Element;
+}
+
+export function tokenizeMarkdown(text: string) {
+  const results: DecorationRange[] = [];
+
+  for (const rule of RULES) {
+    rule.regex.lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = rule.regex.exec(text))) {
+      const decorations = rule.decorate(match, {
+        matchIndex: match.index,
+        text
+      });
+
+      results.push(...decorations);
+    }
+  }
+
+  return results;
+}
+
+// IT'S CLOSE ENOUGH
+// (this does not ensure perfect parity with the editor; ***text*** will show up properly as italic bold despite not showing up as italic bold in the editor)
+export function parseMarkdown(content: string): (JSX.Element | string)[] {
+  if (!content) return [];
+
+  let firstMatch: { rule: MarkdownRule, match: RegExpExecArray } | null = null;
+
+  for (const rule of RULES) {
+    rule.regex.lastIndex = 0;
+    const match = rule.regex.exec(content);
+    if (match && (!firstMatch || match.index < firstMatch.match.index))
+      firstMatch = { rule, match };
+  }
+
+  if (!firstMatch) // no matches, kil
+    return [content];
+
+  const { rule, match } = firstMatch;
+  const start = match.index;
+  const end = start + match[0].length;
+
+  const nodes: (JSX.Element | string)[] = [];
+
+  // text before match
+  if (start > 0)
+    nodes.push(...parseMarkdown(content.slice(0, start)));
+
+  // render matched rule
+  const innerContent = match.groups?.content ?? match.groups?.content2 ?? "";
+  let rendered = rule.render({ match, children: !rule.parseInner || rule.parseInner(match) ? parseMarkdown(innerContent) : [innerContent] });
+
+  if (rendered)
+    nodes.push(rendered);
+
+  // text after match
+  if (end < content.length)
+    nodes.push(...parseMarkdown(content.slice(end)));
+
+  return nodes;
+}
+
+export const RULES: MarkdownRule[] = [
+  // render "\"
+  {
+    name: "mds",
+    regex: /\\(\*|_|@|\||`|~|<|\\)/g,
+
+    decorate(match) {
+      return [
+        {
+          type: "mds",
+          anchor: match.index,
+          focus: match.index + 1
+        }
+      ]
+    },
+
+    render(match) {
+      return match.match[1];
+    }
+  },
+  // bold text
+  {
+    name: "bold",
+    regex: /(?<!\*|\\)\*\*(?<content>(?:.|\n)+?(?<!\\))\*\*(?!\*)/gm,
+
+    decorate(match) {
+      const start = match.index;
+      const before = match[0].indexOf("**");
+      const after = match[0].lastIndexOf("**");
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 2
+        },
+        {
+          type: "bold",
+          anchor: start + before + 2,
+          focus: start + after
+        },
+        {
+          type: "mds",
+          anchor: start + after,
+          focus: start + after + 2
+        }
+      ];
+    },
+
+    render(match) {
+      return <b>{match.children}</b>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <b {...attributes}>
+          {children}
+        </b>
+      );
+    }
+  },
+  // italics
+  // needs to be made incompatible with list rule
+  {
+    name: "italic",
+    regex: /(?<!\*|\\)\*(?<content>[^*]+(?<!\\))\*(?!\*)|(?<!_)_(?<content2>[^_]+(?<!\\))_(?!_)/gm,
+
+    decorate(match) {
+      const start = match.index;
+      const sym = match[0].startsWith("*") ? "*" : "_";
+      const before = match[0].indexOf(sym);
+      const after = match[0].lastIndexOf(sym);
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 1
+        },
+        {
+          type: "italic",
+          anchor: start + before + 1,
+          focus: start + after
+        },
+        {
+          type: "mds",
+          anchor: start + after,
+          focus: start + after + 1
+        }
+      ];
+    },
+
+    render(match) {
+      return <i>{match.children}</i>;
+    },
+
+    leafRender: ({ attributes, children }) => {
+      return (
+        <i {...attributes}>
+          {children}
+        </i>
+      );
+    }
+  },
+  // underline text
+  {
+    name: "underline",
+    regex: /(?<!_|\\)__(?<content>(?:.|\n)+?(?<!\\))__(?!_)/gm,
+
+    decorate(match) {
+      const start = match.index;
+      const before = match[0].indexOf("__");
+      const after = match[0].lastIndexOf("__");
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 2
+        },
+        {
+          type: "underline",
+          anchor: start + before + 2,
+          focus: start + after
+        },
+        {
+          type: "mds",
+          anchor: start + after,
+          focus: start + after + 2
+        }
+      ];
+    },
+
+    render(match) {
+      return <u>{match.children}</u>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <u {...attributes}>
+          {children}
+        </u>
+      );
+    }
+  },
+  // strikethrough text
+  {
+    name: "strikethrough",
+    regex: /(?<!~|\\)~~(?<content>(?:.|\n)+?(?<!\\))~~(?!~)/gm,
+
+    decorate(match) {
+      const start = match.index;
+      const before = match[0].indexOf("~~");
+      const after = match[0].lastIndexOf("~~");
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 2
+        },
+        {
+          type: "strikethrough",
+          anchor: start + before + 2,
+          focus: start + after
+        },
+        {
+          type: "mds",
+          anchor: start + after,
+          focus: start + after + 2
+        }
+      ];
+    },
+
+    render(match) {
+      return <s>{match.children}</s>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <s {...attributes}>
+          {children}
+        </s>
+      );
+    }
+  },
+  // spoilers
+  {
+    name: "spoiler",
+    regex: /(?<!\||\\)\|\|(?<content>(?:.|\n)+?(?<!\\))\|\|(?!\|)/gm,
+
+    decorate(match) {
+      const start = match.index;
+      const before = match[0].indexOf("||");
+      const after = match[0].lastIndexOf("||");
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 2
+        },
+        {
+          type: "spoiler",
+          anchor: start + before + 2,
+          focus: start + after
+        },
+        {
+          type: "mds",
+          anchor: start + after,
+          focus: start + after + 2
+        }
+      ];
+    },
+
+    render(match) {
+      const [shown, setShown] = createSignal(false);
+      return <span classList={{ spoiler: true, shown: shown() }} onClick={() => setShown(true)}>{match.children}</span>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <span class="spoiler-edit" {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  },
+  // code
+  {
+    name: "code",
+    regex: /(?<!`|\\)`(?<content>[^`]+(?<!\\))`(?!`)/gm,
+
+    decorate(match) {
+      const start = match.index;
+      const before = match[0].indexOf("`");
+      const after = match[0].lastIndexOf("`");
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 1
+        },
+        {
+          type: "code",
+          anchor: start + before + 1,
+          focus: start + after
+        },
+        {
+          type: "mds",
+          anchor: start + after,
+          focus: start + after + 1
+        }
+      ];
+    },
+
+    render(match) {
+      return <code>{match.children}</code>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <code {...attributes}>
+          {children}
+        </code>
+      );
+    }
+  },
+  // multiline code block
+  {
+    name: "multicode",
+    regex: /(?<!`|\\)```\n?(?<content>(?:.|\n)+?(?<!\\))```(?!`)/gm,
+
+    decorate(match) {
+      const start = match.index;
+      const before = match[0].indexOf("```");
+      const after = match[0].lastIndexOf("```");
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 3
+        },
+        {
+          type: "multicode",
+          anchor: start + before + 3,
+          focus: start + after
+        },
+        {
+          type: "mds",
+          anchor: start + after,
+          focus: start + after + 3
+        }
+      ];
+    },
+
+    render(match) {
+      return <span>{match.children}</span>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <span {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  },
+  // headers
+  {
+    name: "header",
+    regex: /^(#{1,6})\s(?<content>.+)/gm,
+
+    decorate(match) {
+      const start = match.index;
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + match[1].length
+        },
+        {
+          type: "header",
+          attributes: {
+            size: match[1].length
+          },
+          anchor: start,
+          focus: start + match[0].length
+        }
+      ];
+    },
+
+    render(match) {
+      return <span class={`h${match.match[1].length}`}>{match.children}</span>;
+    },
+    
+    leafRender: ({ attributes, children, leaf }) => {
+      return (
+        <span class={`h${leaf.size}`} {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  },
+  // subheaders
+  {
+    name: "subheader",
+    regex: /^-#\s(?<content>.+)/gm,
+
+    decorate(match) {
+      const start = match.index;
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 2
+        },
+        {
+          type: "subheader",
+          anchor: start,
+          focus: start + match[0].length
+        }
+      ];
+    },
+
+    render(match) {
+      return <span class="subheader">{match.children}</span>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <span class="subheader" {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  },
+  // quotes
+  {
+    name: "quote",
+    regex: /^> (?<content>.+)/gm,
+
+    decorate(match) {
+      const start = match.index;
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 1
+        },
+        {
+          type: "quote",
+          anchor: start,
+          focus: start + match[0].length
+        }
+      ];
+    },
+
+    render(match) {
+      return <span class="quote">{match.children}</span>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <span class="quote" {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  },
+  // list
+  {
+    name: "list",
+    regex: /^[-*]\s(?<content>.+)/gm,
+
+    decorate(match) {
+      const start = match.index;
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 1
+        },
+        {
+          type: "list",
+          anchor: start,
+          focus: start + match[0].length
+        }
+      ];
+    },
+
+    render(match) {
+      return <span class="list">{match.children}</span>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <span {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  },
+  // colors
+  {
+    name: "color",
+    regex: /(?<!\\)<(c|color):(?<hex>#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})|[a-zA-Z]{1,21})>(?<content>[\s\S]*?(?<!\\))<\/\1>/gmi,
+
+    decorate(match) {
+      if (!match.groups || match.groups.hex?.charAt(0) !== "#" && !COLORS.includes(match.groups.hex.toLowerCase()))
+        return [];
+
+      const start = match.index;
+      const before = match[0].indexOf(">") + 1;
+      const after = match[0].lastIndexOf("<");
+
+      return [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + before
+        },
+        {
+          type: "color",
+          attributes: {
+            hex: match.groups!.hex
+          },
+          anchor: start + before,
+          focus: start + after
+        },
+        {
+          type: "mds",
+          anchor: start + after,
+          focus: start + match[0].length
+        }
+      ];
+    },
+
+    render(match) {
+      return <span style={{ color: match.match.groups!.hex }}>{match.children}</span>;
+    },
+    
+    leafRender: ({ attributes, children, leaf }) => {
+      return (
+        <span style={{ color: leaf.hex }} {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  },
+  // links
+  {
+    name: "link",
+    regex: /\[(?<content>[^/]+)\]\((?<link>https?:\/\/[^\s/$.?#]+?\.[^\s]+?)\)|(?<content2>https?:\/\/[^\s/$.?#]+?\.[^\s]+)/gm,
+    parseInner: (match) => match.groups?.link !== undefined,
+
+    decorate(match) {
+      const start = match.index;
+
+      return match.groups?.link ? [
+        {
+          type: "mds",
+          anchor: start,
+          focus: start + 1
+        },
+        {
+          type: "mds",
+          anchor: start + match.groups.content.length + 1,
+          focus: start + match.groups.content.length + 3
+        },
+        {
+          type: "link",
+          attributes: {
+            link: match.groups.link
+          },
+          anchor: start + match.groups.content.length + 3,
+          focus: start + match.groups.content.length + match.groups.link.length + 3
+        },
+        {
+          type: "mds",
+          anchor: start + match[0].length - 1,
+          focus: start + match[0].length
+        }
+      ] : [
+        {
+          type: "link",
+          attributes: {
+            link: match.groups!.content2
+          },
+          anchor: start,
+          focus: start + match[0].length
+        }
+      ];
+    },
+
+    render(match) {
+      return <a target="_blank" href={match.match.groups!.link ?? match.match.groups!.content2} >{match.children}</a>;
+    },
+    
+    leafRender: ({ attributes, children }) => {
+      return (
+        <a {...attributes}>
+          {children}
+        </a>
+      );
+    }
+  },
+  // user mentions
+  {
+    name: "mention_user",
+    regex: /<@(?<id>[0-9]+)>/gm,
+
+    decorate() {
+      return [];
+    },
+
+    render(match) {
+      const u = userState.users().filter(u => u.id == Number(match.match.groups!.id))[0];
+      const name = "@" + (u?.displayName ?? u?.username ?? match.match.groups!.id);
+      return <span class="mention int">{name}</span>
+    }
+  },
+
+  //{ type: "italicbold", regex: /(?<filler>^|[^*])(?<mds>\*\*\*)(?<content>.*?)(?<esc>[^*])(?<mds2>\*\*\*)(?<endFiller>$|[^*])/gm },
+  //{ type: "italicunderline", regex: /(?<filler>^|[^_])(?<mds>___)(?<content>.*?)(?<esc>[^_])(?<mds2>___)(?<endFiller>$|[^_])/gm },
+  //{ type: "mention_user", regex: /<@(?<id>[0-9]+)>/gm },
+  //{ type: "mention_role", regex: /<@&(?<id>[0-9]+)>/gm },
+  //{ type: "mention_channel", regex: /<#(?<id>[0-9]+)>/gm },
+  //{ type: "mention_server", regex: /<~(?<id>[0-9]+)>/gm },
+  //{ type: "emoji", regex: /<:(?<name>[a-zA-Z0-9_]{1,32}):(?<id>[0-9]+)>/gm }
+];
+
+export const LEAF_RULES = [... RULES.filter(rule => rule.leafRender),
+  {
+    name: "mds",
+    leafRender: ({ attributes, children }: any) => {
+      return (
+        <span class="mds" {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  },
+  {
+    name: "hide",
+    leafRender: ({ attributes, children }: any) => {
+      return (
+        <span class="hide" {...attributes}>
+          {children}
+        </span>
+      );
+    }
+  }
+];

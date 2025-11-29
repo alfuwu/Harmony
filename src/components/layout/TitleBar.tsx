@@ -7,7 +7,9 @@ export default function TitleBar() {
     <div class="title-bar">
       <div class="title uno">
         {<TextChannelLocked />}
-        <span>{channelState.currentChannel()?.name ?? "No channel"}</span>
+        <span>
+          {channelState.currentChannel()?.name ?? "No channel"}
+        </span>
       </div>
       <div class="window-buttons">
         <button onClick={() => invoke("minimize") /* i couldn't figure out how tauri permissions work */}>

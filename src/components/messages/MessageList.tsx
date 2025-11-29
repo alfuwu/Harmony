@@ -2,7 +2,7 @@ import { createMemo, For, onMount, onCleanup, createSignal, Show } from "solid-j
 import { messageState } from "../../lib/state/messages";
 import { channelState } from "../../lib/state/channels";
 import { userState } from "../../lib/state/users";
-import { rules } from "../../lib/utils/markdown";
+import { parseMarkdown } from "../../lib/utils/Markdown";
 
 const MERGE_WINDOW = 7 * 60 * 1000; // 7 minutes in ms
 const DEFAULT_AVATAR =
@@ -22,105 +22,6 @@ export default function MessageList() {
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
   });
-
-  function parseMarkdown(content: string) {
-    let nodes: any[] = [content];
-
-    for (const rule of rules) {
-      const newNodes: any[] = [];
-
-      nodes.forEach((node) => {
-        if (typeof node !== "string") {
-          // Already parsed JSX node
-          newNodes.push(node);
-          return;
-        }
-
-        let lastIndex = 0;
-        let match: RegExpExecArray | null;
-
-        while ((match = rule.regex.exec(node)) !== null) {
-          if (match.index > lastIndex)
-            newNodes.push(node.slice(lastIndex, match.index));
-          if (!match.groups) {
-            lastIndex = match.index + match[0].length;
-            continue;
-          }
-
-          const inner = (match.groups.content ?? match.groups.content2) + (match.groups.esc !== "\\" && match.groups.esc !== undefined ? match.groups.esc : "");
-
-          switch (rule.type) {
-            case "bold":
-              newNodes.push(<b>{inner}</b>);
-              break;
-            case "italic":
-              newNodes.push(<i>{inner}</i>);
-              break;
-            case "italicbold":
-              newNodes.push(<b><i>{inner}</i></b>);
-              break;
-            case "underline":
-              newNodes.push(<u>{inner}</u>);
-              break;
-            case "italicunderline":
-              newNodes.push(<u><i>{inner}</i></u>);
-              break;
-            case "strikethrough":
-              newNodes.push(<s>{inner}</s>);
-              break;
-            case "spoiler":
-            case "subheader":
-            case "quote":
-            case "list":
-              newNodes.push(<span class={rule.type}>{inner}</span>);
-              break;
-            case "code":
-              newNodes.push(<code>{inner}</code>);
-              break;
-            case "multicode":
-              newNodes.push(<pre><code>{inner}</code></pre>);
-              break;
-            case "header":
-              newNodes.push(<span class={`h${match.groups.mds.length}`}>{inner}</span>);
-              break;
-            case "mention_user":
-              newNodes.push(<span class="mention int">{(() => {
-                const u = userState.users().filter(u => u.id == Number(match!.groups!.id))[0];
-                return "@" + (u?.displayName ?? u?.username ?? match!.groups!.id);
-              })()}</span>);
-              break;
-            case "mention_role":
-              newNodes.push(<span>{inner}</span>);
-              break;
-            case "mention_channel":
-              newNodes.push(<span>{inner}</span>);
-              break;
-            case "mention_server":
-              newNodes.push(<span>{inner}</span>);
-              break;
-            case "emoji":
-              newNodes.push(<span>{inner}</span>);
-              break;
-            case "color":
-              newNodes.push(<span style={{ color: match.groups.hex }}>{inner}</span>);
-              break;
-            case "link":
-              newNodes.push(<a target="_blank" href={match.groups.link ?? inner}>{inner}</a>);
-              break;
-          }
-
-          lastIndex = match.index + match[0].length;
-        }
-
-        if (lastIndex < node.length)
-          newNodes.push(node.slice(lastIndex));
-      });
-
-      nodes = newNodes;
-    }
-
-    return nodes;
-  }
 
   function formatMessageTimestamp(iso: string): string {
     const date = new Date(iso);
@@ -170,7 +71,7 @@ export default function MessageList() {
   onCleanup(() => observer.disconnect());
 
   return (
-    <div class="message-list" ref={container}>
+    <div class="message-list ovy-auto" ref={container}>
       <For each={channelMessages()}>
         {(msg, i) => {
           const author =

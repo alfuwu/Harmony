@@ -134,6 +134,7 @@ export enum ChannelType {
 
 /// server
 export interface Server {
+  id: number;
   ownerId: number;
   name: string;
   description?: string | null;

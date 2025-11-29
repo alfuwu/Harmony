@@ -1,0 +1,2 @@
+patchedDependencies:
+  '@slate-solid/core': patches/@slate-solid__core.patch

@@ -4,8 +4,9 @@
   line-height: 24px;
   font-weight: 400;
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  color: var(--text-1);
+  caret-color: var(--text-1);
+  background-color: var(--bg-4);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -92,9 +93,14 @@
 
   --list-button: oklch(49.982% 0.00507 16.71);
 
-  --mention-foreground: var(--accent-1);
-  --mention-background: color-mix(in hsl, var(--accent-2), transparent 90%);
-  --mention-background-hover: color-mix(in hsl, var(--accent-2), transparent 60%);
+  --default-mention-color: hsl(228.14 100% 83.137%);
+  /*--default-mention-color: var(--acent-1);*/
+  --mention-color: attr(data-mention-color, var(--default-mention-color));
+  --mention-color-hover: attr(data-mention-color, color-mix(in hsl, var(--default-mention-color), white));
+  --mention-foreground: var(--mention-color);
+  --mention-background-color: color-mix(in hsl, var(--mention-color), black);
+  --mention-background: color-mix(in hsl, var(--mention-background-color), transparent 70%);
+  --mention-background-hover: color-mix(in hsl, var(--mention-background-color), transparent 30%);
 }
 
 .ven-colors {
@@ -176,6 +182,22 @@
 
 body {
   overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #666;
+  border-top: 20px;
+  border-radius: 15px;
+  filter: drop-shadow(0 0 2em #000);
+}
+::-webkit-scrollbar-thumb:hover{
+  background: #555;
 }
 
 a {
@@ -304,6 +326,11 @@ button,
   margin-left: 5px;
 }
 
+/* displays */
+.hide {
+  display: none;
+}
+
 /* semitransparent */
 .semitrans {
   color: color-mix(in hsl, currentColor, transparent);
@@ -340,6 +367,7 @@ button,
 }
 .message-list {
   padding: 6px 0 6px 6px;
+  max-height: 80vh;
 }
 
 .server-header:hover {
@@ -471,7 +499,7 @@ button,
 }
 
 .timestamp {
-  font-size: 12px;
+  font-size: 10px;
   color: #777;
   width: fit-content;
 }
@@ -539,6 +567,7 @@ button,
 }
 .mention:hover {
   background: var(--mention-background-hover);
+  color: var(--mention-color-hover);
 }
 .mention::after {
   height: 1px;
@@ -702,8 +731,28 @@ h1, h2, h3 {
   padding: 0.2em 0.4em;
   border-radius: 4px;
 }
-.spoiler:hover, .spoiler-edit {
-  background-color: #333;
+.mds .spoiler-edit {
+  padding: 0.2em 0;
+  border-radius: 0;
+}
+.spoiler-edit:has(+ .mds .spoiler-edit) {
+  padding-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.mds:has(.spoiler-edit) + .spoiler-edit {
+  padding-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.spoiler:hover {
+  background-color: #555;
+}
+.showspoilersalways .spoiler,
+.showspoilersonhover .spoiler:hover,
+.spoiler.shown,
+.spoiler-edit {
+  background-color: #3a3a3a !important;
   color: unset;
 }
 .multiline-code {
@@ -722,8 +771,9 @@ code {
 }
 
 .mds {
-  color: gray;
-  text-decoration: unset !important;
+  color: gray !important;
+  text-decoration: none !important;
+  text-decoration-line: none !important;
   font-weight: unset !important;
 }
 .subheader {
@@ -743,7 +793,26 @@ code {
   border-radius: 4px;
   font-family: monospace;
 }
-.quote:first-child { border-left: 3px solid #ccc; padding-left: 6px; }
+.quote {
+  position: relative;
+  padding-left: 6px;
+}
+.quote::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: calc(50% - 8px);
+  border-radius: 1px;
+  height: 16px;
+  width: 3px;
+  background: currentColor;
+}
+.mds + .quote {
+  padding-left: unset;
+}
+.mds + .quote::after {
+  background: transparent;
+}
 .list {
   position: relative;
   padding-left: 10px;

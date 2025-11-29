@@ -1,12 +1,12 @@
 import { Editable, RenderLeafProps, Slate, SolidEditor, withSolid } from '@slate-solid/core'
 import { Text, Node, Transforms, createEditor, Editor, Range } from 'slate'
 import { withHistory } from 'slate-history'
-import { Accessor, createMemo, createSignal, For, Setter } from 'solid-js'
+import { createMemo, createSignal, For, onCleanup, onMount } from 'solid-js'
 import { channelState } from '../../lib/state/channels';
 import { messageState } from '../../lib/state/messages';
 import { authState } from '../../lib/state/auth';
-import { rules } from '../../lib/utils/markdown';
-import { User } from '../../lib/utils/types';
+import { DecorationRange, LEAF_RULES, tokenizeMarkdown } from '../../lib/utils/Markdown';
+import { AbstractChannel, Role, Server, User } from '../../lib/utils/types';
 import { userState } from '../../lib/state/users';
 import { Portal } from 'solid-js/web';
 
@@ -17,143 +17,75 @@ const withMentions = (editor: Editor) => {
 
   editor.isInline = element =>
     // @ts-expect-error
-    element.type === 'mention' ? true : isInline(element);
+    element.type?.startsWith("mention") ? true : isInline(element);
 
   editor.isVoid = element =>
     // @ts-expect-error
-    element.type === 'mention' ? true : isVoid(element);
+    element.type?.startsWith("mention") ? true : isVoid(element);
 
   editor.markableVoid = element =>
     // @ts-expect-error
-    element.type === 'mention' || markableVoid(element);
+    element.type?.startsWith("mention") || markableVoid(element);
 
   return editor
 }
 
-const insertMention = (editor: Editor, user: User) => {
+const insertUserMention = (editor: Editor, user: User) => {
   const mention = {
-    type: 'mention',
+    type: "mention_user",
     user,
     children: [{ text: `<@${user.id}>` }]
   };
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
+const insertRoleMention = (editor: Editor, role: Role) => {
+  const mention = {
+    type: "mention_role",
+    role,
+    children: [{ text: `<@&${role.id}>` }]
+  };
+  Transforms.insertNodes(editor, mention);
+  Transforms.move(editor);
+};
+const insertChannelMention = (editor: Editor, channel: AbstractChannel) => {
+  const mention = {
+    type: "mention_channel",
+    channel,
+    children: [{ text: `<#${channel.id}>` }]
+  };
+  Transforms.insertNodes(editor, mention);
+  Transforms.move(editor);
+};
+const insertServerMention = (editor: Editor, server: Server) => {
+  const mention = {
+    type: "mention_server",
+    server,
+    children: [{ text: `<~${server.id}>` }]
+  };
+  Transforms.insertNodes(editor, mention);
+  Transforms.move(editor);
+};
 
-export const COLORS = [
-  "red", "orange", "yellow", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
-  "brown", "lavender", "teal", "magenta", "lime", "navy", "silver", "maroon", "fuchsia", "olive", "aqua",
-  "aliceblue", "antiquewhite", "aquamarine", "azure", "beige", "bisque", "blanchedalmond", "blueviolet",
-  "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue", "cornsilk", "crimson",
-  "cyan", "darkblue", "darkcyan", "darkgoldenrod", "darkgray", "darkgrey", "darkgreen", "darkkhaki",
-  "darkmagenta", "darkolivegreen", "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
-  "darkslateblue", "darkslategray", "darkslategrey", "darkturquoise", "darkviolet", "deeppink", "deepskyblue",
-  "dimgray", "dimgrey", "dodgerblue", "firebrick", "floralwhite", "forestgreen", "gainsboro", "ghostwhite",
-  "gold", "goldenrod", "greenyellow", "honeydew", "hotpink", "indianred", "ivory", "khaki", "lavenderblush",
-  "lawngreen", "lemonchiffon", "lightblue", "lightcoral", "lightcyan", "lightgoldrenrodyellow", "lightgray",
-  "lightgrey", "lightgreen", "lightpink", "lightsalmon", "lightseaegreen", "lightskyblue", "lightslategray",
-  "lightslategrey", "lightsteelblue", "lightyellow", "limegreen", "linen", "mediumaquamarine", "mediumblue",
-  "mediumorchid", "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen", "mediumturquoise",
-  "mediumvioletred", "midnightblue", "mintcream", "mistyrose", "moccasin", "navajowhite", "oldlace",
-  "olivedrab", "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise", "palevioletred",
-  "papayawhip", "peachpuff", "peru", "plum", "powederblue", "rebeccapurple", "rosybrown", "royalblue",
-  "saddlebrown", "salmon", "sandybrown", "seagreen", "seashell", "sienna", "skyblue", "slateblue",
-  "slategray", "slategrey", "snow", "springgreen", "steelblue", "tan", "thistle", "tomato", "turquoise",
-  "wheat", "whitesmoke", "yellowgreen"
-]
+let editableRef: HTMLDivElement | ((el: HTMLDivElement) => void) | undefined;
 
-// BUGS:
-// - using the same kind of markdown twice in a row without two characters of some kind in between breaks (e.g. **hi** **hru**)
-//   ^^^ almost certainly due to filler shenanigans
-// TODO:
-// - render user/channel/server mentions
-// - render emoji
-function tokenizeMarkdown(text: string) {
-  const ranges: { anchor: number; focus: number; type: string, hex?: string }[] = [];
+onMount(() => {
+  const handler = (e: KeyboardEvent) => {
+    // ignore if the editor already has focus
+    if (document.activeElement === editableRef)
+      return;
 
-  for (const rule of rules) {
-    let match: RegExpExecArray | null;
-    while ((match = rule.regex.exec(text))) {
-      const fillerAdd = match.groups?.filler?.length ?? 0;
-      const fillerSub = match.groups?.endFiller?.length ?? 0;
-      let start = match.index + fillerAdd;
-      let end = start + match[0].length;
+    // ignore keys that shouldn't activate typing (shift, ctrl, ...)
+    if (e.key.length !== 1 && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'Enter')
+      return;
+    
+    // @ts-expect-error
+    editableRef?.focus();
+  };
 
-      if (rule.type === "color" && match.groups?.hex?.charAt(0) !== '#' && !COLORS.includes(match.groups?.hex ?? ""))
-        continue;
-      
-      // symbol styling
-      if (match.groups?.filler === "\\") {
-        ranges.push({
-          anchor: match.index,
-          focus: start,
-          type: "mds"
-        });
-
-        if (match.groups?.esc !== "\\")
-          continue;
-      }
-      if (match.groups?.esc === "\\") {
-        ranges.push({
-          anchor: end - match.groups?.mds2?.length - fillerAdd - fillerSub - 1,
-          focus: end - match.groups?.mds2?.length - fillerAdd - fillerSub,
-          type: "mds"
-        });
-        continue;
-      }
-      if (match.groups?.mds) {
-        ranges.push({
-          anchor: start,
-          focus: start + match.groups.mds.length,
-          type: "mds"
-        });
-        if (rule.type !== "header" && rule.type !== "subheader" && rule.type !== "multicode")
-          start += match.groups.mds.length;
-      }
-      if (match.groups?.mds2) {
-        ranges.push({
-          anchor: end - match.groups.mds2.length - fillerAdd - fillerSub,
-          focus: end - fillerAdd - fillerSub,
-          type: "mds"
-        });
-        if (rule.type !== "header" && rule.type !== "subheader" && rule.type !== "multicode")
-          end -= match.groups.mds2.length;
-      }
-      if (match.groups?.mds3) {
-        ranges.push({
-          anchor: start + match.groups.content.length,
-          focus: start + match.groups.content.length + match.groups.mds3.length,
-          type: "mds"
-        });
-        if (rule.type !== "header" && rule.type !== "subheader" && rule.type !== "multicode")
-          start += match.groups.content.length + match.groups.mds3.length;
-      }
-
-      if (rule.type === "color" && match.groups) {
-        const hex = match.groups.hex;
-        if (!hex)
-          continue;
-
-        ranges.push({
-          anchor: start,
-          focus: end,
-          type: "color",
-          hex
-        });
-        continue;
-      }
-
-      // other stuff
-      ranges.push({
-        anchor: start,
-        focus: end - fillerSub,
-        type: rule.type === "header" && match.groups?.mds ? `h${match.groups.mds.length}` : rule.type
-      });
-    }
-  }
-
-  return ranges;
-}
+  window.addEventListener("keydown", handler);
+  onCleanup(() => window.removeEventListener("keydown", handler));
+});
 
 export default function MessageInput() {
   const editor = createMemo(() => withHistory(withSolid(withMentions(createEditor()))), []);
@@ -181,12 +113,12 @@ export default function MessageInput() {
     const [node] = editor().fragment(anchor.path);
 
     // @ts-expect-error
-    if (node.children[0].type === 'mention')
+    if (node.children[0].type?.startsWith("mention"))
       Transforms.move(editor(), { reverse });
   }
 
   const initialValue = [{ type: 'paragraph', children: [{ text: '' }]}]
-  const [globalRanges, setGlobalRanges]: [Accessor<any>, Setter<any>] = createSignal([]);
+  const [globalRanges, setGlobalRanges] = createSignal<DecorationRange[]>([]);
   let [gBlocks, gBlockStrings]: [any[] | null, string[] | null] = [null, null];
 
   const getFullText = (): [any[], string[], string] => {
@@ -203,126 +135,139 @@ export default function MessageInput() {
       getFullText() :
       [gBlocks, gBlockStrings];
 
-    // path: [blockIndex, textNodeIndex]
-    const blockIndex = path[0];
-    const textNodeIndex = path[1];
+    try {
+      // path: [blockIndex, textNodeIndex]
+      const blockIndex = path[0];
+      const textNodeIndex = path[1];
 
-    let priorBlocksLen = 0;
-    for (let i = 0; i < blockIndex; i++) {
-      priorBlocksLen += blockStrings[i].length + 1;
-    }
+      let priorBlocksLen = 0;
+      for (let i = 0; i < blockIndex; i++)
+        priorBlocksLen += blockStrings[i].length + 1;
 
-    const block = blocks[blockIndex];
-    let priorTextsLen = 0;
-    for (let i = 0; i < textNodeIndex; i++) {
-      priorTextsLen += Node.string(block.children[i]).length;
-    }
+      const block = blocks[blockIndex];
+      let priorTextsLen = 0;
+      for (let i = 0; i < textNodeIndex; i++)
+        priorTextsLen += Node.string(block.children[i]).length;
 
-    const nodeStartAbsolute = priorBlocksLen + priorTextsLen;
-    const nodeText = Node.string(node);
-    const nodeEndAbsolute = nodeStartAbsolute + nodeText.length;
+      const nodeStartAbsolute = priorBlocksLen + priorTextsLen;
+      const nodeText = Node.string(node);
+      const nodeEndAbsolute = nodeStartAbsolute + nodeText.length;
 
-    const tokens = globalRanges();
+      const tokens = globalRanges();
 
-    // evil magic
-    const results: any[] = [];
-    for (const t of tokens) {
-      const overlapStart = Math.max(t.anchor, nodeStartAbsolute);
-      const overlapEnd = Math.min(t.focus, nodeEndAbsolute);
-      if (overlapStart < overlapEnd) {
-        results.push({
-          [t.type]: true,
-          anchor: { path, offset: overlapStart - nodeStartAbsolute },
-          focus: { path, offset: overlapEnd - nodeStartAbsolute },
-          hex: t.hex
-        });
+      // evil magic
+      const results: any[] = [];
+      for (const t of tokens) {
+        const overlapStart = Math.max(t.anchor, nodeStartAbsolute);
+        const overlapEnd = Math.min(t.focus, nodeEndAbsolute);
+        if (overlapStart < overlapEnd) {
+          results.push({
+            ...t.attributes,
+            [t.type]: true,
+            anchor: { path, offset: overlapStart - nodeStartAbsolute },
+            focus: { path, offset: overlapEnd - nodeStartAbsolute }
+          });
+        }
       }
-    }
 
-    gBlocks = gBlockStrings = null;
-    
-    return results;
+      gBlocks = gBlockStrings = null;
+      
+      return results;
+    } catch {
+      return [];
+    }
   };
 
   const Leaf = (props: RenderLeafProps) => {
     const leaf = props.leaf;
 
-    const classList = {
-      // @ts-expect-error special attr
-      "b": leaf.bold || leaf.italicbold,
-      // @ts-expect-error special attr
-      "i": leaf.italic || leaf.italicbold || leaf.italicunderline,
-      // @ts-expect-error special attr
-      "u": leaf.underline || leaf.italicunderline,
-      // @ts-expect-error special attr
-      "s": leaf.strikethrough,
-      // @ts-expect-error special attr
-      "spoiler-edit": leaf.spoiler,
-      // @ts-expect-error special attr
-      "code": leaf.code,
-      // @ts-expect-error special attr
-      "multiline-code": leaf.multicode,
-      // @ts-expect-error special attr
-      "h1": leaf.h1,
-      // @ts-expect-error special attr
-      "h2": leaf.h2,
-      // @ts-expect-error special attr
-      "h3": leaf.h3,
-      // @ts-expect-error special attr
-      "h4": leaf.h4,
-      // @ts-expect-error special attr
-      "h5": leaf.h5,
-      // @ts-expect-error special attr
-      "h6": leaf.h6,
-      // @ts-expect-error special attr
-      "subheader": leaf.subheader,
-      // @ts-expect-error special attr
-      "quote": leaf.quote,
-      //"list": leaf.list,
-      // @ts-expect-error special attr
-      "mds": leaf.mds,
-    };
+    // @ts-expect-error
+    const activeRules = LEAF_RULES.filter(rule => leaf[rule.name]);
 
-    // @ts-expect-error special attr
-    if (leaf.link)
+    let rendered = props.children;
+
+    for (const rule of activeRules) {
+      if (rule.leafRender) {
+        rendered = rule.leafRender({
+          attributes: props.attributes,
+          children: rendered,
+          leaf
+        });
+      }
+    }
+
+    if (activeRules.length === 0) {
       return (
-        <a
-          {...props.attributes}
-          classList={classList}
-        >
-          {props.children}
-        </a>
-      )
+        <span {...props.attributes}>
+          {rendered}
+        </span>
+      );
+    }
 
-    return (
-      <span
-        {...props.attributes}
-        // @ts-expect-error special attr
-        style={{ color: leaf.hex ?? "" }}
-        classList={classList}
-      >
-        {props.children}
-      </span>
-    );
+    return rendered;
   };
 
-  const MentionElement = (props: any) => {
+  const MentionUserElement = (props: any) => {
     return (
       <span
         {...props.attributes}
         contentEditable="false"
         class="mention int"
       >
-        @{props.element.user.displayName ?? props.element.user.username}
+        @{props.element.user?.displayName ?? props.element.user?.username ?? props.element.id}
+        {props.children}
+      </span>
+    );
+  };
+  const MentionRoleElement = (props: any) => {
+    return (
+      <span
+        {...props.attributes}
+        contentEditable="false"
+        class="mention int"
+      >
+        @{props.element.role?.name ?? props.element.id}
+        {props.children}
+      </span>
+    );
+  };
+  const MentionChannelElement = (props: any) => {
+    return (
+      <span
+        {...props.attributes}
+        contentEditable="false"
+        class="mention int"
+      >
+        #{props.element.channel?.name ?? props.element.id}
+        {props.children}
+      </span>
+    );
+  };
+  const MentionServerElement = (props: any) => {
+    return (
+      <span
+        {...props.attributes}
+        contentEditable="false"
+        class="mention int"
+      >
+        ~{props.element.server?.name ?? props.element.id}
         {props.children}
       </span>
     );
   };
 
   const renderElement = (props: any) => {
-    if (props.element.type === 'mention')
-      return <MentionElement {...props} />;
-    return <span {...props.attributes}>{props.children}</span>;
+    switch (props.element.type) {
+      case "mention_user":
+        return <MentionUserElement {...props} />;
+      case "mention_role":
+        return <MentionRoleElement {...props} />;
+      case "mention_channel":
+        return <MentionChannelElement {...props} />;
+      case "mention_server":
+        return <MentionServerElement {...props} />;
+    }
+    return <div {...props.attributes}>{props.children}</div>;
   };
 
   return (
@@ -336,7 +281,7 @@ export default function MessageInput() {
             try {
               const [start] = Range.edges(selection);
 
-              const wordBefore = Editor.before(ed, start, { unit: 'word' });
+              const wordBefore = Editor.before(ed, start, { unit: "word" });
               const before = wordBefore && Editor.before(ed, wordBefore);
               const beforeRange = before && Editor.range(ed, before, start);
               const beforeText = beforeRange && Editor.string(ed, beforeRange);
@@ -399,7 +344,7 @@ export default function MessageInput() {
                       onClick={() => {
                         // @ts-expect-error
                         Transforms.select(editor(), target());
-                        insertMention(editor(), user);
+                        insertUserMention(editor(), user);
                         setTarget(null);
                       }}
                     >
@@ -411,6 +356,7 @@ export default function MessageInput() {
             </Portal>
           )}
           <Editable
+            ref={editableRef}
             class="msg-input"
             placeholder={channelState.currentChannel() ? "Send a message in #" + channelState.currentChannel()?.name : "Send a message into the void"}
             decorate={decorate}
@@ -423,22 +369,22 @@ export default function MessageInput() {
 
               if (t && results.length > 0) {
                 switch (e.key) {
-                  case 'ArrowDown':
+                  case "ArrowDown":
                     e.preventDefault();
                     setIndex((index() + 1) % results.length);
                     return;
-                  case 'ArrowUp':
+                  case "ArrowUp":
                     e.preventDefault();
                     setIndex((index() - 1 + results.length) % results.length);
                     return;
-                  case 'Tab':
-                  case 'Enter':
+                  case "Tab":
+                  case "Enter":
                     e.preventDefault();
                     Transforms.select(editor(), t);
-                    insertMention(editor(), results[index()]);
+                    insertUserMention(editor(), results[index()]);
                     setTarget(null);
                     return;
-                  case 'Escape':
+                  case "Escape":
                     setTarget(null);
                     return;
                 }

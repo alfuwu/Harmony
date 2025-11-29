@@ -20,9 +20,8 @@
     "is-hotkey": "^0.2.0",
     "lodash": "^4.17.21",
     "marked": "^17.0.1",
-    "prismjs": "^1.30.0",
-    "slate": "^0.103.0",
-    "slate-dom": "file:./packages/slate-dom-preview",
+    "slate": "^0.110.2",
+    "slate-dom": "0.119.0",
     "slate-history": "^0.109.0",
     "solid-js": "^1.9.3"
   },
