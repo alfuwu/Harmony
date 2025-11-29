@@ -1,142 +1,117 @@
-import { Editable, RenderLeafProps, Slate, SolidEditor, withSolid } from '@slate-solid/core'
-import { Text, Node, Transforms, createEditor, Editor, Range } from 'slate'
-import { withHistory } from 'slate-history'
-import { createMemo, createSignal, For, onCleanup, onMount } from 'solid-js'
-import { channelState } from '../../lib/state/channels';
-import { messageState } from '../../lib/state/messages';
-import { authState } from '../../lib/state/auth';
-import { DecorationRange, LEAF_RULES, tokenizeMarkdown } from '../../lib/utils/Markdown';
-import { AbstractChannel, Role, Server, User } from '../../lib/utils/types';
-import { userState } from '../../lib/state/users';
-import { Portal } from 'solid-js/web';
-
-// TODO: add support for role mentions, channel mentions, and server mentions
+import { useState, useMemo, useEffect, useRef } from "react";
+import { Slate, Editable, withReact, ReactEditor } from "slate-react";
+import { createEditor, Node, Editor, Transforms, Range, Text } from "slate";
+import { withHistory } from "slate-history";
+import ReactDOM from "react-dom";
+import { useChannelState } from "../../lib/state/Channels";
+import { useMessageState } from "../../lib/state/Messages";
+import { useAuthState } from "../../lib/state/Auth";
+import { useUserState } from "../../lib/state/Users";
+import { LEAF_RULES, tokenizeMarkdown } from "../../lib/utils/Markdown";
+// @ts-ignore
+import { AbstractChannel, Role, Server, User } from "../../lib/utils/types";
 
 const withMentions = (editor: Editor) => {
-  const { isInline, isVoid, markableVoid } = editor
+  const { isInline, isVoid } = editor;
 
-  editor.isInline = element =>
+  editor.isInline = (element) =>
     // @ts-expect-error
     element.type?.startsWith("mention") ? true : isInline(element);
 
-  editor.isVoid = element =>
+  editor.isVoid = (element) =>
     // @ts-expect-error
     element.type?.startsWith("mention") ? true : isVoid(element);
 
-  editor.markableVoid = element =>
-    // @ts-expect-error
-    element.type?.startsWith("mention") || markableVoid(element);
-
-  return editor
-}
+  return editor;
+};
 
 const insertUserMention = (editor: Editor, user: User) => {
   const mention = {
     type: "mention_user",
+    id: user.id,
     user,
-    children: [{ text: `<@${user.id}>` }]
+    children: [{ text: `<@${user.id}>` }],
   };
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
+
 const insertRoleMention = (editor: Editor, role: Role) => {
   const mention = {
     type: "mention_role",
+    id: role.id,
     role,
-    children: [{ text: `<@&${role.id}>` }]
+    children: [{ text: `<@&${role.id}>` }],
   };
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
+
 const insertChannelMention = (editor: Editor, channel: AbstractChannel) => {
   const mention = {
     type: "mention_channel",
+    id: channel.id,
     channel,
-    children: [{ text: `<#${channel.id}>` }]
+    children: [{ text: `<#${channel.id}>` }],
   };
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
+
 const insertServerMention = (editor: Editor, server: Server) => {
   const mention = {
     type: "mention_server",
+    id: server.id,
     server,
-    children: [{ text: `<~${server.id}>` }]
+    children: [{ text: `<~${server.id}>` }],
   };
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
 
-let editableRef: HTMLDivElement | ((el: HTMLDivElement) => void) | undefined;
-
-onMount(() => {
-  const handler = (e: KeyboardEvent) => {
-    // ignore if the editor already has focus
-    if (document.activeElement === editableRef)
-      return;
-
-    // ignore keys that shouldn't activate typing (shift, ctrl, ...)
-    if (e.key.length !== 1 && e.key !== 'Backspace' && e.key !== 'Delete' && e.key !== 'Enter')
-      return;
-    
-    // @ts-expect-error
-    editableRef?.focus();
-  };
-
-  window.addEventListener("keydown", handler);
-  onCleanup(() => window.removeEventListener("keydown", handler));
-});
-
 export default function MessageInput() {
-  const editor = createMemo(() => withHistory(withSolid(withMentions(createEditor()))), []);
+  const editor = useMemo(
+    () => withHistory(withMentions(withReact(createEditor()))),
+    []
+  );
 
-  const [target, setTarget] = createSignal(null);
-  const [search, setSearch] = createSignal('');
-  const [index, setIndex] = createSignal(0);
+  const { currentChannel } = useChannelState();
+  const { user } = useAuthState();
+  const { messages, setMessages } = useMessageState();
+  const { users } = useUserState();
 
-  const mentionResults = () => {
-    const s = search().toLowerCase();
-    if (!s) return [];
-    return userState.users()
-      .filter(u =>
-        (u.displayName ?? u.username).toLowerCase().startsWith(s)
-      )
-      .slice(0, 10);
-  };
+  const editableRef = useRef<HTMLDivElement | null>(null);
 
-  const skipMention = (reverse: boolean) => {
-    const { selection } = editor();
-    if (!selection || !Range.isCollapsed(selection))
-      return;
+  const [target, setTarget] = useState<Range | null>(null);
+  const [search, setSearch] = useState("");
+  const [index, setIndex] = useState(0);
 
-    const { anchor } = selection;
-    const [node] = editor().fragment(anchor.path);
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (document.activeElement === editableRef.current) return;
+      if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter") return;
+      editableRef.current?.focus();
+    };
 
-    // @ts-expect-error
-    if (node.children[0].type?.startsWith("mention"))
-      Transforms.move(editor(), { reverse });
-  }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
-  const initialValue = [{ type: 'paragraph', children: [{ text: '' }]}]
-  const [globalRanges, setGlobalRanges] = createSignal<DecorationRange[]>([]);
-  let [gBlocks, gBlockStrings]: [any[] | null, string[] | null] = [null, null];
+  const initialValue = [{ type: "paragraph", children: [{ text: "" }] }];
 
   const getFullText = (): [any[], string[], string] => {
-    const blocks = editor().children as any[];
-    const blockStrings = blocks.map(b => Node.string(b));
-    return [blocks, blockStrings, blockStrings.join('\n')];
-  }
+    const blocks = editor.children as any[];
+    const blockStrings = blocks.map((b) => Node.string(b));
+    return [blocks, blockStrings, blockStrings.join("\n")];
+  };
 
   const decorate = ([node, path]: any) => {
-    if (!Text.isText(node) || path == undefined)
+    if (!Text.isText(node) || path === undefined)
       return [];
 
-    let [blocks, blockStrings] = gBlocks == null || gBlockStrings == null ?
-      getFullText() :
-      [gBlocks, gBlockStrings];
+    const [blocks, blockStrings] = getFullText();
 
     try {
-      // path: [blockIndex, textNodeIndex]
       const blockIndex = path[0];
       const textNodeIndex = path[1];
 
@@ -153,9 +128,8 @@ export default function MessageInput() {
       const nodeText = Node.string(node);
       const nodeEndAbsolute = nodeStartAbsolute + nodeText.length;
 
-      const tokens = globalRanges();
+      const tokens = tokenizeMarkdown(getFullText()[2]);
 
-      // evil magic
       const results: any[] = [];
       for (const t of tokens) {
         const overlapStart = Math.max(t.anchor, nodeStartAbsolute);
@@ -165,25 +139,20 @@ export default function MessageInput() {
             ...t.attributes,
             [t.type]: true,
             anchor: { path, offset: overlapStart - nodeStartAbsolute },
-            focus: { path, offset: overlapEnd - nodeStartAbsolute }
+            focus: { path, offset: overlapEnd - nodeStartAbsolute },
           });
         }
       }
 
-      gBlocks = gBlockStrings = null;
-      
       return results;
     } catch {
       return [];
     }
   };
 
-  const Leaf = (props: RenderLeafProps) => {
+  const Leaf = (props: any) => {
     const leaf = props.leaf;
-
-    // @ts-expect-error
-    const activeRules = LEAF_RULES.filter(rule => leaf[rule.name]);
-
+    const activeRules = LEAF_RULES.filter((rule) => leaf[rule.name]);
     let rendered = props.children;
 
     for (const rule of activeRules) {
@@ -191,197 +160,145 @@ export default function MessageInput() {
         rendered = rule.leafRender({
           attributes: props.attributes,
           children: rendered,
-          leaf
+          leaf,
         });
       }
     }
 
-    if (activeRules.length === 0) {
-      return (
-        <span {...props.attributes}>
-          {rendered}
-        </span>
-      );
-    }
+    if (activeRules.length === 0)
+      return <span {...props.attributes}>{rendered}</span>;
 
     return rendered;
   };
 
-  const MentionUserElement = (props: any) => {
-    return (
-      <span
-        {...props.attributes}
-        contentEditable="false"
-        class="mention int"
-      >
-        @{props.element.user?.displayName ?? props.element.user?.username ?? props.element.id}
-        {props.children}
-      </span>
-    );
+  const mentionResults = () => {
+    const s = search.toLowerCase();
+    if (!s) return [];
+    return users.filter((u) =>
+      (u.displayName ?? u.username).toLowerCase().startsWith(s)
+    ).slice(0, 10);
   };
-  const MentionRoleElement = (props: any) => {
-    return (
-      <span
-        {...props.attributes}
-        contentEditable="false"
-        class="mention int"
-      >
-        @{props.element.role?.name ?? props.element.id}
-        {props.children}
-      </span>
-    );
-  };
-  const MentionChannelElement = (props: any) => {
-    return (
-      <span
-        {...props.attributes}
-        contentEditable="false"
-        class="mention int"
-      >
-        #{props.element.channel?.name ?? props.element.id}
-        {props.children}
-      </span>
-    );
-  };
-  const MentionServerElement = (props: any) => {
-    return (
-      <span
-        {...props.attributes}
-        contentEditable="false"
-        class="mention int"
-      >
-        ~{props.element.server?.name ?? props.element.id}
-        {props.children}
-      </span>
-    );
+
+  const skipMention = (reverse: boolean) => {
+    const selection = editor.selection;
+    if (!selection || !Range.isCollapsed(selection))
+      return;
+    const [node] = Editor.fragment(editor, selection.anchor.path);
+    // @ts-expect-error
+    if (node.children[0]?.type?.startsWith("mention"))
+      Transforms.move(editor, { reverse });
   };
 
   const renderElement = (props: any) => {
-    switch (props.element.type) {
+    const { element } = props;
+    switch (element.type) {
       case "mention_user":
-        return <MentionUserElement {...props} />;
+        return <span {...props.attributes} contentEditable={false} className="mention int">@{element.user?.displayName ?? element.user?.username}</span>;
       case "mention_role":
-        return <MentionRoleElement {...props} />;
+        return <span {...props.attributes} contentEditable={false} className="mention int">@{element.role?.name}</span>;
       case "mention_channel":
-        return <MentionChannelElement {...props} />;
+        return <span {...props.attributes} contentEditable={false} className="mention int">#{element.channel?.name}</span>;
       case "mention_server":
-        return <MentionServerElement {...props} />;
+        return <span {...props.attributes} contentEditable={false} className="mention int">~{element.server?.name}</span>;
+      default:
+        return <div {...props.attributes}>{props.children}</div>;
     }
-    return <div {...props.attributes}>{props.children}</div>;
   };
 
   return (
-    <div class="real-wrap">
-      <div class="msg-wrap">
-        <Slate editor={editor()} initialValue={initialValue} onChange={() => {
-          const ed = editor();
-          const { selection } = ed;
+    <div className="real-wrap">
+      <div className="msg-wrap">
+        <Slate
+          // @ts-expect-error
+          editor={editor}
+          initialValue={initialValue}
+          onChange={() => {
+            const { selection } = editor;
 
-          if (selection && Range.isCollapsed(selection)) {
-            try {
-              const [start] = Range.edges(selection);
+            if (selection && Range.isCollapsed(selection)) {
+              try {
+                const [start] = Range.edges(selection);
+                const wordBefore = Editor.before(editor, start, { unit: "word" });
+                const before = wordBefore && Editor.before(editor, wordBefore);
+                const beforeRange = before && Editor.range(editor, before, start);
+                const beforeText = beforeRange && Editor.string(editor, beforeRange);
+                const beforeMatch = beforeText && beforeText.match(/^@([\w\d_-]+)$/);
 
-              const wordBefore = Editor.before(ed, start, { unit: "word" });
-              const before = wordBefore && Editor.before(ed, wordBefore);
-              const beforeRange = before && Editor.range(ed, before, start);
-              const beforeText = beforeRange && Editor.string(ed, beforeRange);
-              const beforeMatch = beforeText && beforeText.match(/^@([\w\d_-]+)$/);
+                const after = Editor.after(editor, start);
+                const afterRange = Editor.range(editor, start, after);
+                const afterText = Editor.string(editor, afterRange);
+                const afterMatch = afterText.match(/^(\s|$)/);
 
-              const after = Editor.after(ed, start);
-              const afterRange = Editor.range(ed, start, after);
-              const afterText = Editor.string(ed, afterRange);
-              const afterMatch = afterText.match(/^(\s|$)/);
-
-              if (beforeMatch && afterMatch) {
-                // @ts-expect-error
-                setTarget(beforeRange);
-                setSearch(beforeMatch[1]);
-                setIndex(0);
-              } else {
-                setTarget(null);
-              }
-            } catch {
-              // eat transient error
+                if (beforeMatch && afterMatch) {
+                  setTarget(beforeRange!);
+                  setSearch(beforeMatch[1]);
+                  setIndex(0);
+                } else {
+                  setTarget(null);
+                }
+              } catch {}
+            } else {
+              setTarget(null);
             }
-          } else {
-            setTarget(null);
-          }
-
-          const [b, bs, fullText] = getFullText();
-            
-          gBlocks = b;
-          gBlockStrings = bs;
-          const ranges = tokenizeMarkdown(fullText);
-          
-          try {
-            setGlobalRanges(ranges);
-          } catch {
-            // lalala yeah i eat transient errors bite me
-          }
-        }}>
-          {target() && mentionResults().length > 0 && (
-            <Portal>
+          }}
+        >
+          {target && mentionResults().length > 0 &&
+            ReactDOM.createPortal(
               <div
                 ref={(el) => {
                   if (!el)
                     return;
                   // @ts-expect-error
-                  const domRange = SolidEditor.toDOMRange(editor(), target());
+                  const domRange = ReactEditor.toDOMRange(editor, target);
                   const rect = domRange.getBoundingClientRect();
-                  el.style.position = 'absolute';
+                  el.style.position = "absolute";
                   el.style.top = `${rect.top + window.pageYOffset + 24}px`;
                   el.style.left = `${rect.left + window.pageXOffset}px`;
                 }}
-                class="mention-popup"
+                className="mention-popup"
               >
-                <For each={mentionResults()}>
-                  {(user, i) => (
-                    <div
-                      classList={{
-                        'mention-item': true,
-                        active: i() === index()
-                      }}
-                      onClick={() => {
-                        // @ts-expect-error
-                        Transforms.select(editor(), target());
-                        insertUserMention(editor(), user);
-                        setTarget(null);
-                      }}
-                    >
-                      @{user.displayName ?? user.username}
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Portal>
-          )}
+                {mentionResults().map((user, i) => (
+                  <div
+                    key={user.id}
+                    className={`mention-item ${i === index ? "active" : ""}`}
+                    onClick={() => {
+                      Transforms.select(editor, target);
+                      insertUserMention(editor, user);
+                      setTarget(null);
+                    }}
+                  >
+                    @{user.displayName ?? user.username}
+                  </div>
+                ))}
+              </div>,
+              document.body
+            )}
           <Editable
             ref={editableRef}
-            class="msg-input"
-            placeholder={channelState.currentChannel() ? "Send a message in #" + channelState.currentChannel()?.name : "Send a message into the void"}
+            className="msg-input"
+            placeholder={currentChannel ? `Send a message in #${currentChannel.name}` : "Send a message into the void"}
             decorate={decorate}
-            
             renderLeaf={Leaf}
             renderElement={renderElement}
             onKeyDown={(e) => {
-              const t = target();
+              const t = target;
               const results = mentionResults();
 
               if (t && results.length > 0) {
                 switch (e.key) {
                   case "ArrowDown":
                     e.preventDefault();
-                    setIndex((index() + 1) % results.length);
+                    setIndex((index + 1) % results.length);
                     return;
                   case "ArrowUp":
                     e.preventDefault();
-                    setIndex((index() - 1 + results.length) % results.length);
+                    setIndex((index - 1 + results.length) % results.length);
                     return;
                   case "Tab":
                   case "Enter":
                     e.preventDefault();
-                    Transforms.select(editor(), t);
-                    insertUserMention(editor(), results[index()]);
+                    Transforms.select(editor, t);
+                    insertUserMention(editor, results[index]);
                     setTarget(null);
                     return;
                   case "Escape":
@@ -392,52 +309,33 @@ export default function MessageInput() {
 
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
+                const text = editor.children.map((n) => Node.string(n)).join("\n");
+                // @ts-expect-error
+                editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
+                editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
+                editor.history = { undos: [], redos: [] };
 
-                // get text
-                const text = editor().children.map(n => Node.string(n)).join('\n');
-
-                // clear editor
-                editor().children.map(() => {
-                  Transforms.delete(editor(), { at: [0] })
-                });
-                const point = { path: [0, 0], offset: 0 }
-                editor().selection = { anchor: point, focus: point };
-                editor().children = [{
-                  // @ts-expect-error
-                  type: 'paragraph',
-                  children: [{ text: '' }]
-                }];
-                editor().history = { redos: [], undos: [] };
-
-                const chan = channelState.currentChannel();
-                if (chan == null)
-                  return;
-                const user = authState.user();
-                if (user == null)
-                  return;
-                const msgs = messageState.messages();
-                messageState.setMessages([...msgs, {
-                  id: -1,
-                  channelId: chan.id,
-                  authorId: user.id,
-                  mentions: [],
-                  reactions: [],
-                  content: text,
-                  previousContent: null,
-                  timestamp: Date().toString(),
-                  editedTimestamp: null,
-                  isDeleted: false,
-                  isPinned: false
-                }]);
-
-                //if (false) // currently testing stuff so don't send message
-                //  sendMessage(chan.id, text);
+                if (!currentChannel || !user) return;
+                setMessages([
+                  ...messages,
+                  {
+                    id: -1,
+                    channelId: currentChannel.id,
+                    authorId: user.id,
+                    mentions: [],
+                    reactions: [],
+                    content: text,
+                    previousContent: null,
+                    timestamp: new Date().toString(),
+                    editedTimestamp: null,
+                    isDeleted: false,
+                    isPinned: false,
+                  },
+                ]);
               }
 
-              // need to queue a microtask because this runs slightly before slate updates its selection stuff
               queueMicrotask(() => skipMention(e.key === "ArrowLeft"));
             }}
-            // if the user somehow manages to key up on a mention, skip over it (ripbozo)
             onKeyUp={(e) => skipMention(e.key === "ArrowLeft")}
           />
         </Slate>

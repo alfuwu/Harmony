@@ -1,19 +1,18 @@
-import { serverState } from "../../lib/state/servers";
+import { useServerState } from "../../lib/state/Servers";
 import { Server } from "../../lib/utils/types";
 
 export default function ServerList() {
-  const onServerClick = (s: Server) => {
-    serverState.setCurrentServer(s);
-  }
-
+  const { servers, currentServer, setCurrentServer } = useServerState();
+  const onServerClick = (s: Server) => setCurrentServer(s);
   return (
-    <div class="server-list">
-      {serverState.servers().map(s => (
+    <div className="server-list">
+      {servers.map(s => (
         <div
-          class={"server uno" + (serverState.currentServer() == s ? " selected" : "")}
-          onClick={() => serverState.setCurrentServer(s)}
+          key={s.id}
+          className={"server uno" + (currentServer && currentServer.id === s.id ? " selected" : "")}
+          onClick={() => setCurrentServer(s)}
         >
-          <img onClick={() => onServerClick(s)} class="server-icon" src={s.icon ? "https://" + s.icon : "https://cdn.discordapp.com/emojis/1327190606535069726.png"} />
+          <img onClick={() => onServerClick(s)} className="server-icon" src={s.icon ? "https://" + s.icon : "https://cdn.discordapp.com/emojis/1327190606535069726.png"} alt={s.name || "server"} />
         </div>
       ))}
     </div>

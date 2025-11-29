@@ -1,31 +1,44 @@
-import { createSignal, Show } from "solid-js";
-import { authState } from "../../lib/state/auth";
-import { userState } from "../../lib/state/users";
+import { useState } from "react";
+import { useAuthState } from "../../lib/state/Auth";
+import { useUserState } from "../../lib/state/Users";
 import { login, registerUser } from "../../lib/api/authApi";
 import { api } from "../../lib/api/http";
+import { useServerState } from "../../lib/state/Servers";
+import { useChannelState } from "../../lib/state/Channels";
+import { useMemberState } from "../../lib/state/Members";
+import { initializeClient } from "../../lib/client/init";
 
 export default function LoginScreen() {
-  const [isRegister, setIsRegister] = createSignal(false);
-  const [email, setEmail] = createSignal("");
-  const [password, setPassword] = createSignal("");
-  const [username, setUsername] = createSignal("");
-  const [error, setError] = createSignal("");
+  const { setUser, setToken } = useAuthState();
+  const { users, setUsers } = useUserState();
+  const serverState = useServerState();
+  const channelState = useChannelState();
+  const memberState = useMemberState();
+
+  const [isRegister, setIsRegister] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [error, setError] = useState("");
 
   async function handleLogin() {
     setError("");
     try {
-      const result = await login(email(), password());
-
-      authState.setToken(result.token);
+      const result = await login(email, password);
+      setToken(result.token);
       localStorage.setItem("token", result.token);
 
-      const me = await api("/users/@me", {
-        headers: { Authorization: `Bearer ${result.token}` }
+      const me = await api("/users/@me", { headers: { Authorization: `Bearer ${result.token}` } });
+      setUser(me);
+      setUsers([...users, me]);
+      initializeClient({
+        token: result.token,
+        setServers: serverState.setServers,
+        setCurrentServer: serverState.setCurrentServer,
+        setChannels: channelState.setChannels,
+        setCurrentChannel: channelState.setCurrentChannel,
+        setMembers: memberState.setMembers
       });
-
-      authState.setUser(me);
-      userState.setUsers([...userState.users(), me]);
-
     } catch (e: any) {
       setError(e.message || "Login failed");
     }
@@ -34,65 +47,64 @@ export default function LoginScreen() {
   async function handleRegister() {
     setError("");
     try {
-      const result = await registerUser(email(), password(), username());
-
-      // Immediately login after registration
-      authState.setToken(result.token);
+      const result = await registerUser(email, password, username);
+      setToken(result.token);
       localStorage.setItem("token", result.token);
 
-      const me = await api("/users/@me");
-      authState.setUser(me);
-      userState.setUsers([...userState.users(), me]);
-
+      const me = await api("/users/@me", { headers: { Authorization: `Bearer ${result.token}` } });
+      setUser(me);
+      setUsers([...users, me]);
+      initializeClient({
+        token: result.token,
+        setServers: serverState.setServers,
+        setCurrentServer: serverState.setCurrentServer,
+        setChannels: channelState.setChannels,
+        setCurrentChannel: channelState.setCurrentChannel,
+        setMembers: memberState.setMembers
+      });
     } catch (e: any) {
       setError(e.message || "Registration failed");
     }
   }
 
   return (
-    <div class="login-screen">
-      <div class="login-card">
-        <h2>{isRegister() ? "Create an account" : "Login"}</h2>
-
-        <div class="form-group">
-          <label>{isRegister() ? "Email" : "Username/Email"}</label>
+    <div className="login-screen">
+      <div className="login-card">
+        <h2>{isRegister ? "Create an account" : "Login"}</h2>
+        <div className="form-group">
+          <label>{isRegister ? "Email" : "Username/Email"}</label>
           <input
             type="email"
-            value={email()}
-            onInput={(e) => setEmail(e.currentTarget.value)}
+            value={email}
+            onChange={e => setEmail(e.currentTarget.value)}
           />
         </div>
-
-        <Show when={isRegister()}>
-          <div class="form-group">
+        {isRegister && (
+          <div className="form-group">
             <label>Username</label>
             <input
               type="text"
-              value={username()}
-              onInput={(e) => setUsername(e.currentTarget.value)}
+              value={username}
+              onChange={e => setUsername(e.currentTarget.value)}
             />
           </div>
-        </Show>
-
-        <div class="form-group">
+        )}
+        <div className="form-group">
           <label>Password</label>
           <input
             type="password"
-            value={password()}
-            onInput={(e) => setPassword(e.currentTarget.value)}
+            value={password}
+            onChange={e => setPassword(e.currentTarget.value)}
           />
         </div>
-
-        <Show when={error()}>
-          <div class="error-msg">{error()}</div>
-        </Show>
-
-        <button class="primary-btn" onClick={() => (isRegister() ? handleRegister() : handleLogin())}>
-          {isRegister() ? "Register" : "Login"}
+        {error && (
+          <div className="error-msg">{error}</div>
+        )}
+        <button className="primary-btn" onClick={() => (isRegister ? handleRegister() : handleLogin())}>
+          {isRegister ? "Register" : "Login"}
         </button>
-
-        <button class="secondary-btn" onClick={() => setIsRegister(!isRegister())}>
-          {isRegister() ? "Already have an account?" : "Create an account"}
+        <button className="secondary-btn" onClick={() => setIsRegister(!isRegister)}>
+          {isRegister ? "Already have an account?" : "Create an account"}
         </button>
       </div>
     </div>

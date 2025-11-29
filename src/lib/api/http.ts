@@ -1,14 +1,12 @@
-import { authState } from "../state/auth";
-
 export async function api(path: string, options: RequestInit = {}) {
   const headers: Record<string, any> = {
     "Content-Type": "application/json",
     ...(options.headers || {})
   };
 
-  const token = authState.token();
-  if (token)
-    headers["Authorization"] = `Bearer ${token}`;
+  //const token = useAuthState().token;
+  //if (token)
+  //  headers["Authorization"] = `Bearer ${token}`;
 
   const res = await fetch("https://localhost:7217/api" + path, {
     ...options,

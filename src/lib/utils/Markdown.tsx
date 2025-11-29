@@ -1,6 +1,5 @@
-import { createSignal } from "solid-js";
-import { JSX } from "solid-js/jsx-runtime";
-import { userState } from "../state/users";
+import React from "react";
+import { Channel, Server, User } from "./types";
 
 export const COLORS = [
   "red", "orange", "yellow", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
@@ -40,7 +39,7 @@ export interface MarkdownRule {
   decorate(match: RegExpExecArray, ctx: { matchIndex: number, text: string }): DecorationRange[];
 
   // permanent parsing (for sent messages)
-  render(match: { match: RegExpExecArray; children: (JSX.Element | string)[]; }): JSX.Element | string;
+  render(match: { match: RegExpExecArray; children: (JSX.Element | string)[]; attributes?: any }): JSX.Element | string;
 
   // how to render a range with "type" set to this rule's name
   leafRender?: (props: {
@@ -70,9 +69,11 @@ export function tokenizeMarkdown(text: string) {
   return results;
 }
 
+let globalParseMarkdownId = 0;
+
 // IT'S CLOSE ENOUGH
 // (this does not ensure perfect parity with the editor; ***text*** will show up properly as italic bold despite not showing up as italic bold in the editor)
-export function parseMarkdown(content: string): (JSX.Element | string)[] {
+export function parseMarkdown(content: string, attributes?: any): JSX.Element[] {
   if (!content) return [];
 
   let firstMatch: { rule: MarkdownRule, match: RegExpExecArray } | null = null;
@@ -84,29 +85,39 @@ export function parseMarkdown(content: string): (JSX.Element | string)[] {
       firstMatch = { rule, match };
   }
 
-  if (!firstMatch) // no matches, kil
-    return [content];
+  if (!firstMatch)
+    // no matches, just return a text node with key
+    return [<span key={globalParseMarkdownId++}>{content}</span>];
 
   const { rule, match } = firstMatch;
   const start = match.index;
   const end = start + match[0].length;
 
-  const nodes: (JSX.Element | string)[] = [];
+  const nodes: JSX.Element[] = [];
 
   // text before match
   if (start > 0)
-    nodes.push(...parseMarkdown(content.slice(0, start)));
+    nodes.push(...parseMarkdown(content.slice(0, start), attributes));
 
   // render matched rule
   const innerContent = match.groups?.content ?? match.groups?.content2 ?? "";
-  let rendered = rule.render({ match, children: !rule.parseInner || rule.parseInner(match) ? parseMarkdown(innerContent) : [innerContent] });
+  const childrenNodes = (!rule.parseInner || rule.parseInner(match)) 
+    ? parseMarkdown(innerContent, attributes)
+    : [<span key={globalParseMarkdownId++}>{innerContent}</span>];
 
-  if (rendered)
+  let rendered = rule.render({ match, children: childrenNodes, attributes });
+
+  // make sure rendered has a key
+  if (React.isValidElement(rendered)) {
+    rendered = React.cloneElement(rendered, { key: globalParseMarkdownId++ });
     nodes.push(rendered);
+  } else if (typeof rendered === "string") {
+    nodes.push(<span key={globalParseMarkdownId++}>{rendered}</span>);
+  }
 
   // text after match
   if (end < content.length)
-    nodes.push(...parseMarkdown(content.slice(end)));
+    nodes.push(...parseMarkdown(content.slice(end), attributes));
 
   return nodes;
 }
@@ -327,13 +338,13 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      const [shown, setShown] = createSignal(false);
-      return <span classList={{ spoiler: true, shown: shown() }} onClick={() => setShown(true)}>{match.children}</span>;
+      //const [shown, setShown] = React.useState(false);
+      return <span className={"spoiler"} onClick={() => {}/*setShown(true)*/}>{match.children}</span>;
     },
     
     leafRender: ({ attributes, children }) => {
       return (
-        <span class="spoiler-edit" {...attributes}>
+        <span className="spoiler-edit" {...attributes}>
           {children}
         </span>
       );
@@ -447,12 +458,12 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      return <span class={`h${match.match[1].length}`}>{match.children}</span>;
+      return <span className={`h${match.match[1].length}`}>{match.children}</span>;
     },
     
     leafRender: ({ attributes, children, leaf }) => {
       return (
-        <span class={`h${leaf.size}`} {...attributes}>
+        <span className={`h${leaf.size}`} {...attributes}>
           {children}
         </span>
       );
@@ -481,12 +492,12 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      return <span class="subheader">{match.children}</span>;
+      return <span className="subheader">{match.children}</span>;
     },
     
     leafRender: ({ attributes, children }) => {
       return (
-        <span class="subheader" {...attributes}>
+        <span className="subheader" {...attributes}>
           {children}
         </span>
       );
@@ -515,12 +526,12 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      return <span class="quote">{match.children}</span>;
+      return <span className="quote">{match.children}</span>;
     },
     
     leafRender: ({ attributes, children }) => {
       return (
-        <span class="quote" {...attributes}>
+        <span className="quote" {...attributes}>
           {children}
         </span>
       );
@@ -549,7 +560,7 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      return <span class="list">{match.children}</span>;
+      return <span className="list">{match.children}</span>;
     },
     
     leafRender: ({ attributes, children }) => {
@@ -674,18 +685,66 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      const u = userState.users().filter(u => u.id == Number(match.match.groups!.id))[0];
-      const name = "@" + (u?.displayName ?? u?.username ?? match.match.groups!.id);
-      return <span class="mention int">{name}</span>
+      const fallback = `<@${match.match.groups!.id}>`;
+      const u = match.attributes?.userState.users.filter((u: User) => u.id == Number(match.match.groups!.id))[0];
+      const name = u?.displayName ?? u?.username ? "@" + (u?.displayName ?? u.username) : fallback;
+      return <span className="mention int">{name}</span>
+    }
+  },
+  // role mentions
+  {
+    name: "mention_role",
+    regex: /<@&(?<id>[0-9]+)>/gm,
+
+    decorate() {
+      return [];
+    },
+
+    render(match) {
+      const fallback = `<@&${match.match.groups!.id}>`;
+      const s: Server = match.attributes?.currentServer;
+      if (!s)
+        return <span className="mention int">{fallback}</span>;
+      const r = s.roles.filter(r => r.id == Number(match.match.groups!.id))[0];
+      const name = r?.name ? "@" + r?.name : fallback;
+      return <span className="mention int">{name}</span>
+    }
+  },
+  // channel mentions
+  {
+    name: "mention_channel",
+    regex: /<#(?<id>[0-9]+)>/gm,
+
+    decorate() {
+      return [];
+    },
+
+    render(match) {
+      const fallback = `<#${match.match.groups!.id}>`;
+      const c = match.attributes?.channelState.channels.filter((c: Channel) => c.id == Number(match.match.groups!.id))[0];
+      const name = c?.name ? "#" + c?.name : fallback;
+      return <span className="mention int">{name}</span>
+    }
+  },
+  // server mentions
+  {
+    name: "mention_server",
+    regex: /<~(?<id>[0-9]+)>/gm,
+
+    decorate() {
+      return [];
+    },
+
+    render(match) {
+      const fallback = `<~${match.match.groups!.id}>`;
+      const s = match.attributes?.serverState.servers.filter((s: Server) => s.id == Number(match.match.groups!.id))[0];
+      const name = s?.name ? "~" + s?.name : fallback;
+      return <span className="mention int">{name}</span>
     }
   },
 
   //{ type: "italicbold", regex: /(?<filler>^|[^*])(?<mds>\*\*\*)(?<content>.*?)(?<esc>[^*])(?<mds2>\*\*\*)(?<endFiller>$|[^*])/gm },
   //{ type: "italicunderline", regex: /(?<filler>^|[^_])(?<mds>___)(?<content>.*?)(?<esc>[^_])(?<mds2>___)(?<endFiller>$|[^_])/gm },
-  //{ type: "mention_user", regex: /<@(?<id>[0-9]+)>/gm },
-  //{ type: "mention_role", regex: /<@&(?<id>[0-9]+)>/gm },
-  //{ type: "mention_channel", regex: /<#(?<id>[0-9]+)>/gm },
-  //{ type: "mention_server", regex: /<~(?<id>[0-9]+)>/gm },
   //{ type: "emoji", regex: /<:(?<name>[a-zA-Z0-9_]{1,32}):(?<id>[0-9]+)>/gm }
 ];
 
@@ -694,7 +753,7 @@ export const LEAF_RULES = [... RULES.filter(rule => rule.leafRender),
     name: "mds",
     leafRender: ({ attributes, children }: any) => {
       return (
-        <span class="mds" {...attributes}>
+        <span className="mds" {...attributes}>
           {children}
         </span>
       );
@@ -704,7 +763,7 @@ export const LEAF_RULES = [... RULES.filter(rule => rule.leafRender),
     name: "hide",
     leafRender: ({ attributes, children }: any) => {
       return (
-        <span class="hide" {...attributes}>
+        <span className="hide" {...attributes}>
           {children}
         </span>
       );

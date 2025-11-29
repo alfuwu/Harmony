@@ -1,20 +1,23 @@
-import { channelState } from "../../lib/state/channels";
-import { serverState } from "../../lib/state/servers";
+import { useChannelState } from "../../lib/state/Channels";
+import { useServerState } from "../../lib/state/Servers";
 import TextChannel from "../svgs/TextChannel";
 
 export default function ChannelList() {
+  const { channels, currentChannel, setCurrentChannel } = useChannelState();
+  const { currentServer } = useServerState();
   return (
-    <div class="channel-list">
-      <div class="server-header uno">
-        {serverState.currentServer()?.name ?? "No server selected"}
+    <div className="channel-list">
+      <div className="server-header uno">
+        {(currentServer && currentServer.name) || "No server selected"}
       </div>
       <hr />
-      {channelState.channels().map(c => (
+      {channels.map(c => (
         <div
-          class={"channel uno" + (channelState.currentChannel() == c ? " selected" : "")}
-          onClick={() => channelState.setCurrentChannel(c)}
+          key={c.id}
+          className={"channel uno" + (currentChannel && currentChannel.id === c.id ? " selected" : "")}
+          onClick={() => setCurrentChannel(c)}
         >
-          {<TextChannel class="channel-icon" />}
+          <TextChannel className="channel-icon" />
           {c.name}
         </div>
       ))}
