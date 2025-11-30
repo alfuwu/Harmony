@@ -206,12 +206,13 @@ body {
 }
 
 a {
-  text-decoration: underline;
+  text-decoration: none;
   color: #72b1Fc;
   cursor: pointer;
   transition: filter 200ms ease-in-out;
 }
 a:hover {
+  text-decoration: underline;
   filter: drop-shadow(0 0 0.5em #72b1Fc);
 }
 
@@ -224,8 +225,14 @@ hr {
   margin: 10px;
 }
 
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 input,
 button,
+textarea,
 .msg-wrap {
   border-radius: 8px;
   border: 1px solid var(--button-border);
@@ -254,6 +261,7 @@ button:active {
 
 input,
 button,
+textarea,
 .msg-wrap {
   outline: none;
 }
@@ -346,6 +354,89 @@ button,
   cursor: pointer;
 }
 
+/* positioning */
+.rel {
+  position: relative;
+}
+
+/* modal backdrop */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  opacity: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  pointer-events: none;
+  z-index: 2000;
+  transition: opacity 200ms ease-in-out;
+}
+.modal-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+  user-select: auto;
+}
+
+/* modal container */
+.modal-container {
+  background: var(--bg-3);
+  width: 380px;
+  max-width: 90vw;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+  display: grid;
+  gap: 16px;
+  transition: transform 200ms ease-in-out;
+  transform: scale(0.8) translateY(-20px);
+}
+.open > .modal-container {
+  transform: scale(1) translateY(0);
+}
+
+/* inputs */
+.modal-container input,
+.modal-container textarea {
+  width: calc(100% - 20px);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.modal-container textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+
+/* buttons row */
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-buttons button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+/* cancel button */
+.modal-buttons .cancel-btn {
+  /*background: #e5e5e5;*/
+}
+
+/* create button */
+.modal-buttons .create-btn {
+  background: black;
+  color: white;
+}
+
 /* lists */
 .server-list, .channel-list, .member-list {
   border-radius: 15px;
@@ -365,10 +456,13 @@ button,
   border-right: 1px solid var(--border);
   background: var(--bg-3);
   margin: 0 5px 4px;
-  overflow: hidden;  
+  overflow: hidden;
 }
 .member-list {
   width: 180px;
+  overflow: hidden;
+  padding: 15px 5px 0;
+  margin-top: 15px;
 }
 .message-list {
   padding: 6px 0 6px 6px;
@@ -379,12 +473,9 @@ button,
   background-color: var(--bg-2);
 }
 
-.server, .channel {
-  padding: 8px;
-}
 .channel {
+  padding: 8px;
   display: flex;
-  cursor: pointer;
   text-overflow: ellipsis;
   border-radius: 4px;
   padding: 2px;
@@ -394,7 +485,7 @@ button,
   align-items: center;
 }
 .channel:hover {
-  margin-left: 15px;
+  margin-left: 10px;
 }
 .channel:not(.selected):hover {
   background-color: var(--bg-4);
@@ -403,6 +494,9 @@ button,
   background-color: var(--bg-1);
 }
 .server {
+  padding: 1px 8px;
+  max-width: 64px;
+  max-height: 64px;
   position: relative;
   display: inline-block;
 }
@@ -441,11 +535,46 @@ button,
   width: 50px;
   cursor: pointer;
 }
+.create-server {
+  width: 35px;
+  cursor: pointer;
+}
+.uno.create-server {
+  padding: 10px 10px 5px;
+  border-radius: 10px;
+  transition: background-color 150ms ease-out;
+  will-change: background-color;
+}
+.uno.create-server:hover {
+  background-color: hsl(0, 0%, 0%, 50%);
+}
 
 .server-header {
   padding: 12px;
   font-weight: bold;
   font-size: 14px;
+}
+
+.member {
+  padding: 4px 8px;
+  height: 36px;
+  border-radius: 5px;
+  display: flex;
+}
+.member > .author {
+  align-self: center;
+}
+.member > .avatar {
+  width: 36px;
+  height: 36px;
+  margin-right: 10px;
+}
+.member:hover {
+  background-color: color-mix(in hsl, var(--bg-1), transparent);
+}
+.member:hover > .author::after {
+  left: 0;
+  width: 100%;
 }
 
 /* messages */
@@ -505,6 +634,7 @@ button,
 
 .timestamp {
   font-size: 10px;
+  font-weight: 600;
   color: #777;
   width: fit-content;
 }
@@ -613,9 +743,14 @@ button,
   font-size: large;
   display: flex;
   justify-content: center;
+  position: relative;
 }
 .title > span {
-  margin-left: 10px;
+  margin-left: 34px;
+}
+.title > .icon {
+  position: absolute;
+  left: 0;
 }
 
 .window-buttons {
@@ -923,4 +1058,10 @@ code {
   font-family: 'papyrus';
   src: url('https://alfuwu.github.io/Images/papyrus.woff') format('woff'),
     url('https://alfuwu.github.io/Images/papyrus.ttf') format('truetype');
+}
+
+@font-face{
+  font-family: 'standard galactic alphabet';
+  src: url('https://alfuwu.github.io/Images/sga.ttf') format('truetype'),
+    /*url('https://alfuwu.github.io/Images/sga.ttf') format('truetype');*/
 }

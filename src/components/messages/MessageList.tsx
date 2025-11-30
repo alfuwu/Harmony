@@ -4,8 +4,11 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
 import { parseMarkdown } from "../../lib/utils/Markdown";
-import { getAvatar, getNameFont, getPronouns, getRoleColor } from "../../lib/utils/UserUtils";
-import { User } from "../../lib/utils/types";
+import { getAvatar, getDisplayName, getNameFont, getPronouns, getRoleColor } from "../../lib/utils/UserUtils";
+import { Member, User } from "../../lib/utils/types";
+import { useMemberState } from "../../lib/state/Members";
+import UserPopout from "../layout/popouts/UserPopout";
+import { usePopoutState } from "../../lib/state/Popouts";
 
 const MERGE_WINDOW = 7 * 60 * 1000; // 7 minutes in ms
 
@@ -14,8 +17,11 @@ export default function MessageList() {
   const serverState = useServerState();
   const channelState = useChannelState();
   const userState = useUserState();
+  const memberState = useMemberState();
   const container = useRef<HTMLDivElement>(null);
   const [hoveredMessages, setHoveredMessages] = useState<Record<string, boolean>>({});
+
+  const { open, close } = usePopoutState();
 
   function setHover(id: string, value: boolean) {
     setHoveredMessages(prev => ({ ...prev, [id]: value }));
@@ -66,16 +72,47 @@ export default function MessageList() {
     return `${month}/${day}/${year}`;
   }
 
+  function openUserPopout(target: HTMLElement, user: User, member: Member | undefined) {
+    const rect = target.getBoundingClientRect();
+    open({
+      id: "user-profile",
+      element: (
+        <UserPopout
+          user={user}
+          member={member}
+          serverState={serverState}
+          onClose={() => close("user-profile")}
+          position={{
+            top: rect.bottom + window.scrollY,
+            left: rect.right + window.scrollX
+          }}
+        />
+      ),
+      options: {}
+    });
+  }
+
   return (
     <div className="message-list ovy-auto" ref={container}>
       {channelMessages.map((msg, i) => {
-        const author = userState.users.find(u => u.id === msg.authorId) || {
+        const author = userState.get(msg.authorId) || {
           displayName: null,
           username: "Unknown User",
           avatar: null,
           nameFont: null,
         } as User;
-        const avatar = getAvatar(author);
+
+        const member = serverState.currentServer ? memberState.get(author.id, serverState.currentServer?.id) : undefined;
+        if (member && member.nameFont !== "standard galactic alphabet") {
+          member.nameFont = "standard galactic alphabet";
+          memberState.addMember(member); // send update
+        }
+        const name = getDisplayName(author, member);
+        const avatar = getAvatar(author, member);
+        const roleColor = getRoleColor(serverState, author, member, serverState.currentServer === null);
+        const pronouns = getPronouns(author, member);
+        const font = getNameFont(author, member);
+
         let showHeader = true;
         const prevMsg = channelMessages[i - 1];
         if (prevMsg && prevMsg.authorId === msg.authorId) {
@@ -86,26 +123,33 @@ export default function MessageList() {
         }
 
         const hover = hoveredMessages[msg.id + msg.timestamp] || false;
-        const pronouns = getPronouns(author);
 
         return (
           <div key={msg.id + msg.timestamp + "idx:" + i} className={"message" + (msg.isDeleted ? " deleted" : "")}> 
             {showHeader && (
               <div className="group-header">
-                <img className="avatar int" src={avatar} alt="avatar" />
+                <img
+                  className="avatar uno int"
+                  src={avatar}
+                  alt="avatar"
+                  onClick={e => 
+                    openUserPopout(e.currentTarget as HTMLElement, author, member)}
+                />
                 <div className="header-meta">
                   <span
                     className="author int"
                     style={{
-                      fontFamily: !hover ? getNameFont(author) ?? undefined : undefined,
-                      color: getRoleColor(serverState, author) ?? undefined
+                      fontFamily: !hover ? font : undefined,
+                      color: roleColor
                     }}
                     onMouseEnter={() => setHover(msg.id + msg.timestamp, true)}
                     onMouseLeave={() => setHover(msg.id + msg.timestamp, false)}
+                    onClick={e => 
+                      openUserPopout(e.currentTarget as HTMLElement, author, member)}
                     data-hover={hover}
                   >
                     {hover && <span className="semitrans">@</span>}
-                    {hover ? author.username : author.displayName ?? author.username}
+                    {hover ? author.username : name}
                   </span>
                   <span className="timestamp">
                     <span className="mr uno">•</span>
@@ -127,7 +171,10 @@ export default function MessageList() {
               <span className={"content" + (msg.sending ? " sending" : "")}>{parseMarkdown(msg.content, {
                 serverState,
                 channelState,
-                userState
+                memberState,
+                userState,
+                onMentionClick: (user: User, member: Member, event: React.MouseEvent) => 
+                  openUserPopout(event.currentTarget as HTMLElement, user, member)
               })}</span>
             </div>
             {msg.editedTimestamp && <span className="edited-mark"> (edited)</span>}

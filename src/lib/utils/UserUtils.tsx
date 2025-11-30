@@ -1,5 +1,6 @@
+import { MemberState } from "../state/Members";
 import { ServerState } from "../state/Servers";
-import { Member, User } from "./types";
+import { Member, Role, User } from "./types";
 
 const DEFAULT_AVATAR = "https://cdn.discordapp.com/avatars/1038466644353232967/2cf70b3cc2b0314758dd9f8155228c89.png?size=1024";
 
@@ -11,34 +12,34 @@ export function getDisplayName(user: User, member: Member | undefined = undefine
     return member?.nickname || user.displayName || user.username;
 }
 
-export function getNameFont(user: User, member: Member | undefined = undefined): string | null {
-    const font = member?.nameFont || user.nameFont || null;
-    if (font !== null)
+export function getNameFont(user: User, member: Member | undefined = undefined): string | undefined {
+    const font = member?.nameFont || user.nameFont || undefined;
+    if (font !== undefined)
         return font.startsWith("https://") ? `url(${font})` : font;
-    return null;
+    return undefined;
 }
 
-export function getPronouns(user: User, member: Member | undefined = undefined): string | null {
-    return member?.pronouns || user.pronouns || null;
+export function getPronouns(user: User, member: Member | undefined = undefined): string | undefined {
+    return member?.pronouns || user.pronouns || undefined;
 }
 
-export function getBio(user: User, member: Member | undefined = undefined): string | null {
-    return member?.bio || user.bio || null;
+export function getBio(user: User, member: Member | undefined = undefined): string | undefined {
+    return member?.bio || user.bio || undefined;
 }
 
-export function getRoleColor(serverState: ServerState, user: User, member: Member | undefined = undefined, dms: boolean = false): string | null {
-    if (dms && user.dmColor) {
-        return "#" + user.dmColor.toString(16);
-    } else if (member) {
-        const s = serverState.servers.find(s => s.id === member.serverId);
-        if (s) {
-            const memberRoles = s.roles.filter(r => member.roles.includes(r.id));
-            const coloredRoles = memberRoles.filter(r => r.color !== 0);
-            if (coloredRoles.length > 0) {
-                coloredRoles.sort((a, b) => b.position - a.position);
-                return "#" + coloredRoles[0].color!.toString(16);
-            }
-        }
+export function getDisplayRole(serverState: ServerState, member: Member, requireColor: boolean = false): Role | undefined {
+    const s = serverState.get(member.serverId);
+    if (s) {
+        const memberRoles = s.roles.filter(r => member.roles.includes(r.id) && (!requireColor || r.color !== 0));
+        return memberRoles.sort((a, b) => b.position - a.position)[0];
     }
-    return null;
+    return undefined;
+}
+
+export function getRoleColor(serverState: ServerState, user: User, member: Member | undefined = undefined, dms: boolean = false): string | undefined {
+    if (dms && user.dmColor)
+        return "#" + user.dmColor.toString(16);
+    else if (member)
+        return "#" + getDisplayRole(serverState, member, true)?.color!.toString(16)
+    return undefined;
 }

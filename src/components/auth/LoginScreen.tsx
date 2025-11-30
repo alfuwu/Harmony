@@ -10,7 +10,7 @@ import { initializeClient } from "../../lib/client/init";
 
 export default function LoginScreen() {
   const { setUser, setToken } = useAuthState();
-  const { users, setUsers } = useUserState();
+  const { addUser } = useUserState();
   const serverState = useServerState();
   const channelState = useChannelState();
   const memberState = useMemberState();
@@ -24,20 +24,20 @@ export default function LoginScreen() {
   async function handleLogin() {
     setError("");
     try {
-      const result = await login(email, password);
+      const result = await login(username, password);
       setToken(result.token);
       localStorage.setItem("token", result.token);
 
       const me = await api("/users/@me", { headers: { Authorization: `Bearer ${result.token}` } });
       setUser(me);
-      setUsers([...users, me]);
+      addUser(me);
       initializeClient({
         token: result.token,
-        setServers: serverState.setServers,
+        addServers: serverState.addServers,
         setCurrentServer: serverState.setCurrentServer,
-        setChannels: channelState.setChannels,
+        addChannels: channelState.addChannels,
         setCurrentChannel: channelState.setCurrentChannel,
-        setMembers: memberState.setMembers
+        addMembers: memberState.addMembers
       });
     } catch (e: any) {
       setError(e.message || "Login failed");
@@ -53,14 +53,14 @@ export default function LoginScreen() {
 
       const me = await api("/users/@me", { headers: { Authorization: `Bearer ${result.token}` } });
       setUser(me);
-      setUsers([...users, me]);
+      addUser(me);
       initializeClient({
         token: result.token,
-        setServers: serverState.setServers,
+        addServers: serverState.addServers,
         setCurrentServer: serverState.setCurrentServer,
-        setChannels: channelState.setChannels,
+        addChannels: channelState.addChannels,
         setCurrentChannel: channelState.setCurrentChannel,
-        setMembers: memberState.setMembers
+        addMembers: memberState.addMembers
       });
     } catch (e: any) {
       setError(e.message || "Registration failed");
@@ -71,28 +71,31 @@ export default function LoginScreen() {
     <div className="login-screen">
       <div className="login-card">
         <h2>{isRegister ? "Create an account" : "Login"}</h2>
-        <div className="form-group">
-          <label>{isRegister ? "Email" : "Username/Email"}</label>
-          <input
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.currentTarget.value)}
-          />
-        </div>
         {isRegister && (
           <div className="form-group">
-            <label>Username</label>
+            <label>Email</label>
             <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.currentTarget.value)}
+              type="email"
+              autoComplete="off"
+              value={email}
+              onChange={e => setEmail(e.currentTarget.value)}
             />
           </div>
         )}
         <div className="form-group">
+          <label>Username/Email</label>
+          <input
+            type="text"
+            autoComplete="off"
+            value={username}
+            onChange={e => setUsername(e.currentTarget.value)}
+          />
+        </div>
+        <div className="form-group">
           <label>Password</label>
           <input
             type="password"
+            autoComplete="off"
             value={password}
             onChange={e => setPassword(e.currentTarget.value)}
           />

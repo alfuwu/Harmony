@@ -5,6 +5,7 @@ import TextChannel from "../svgs/TextChannel";
 export default function ChannelList() {
   const { channels, currentChannel, setCurrentChannel } = useChannelState();
   const { currentServer } = useServerState();
+
   return (
     <div className="channel-list">
       <div className="server-header uno">
@@ -12,9 +13,9 @@ export default function ChannelList() {
       </div>
       <hr />
       {channels.map(c => (
-        <div
+        c.serverId === currentServer?.id && <div
           key={c.id}
-          className={"channel uno" + (currentChannel && currentChannel.id === c.id ? " selected" : "")}
+          className={"channel uno int" + (currentChannel && currentChannel.id === c.id ? " selected" : "")}
           onClick={() => setCurrentChannel(c)}
         >
           <TextChannel className="channel-icon" />

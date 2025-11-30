@@ -1,7 +1,7 @@
 import React from "react";
 import { Channel, Server, User } from "./types";
-import TextChannel from "../../components/svgs/TextChannel";
 import { getChannelIcon } from "./ChannelUtils";
+import { getDisplayName, getNameFont, getRoleColor } from "./UserUtils";
 
 export const COLORS = [
   "red", "orange", "yellow", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
@@ -687,9 +687,27 @@ export const RULES: MarkdownRule[] = [
 
     render(match) {
       const fallback = `<@${match.match.groups!.id}>`;
-      const u = match.attributes?.userState.users.filter((u: User) => u.id == Number(match.match.groups!.id))[0];
-      const name = u?.displayName ?? u?.username ? "@" + (u?.displayName ?? u.username) : fallback;
-      return <span className="mention int">{name}</span>
+      const u = match.attributes?.userState.usersList.find(
+        (u: User) => u.id === Number(match.match.groups!.id)
+      );
+      const m = match.attributes?.memberState.get(u.id, match.attributes?.serverState.currentServer?.id);
+
+      const name = u ? "@" + getDisplayName(u, m) : fallback;
+      const roleColor = getRoleColor(match.attributes?.serverState, u, m, match.attributes?.serverState.currentServer === null);
+      const font = getNameFont(u, m);
+
+      return (
+        <span
+          className="mention int"
+          style={{
+            fontFamily: font,
+            color: roleColor
+          }}
+          onClick={u && match.attributes?.onMentionClick ? e => match.attributes.onMentionClick(u, m, e) : undefined}
+        >
+          {name}
+        </span>
+      );
     }
   },
   // role mentions
@@ -706,7 +724,7 @@ export const RULES: MarkdownRule[] = [
       const s: Server = match.attributes?.currentServer;
       if (!s)
         return <span className="mention int">{fallback}</span>;
-      const r = s.roles.filter(r => r.id == Number(match.match.groups!.id))[0];
+      const r = s.roles.find(r => r.id == Number(match.match.groups!.id));
       const name = r?.name ? "@" + r?.name : fallback;
       return <span className="mention int">{name}</span>
     }
@@ -722,7 +740,7 @@ export const RULES: MarkdownRule[] = [
 
     render(match) {
       const fallback = `<#${match.match.groups!.id}>`;
-      const c = match.attributes?.channelState.channels.filter((c: Channel) => c.id == Number(match.match.groups!.id))[0];
+      const c = match.attributes?.channelState.get(Number(match.match.groups!.id));
       const name = c?.name ?? fallback;
       return <span className="mention int">{c?.name && getChannelIcon(c, { className: "icon" })}{name}</span>
     }
@@ -738,7 +756,7 @@ export const RULES: MarkdownRule[] = [
 
     render(match) {
       const fallback = `<~${match.match.groups!.id}>`;
-      const s = match.attributes?.serverState.servers.filter((s: Server) => s.id == Number(match.match.groups!.id))[0];
+      const s = match.attributes?.serverState.get(Number(match.match.groups!.id));
       const name = s?.name ? "~" + s?.name : fallback;
       return <span className="mention int">{name}</span>
     }

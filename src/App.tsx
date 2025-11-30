@@ -15,11 +15,11 @@ import { ChannelProvider, useChannelState } from "./lib/state/Channels";
 import { MemberProvider, useMemberState } from "./lib/state/Members";
 import { MessageProvider } from "./lib/state/Messages";
 import { initializeClient } from "./lib/client/init";
+import { PopoutProvider } from "./lib/state/Popouts";
 
 function AppInner() {
   const { user, setUser, token, setToken } = useAuthState();
   const [loading, setLoading] = useState(true);
-  const [me, setMe] = useState<any>(null);
   const serverState = useServerState();
   const channelState = useChannelState();
   const memberState = useMemberState();
@@ -36,8 +36,7 @@ function AppInner() {
       try {
         const me = await api("/users/@me", { headers: { Authorization: `Bearer ${cached}` } });
         setUser(me);
-        setMe(me);
-        userState.setUsers([...userState.users, me]);
+        userState.addUser(me);
       } catch (e) {
         localStorage.removeItem("token");
         setToken(null);
@@ -51,11 +50,11 @@ function AppInner() {
     if (user && token) {
       initializeClient({
         token,
-        setServers: serverState.setServers,
+        addServers: serverState.addServers,
         setCurrentServer: serverState.setCurrentServer,
-        setChannels: channelState.setChannels,
+        addChannels: channelState.addChannels,
         setCurrentChannel: channelState.setCurrentChannel,
-        setMembers: memberState.setMembers
+        addMembers: memberState.addMembers
       });
     }
   }, [user, token]);
@@ -63,8 +62,9 @@ function AppInner() {
   if (loading)
     return null;
   return (
-    <div className="ven-colors">
-      {(me || user) ? (
+    <div className="ven-colors relative">
+
+      {user ? (
         <div className="app">
           <ServerList />
           <ChannelList />
@@ -93,18 +93,20 @@ function AppInner() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <UserProvider>
-        <ServerProvider>
-          <ChannelProvider>
-            <MemberProvider>
-              <MessageProvider>
-                <AppInner />
-              </MessageProvider>
-            </MemberProvider>
-          </ChannelProvider>
-        </ServerProvider>
-      </UserProvider>
-    </AuthProvider>
+    <PopoutProvider>
+      <AuthProvider>
+        <UserProvider>
+          <ServerProvider>
+            <ChannelProvider>
+              <MemberProvider>
+                <MessageProvider>
+                  <AppInner />
+                </MessageProvider>
+              </MemberProvider>
+            </ChannelProvider>
+          </ServerProvider>
+        </UserProvider>
+      </AuthProvider>
+    </PopoutProvider>
   );
 }

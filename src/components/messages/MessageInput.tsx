@@ -13,6 +13,7 @@ import { AbstractChannel, Channel, Role, Server, User } from "../../lib/utils/ty
 import { getAvatar, getNameFont } from "../../lib/utils/UserUtils";
 import { useServerState } from "../../lib/state/Servers";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
+import { sendMessage } from "../../lib/api/messageApi";
 
 const withMentions = (editor: Editor) => {
   const { isInline, isVoid, markableVoid } = editor;
@@ -79,9 +80,10 @@ export default function MessageInput() {
     []
   );
 
+  const { token } = useAuthState();
   const { channels, currentChannel } = useChannelState();
   const { user } = useAuthState();
-  const { messages, setMessages } = useMessageState();
+  const { addMessage } = useMessageState();
   const { users } = useUserState();
   const { servers } = useServerState();
 
@@ -93,7 +95,8 @@ export default function MessageInput() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (document.activeElement === editableRef.current)
+      const tag = document.activeElement?.tagName.toLowerCase();
+      if (document.activeElement === editableRef.current || tag === "input" || tag === "textarea")
         return;
       if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter")
         return;
@@ -180,7 +183,6 @@ export default function MessageInput() {
 
   const mentionResults = () => {
     const s = search.toLowerCase();
-    console.log(s);
     if (!s)
       return [];
 
@@ -282,7 +284,7 @@ export default function MessageInput() {
           {target && mentionResults().length > 0 &&
             ReactDOM.createPortal(
               <div
-                ref={(el) => {
+                ref={el => {
                   if (!el)
                     return;
                   
@@ -376,7 +378,7 @@ export default function MessageInput() {
             decorate={decorate}
             renderLeaf={Leaf}
             renderElement={renderElement}
-            onKeyDown={(e) => {
+            onKeyDown={e => {
               const t = target;
               const results = mentionResults();
 
@@ -423,26 +425,30 @@ export default function MessageInput() {
                 editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
                 editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
                 editor.history = { undos: [], redos: [] };
+                // update the editor manually
+                editor.onChange();
 
-                if (!currentChannel || !user) return;
-                setMessages([
-                  ...messages,
-                  {
-                    id: -1,
-                    channelId: currentChannel.id,
-                    authorId: user.id,
-                    mentions: [],
-                    reactions: [],
-                    content: text,
-                    previousContent: null,
-                    timestamp: new Date().toString(),
-                    editedTimestamp: null,
-                    isDeleted: false,
-                    isPinned: false,
-                    sending: true,
-                    nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
-                  },
-                ]);
+                if (!currentChannel || !user)
+                  return;
+
+                const msg = {
+                  id: -1,
+                  channelId: currentChannel.id,
+                  authorId: user.id,
+                  mentions: [],
+                  reactions: [],
+                  content: text,
+                  previousContent: null,
+                  timestamp: new Date().toString(),
+                  editedTimestamp: null,
+                  isDeleted: false,
+                  isPinned: false,
+                  sending: true,
+                  nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
+                };
+
+                addMessage(msg);
+                sendMessage(currentChannel.id, text, msg.nonce, { headers: { Authorization: `Bearer ${token}` } }).then(sentMsg => addMessage(sentMsg));
               }
 
               queueMicrotask(() => skipMention(e.key === "ArrowLeft"));

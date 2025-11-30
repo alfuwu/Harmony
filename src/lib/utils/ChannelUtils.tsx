@@ -8,9 +8,12 @@ import TextChannel from "../../components/svgs/TextChannel";
 import TextChannelLocked from "../../components/svgs/TextChannelLocked";
 import VoiceChannel from "../../components/svgs/VoiceChannel";
 import VoiceChannelLocked from "../../components/svgs/VoiceChannelLocked";
+import VoidChannel from "../../components/svgs/VoidChannel";
 import { AbstractChannel, ChannelType } from "./types";
 
-export function getChannelIcon(channel: AbstractChannel, props: any = {}) {
+export function getChannelIcon(channel: AbstractChannel | null, props: any = {}) {
+    if (!channel)
+        return <VoidChannel {...props} />;
     const p = isPrivate(channel);
     switch (channel.channelType) {
         default:

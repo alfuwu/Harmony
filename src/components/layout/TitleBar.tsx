@@ -7,9 +7,9 @@ export default function TitleBar() {
   return (
     <div className="title-bar">
       <div className="title uno">
-        {currentChannel && getChannelIcon(currentChannel, { className: "icon" })}
+        {getChannelIcon(currentChannel, { className: "icon" })}
         <span>
-          {(currentChannel && currentChannel.name) || "No channel"}
+          {(currentChannel && currentChannel.name) || "The Void"}
         </span>
       </div>
       <div className="window-buttons">

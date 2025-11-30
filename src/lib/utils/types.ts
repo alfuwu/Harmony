@@ -151,6 +151,7 @@ export interface Server {
   roles: Role[];
   emojis: Emoji[];
   createdAt: string;
+  loaded?: boolean;
 }
 
 /// small stuff
