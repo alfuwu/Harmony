@@ -5,8 +5,8 @@ import { useUserState } from "./Users";
 export interface MemberState {
   members: Member[];
   setMembers: React.Dispatch<React.SetStateAction<Member[]>>;
-  get: (id: number, serverId: number) => Member | undefined;
-  getMember: (id: number, serverId: number) => Member | undefined;
+  get: (id: number | undefined, serverId: number | undefined) => Member | undefined;
+  getMember: (id: number | undefined, serverId: number | undefined) => Member | undefined;
   addMember: (member: Member) => void;
   addMembers: (members: Member[]) => void;
   removeMember: (id: number, serverId: number) => void;
@@ -30,8 +30,8 @@ export const MemberProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return u;
   }
 
-  const get = (id: number, serverId: number): Member | undefined =>
-    members.find(m => m.user.id === id && m.serverId === serverId);
+  const get = (id: number | undefined, serverId: number | undefined): Member | undefined =>
+    id !== undefined && serverId !== undefined ? members.find(m => m.user.id === id && m.serverId === serverId) : undefined;
 
   const addMember = (member: Member) => {
     setMembers(prev => {

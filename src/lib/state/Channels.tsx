@@ -1,15 +1,15 @@
 import React, { useContext, useState, createContext } from "react";
-import { Channel } from "../utils/types";
+import { AbstractChannel } from "../utils/types";
 
 export interface ChannelState {
-  currentChannel: Channel | null;
-  setCurrentChannel: React.Dispatch<React.SetStateAction<Channel | null>>;
-  channels: Channel[];
-  setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
-  get: (id: number) => Channel | undefined;
-  getChannel: (id: number) => Channel | undefined;
-  addChannel: (channel: Channel) => void;
-  addChannels: (channels: Channel[]) => void;
+  currentChannel: AbstractChannel | null;
+  setCurrentChannel: React.Dispatch<React.SetStateAction<AbstractChannel | null>>;
+  channels: AbstractChannel[];
+  setChannels: React.Dispatch<React.SetStateAction<AbstractChannel[]>>;
+  get: (id: number) => AbstractChannel | undefined;
+  getChannel: (id: number) => AbstractChannel | undefined;
+  addChannel: (channel: AbstractChannel) => void;
+  addChannels: (channels: AbstractChannel[]) => void;
   removeChannel: (id: number) => void;
   removeChannels: (ids: number[]) => void;
 }
@@ -17,16 +17,16 @@ export interface ChannelState {
 const ChannelContext = createContext<ChannelState | undefined>(undefined);
 
 export const ChannelProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [currentChannel, setCurrentChannel] = useState<AbstractChannel | null>(null);
+  const [channels, setChannels] = useState<AbstractChannel[]>([]);
 
   const get = (id: number) =>
     channels.find(c => c.id === id);
 
-  const addChannel = (channel: Channel) => 
+  const addChannel = (channel: AbstractChannel) => 
     setChannels(prev => [prev.filter(c => c.id !== channel.id), channel].flat());
 
-  const addChannels = (newChannels: Channel[]) => {
+  const addChannels = (newChannels: AbstractChannel[]) => {
     setChannels(prev => {
       const newIds = new Set(newChannels.map(c => c.id));
       return [...prev.filter(c => !newIds.has(c.id)), ...newChannels];

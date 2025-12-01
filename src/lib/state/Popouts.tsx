@@ -1,6 +1,7 @@
 import { useState, useCallback, useContext, createRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { createContext } from "react";
+import { rootRef } from "../../App";
 
 export interface PopoutState {
   open: (popout: Popout) => void;
@@ -71,7 +72,7 @@ export const PopoutProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             </div>
           ))}
         </div>,
-        document.body
+        rootRef.current ?? document.body
       )}
     </PopoutContext.Provider>
   );

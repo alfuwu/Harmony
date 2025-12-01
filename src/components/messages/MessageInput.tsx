@@ -8,12 +8,13 @@ import { useMessageState } from "../../lib/state/Messages";
 import { useAuthState } from "../../lib/state/Auth";
 import { useUserState } from "../../lib/state/Users";
 import { LEAF_RULES, tokenizeMarkdown } from "../../lib/utils/Markdown";
-// @ts-ignore
 import { AbstractChannel, Channel, Role, Server, User } from "../../lib/utils/types";
-import { getAvatar, getNameFont } from "../../lib/utils/UserUtils";
+import { getAvatar, getDisplayName, getNameFont, getRoleColor } from "../../lib/utils/UserUtils";
 import { useServerState } from "../../lib/state/Servers";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage } from "../../lib/api/messageApi";
+import { rootRef } from "../../App";
+import { useMemberState } from "../../lib/state/Members";
 
 const withMentions = (editor: Editor) => {
   const { isInline, isVoid, markableVoid } = editor;
@@ -85,7 +86,9 @@ export default function MessageInput() {
   const { user } = useAuthState();
   const { addMessage } = useMessageState();
   const { users } = useUserState();
-  const { servers } = useServerState();
+  const serverState = useServerState();
+  const { servers, currentServer } = serverState;
+  const { get } = useMemberState();
 
   const editableRef = useRef<HTMLDivElement | null>(null);
 
@@ -190,7 +193,7 @@ export default function MessageInput() {
       const chans = channels.filter(c => c.serverId === currentChannel?.serverId);
       // channel mentions
       return chans
-        .filter(c => c.name.toLowerCase().startsWith(s.slice(1)))
+        .filter(c => c.name?.toLowerCase()?.startsWith(s.slice(1)))
         .slice(0, 10)
         .map(c => ({ ...c, type: "channel" }));
     } else if (search.startsWith("~")) {
@@ -224,9 +227,33 @@ export default function MessageInput() {
     const { element } = props;
     switch (element.type) {
       case "mention_user":
-        return <span {...props.attributes} contentEditable={false} className="mention int">@{element.user?.displayName ?? element.user?.username}</span>;
+        const m = get(element.user?.id, currentServer?.id);
+        return (
+          <span
+            {...props.attributes}
+            contentEditable={false}
+            className="mention int"
+            style={{
+              fontFamily: getNameFont(element.user, m),
+              "--special-mention-color": getRoleColor(serverState, element.user, m, currentServer === null)
+            }}
+          >
+            @{getDisplayName(element.user)}
+          </span>
+        );
       case "mention_role":
-        return <span {...props.attributes} contentEditable={false} className="mention int">@{element.role?.name}</span>;
+        return (
+          <span
+            {...props.attributes}
+            contentEditable={false}
+            className="mention int"
+            style={{
+              "--special-mention-color": element.role && element.role.color ? `#${element.role.color.toString(16).padStart(6, "0")}` : undefined
+            }}
+          >
+            @{element.role?.name}
+          </span>
+        );
       case "mention_channel":
         return <span {...props.attributes} contentEditable={false} className="mention int">{getChannelIcon(element.channel, { className: "icon" })}{element.channel?.name}</span>;
       case "mention_server":
@@ -237,226 +264,228 @@ export default function MessageInput() {
   };
 
   return (
-    <div className="real-wrap">
-      <div className="msg-wrap">
-        <Slate
-          // @ts-expect-error
-          editor={editor}
-          initialValue={initialValue}
-          onChange={() => {
-            const { selection } = editor;
+    <Slate
+      // @ts-expect-error
+      editor={editor}
+      initialValue={initialValue}
+      onChange={() => {
+        const { selection } = editor;
 
-            if (selection && Range.isCollapsed(selection)) {
-              try {
-                const start = selection.anchor;
+        if (selection && Range.isCollapsed(selection)) {
+          try {
+            const start = selection.anchor;
 
-                let from = start;
-                while (true) {
-                  const prev = Editor.before(editor, from, { distance: 1 });
-                  if (!prev)
-                    break;
-                  const r = Editor.range(editor, prev, from);
-                  const ch = Editor.string(editor, r);
-                  if (/[\s]/.test(ch))
-                    break; // stop at whitespace (maybe refactor so that servers with whitespace can be more fully typed out?)
-                  from = prev;
-                }
+            let from = start;
+            while (true) {
+              const prev = Editor.before(editor, from, { distance: 1 });
+              if (!prev)
+                break;
+              const r = Editor.range(editor, prev, from);
+              const ch = Editor.string(editor, r);
+              if (/[\s]/.test(ch))
+                break; // stop at whitespace (maybe refactor so that servers with whitespace can be more fully typed out?)
+              from = prev;
+            }
 
-                const mentionRange = Editor.range(editor, from, start);
-                const mentionText = Editor.string(editor, mentionRange);
+            const mentionRange = Editor.range(editor, from, start);
+            const mentionText = Editor.string(editor, mentionRange);
 
-                const m = mentionText.match(/^([@#~])([\w-]*)$/);
-                if (m) {
-                  setTarget(mentionRange);
-                  setSearch(mentionText);
-                  setIndex(0);
-                } else {
-                  setTarget(null);
-                }
-              } catch {
-                // lalala yeah i eat transient errors bite me
-              }
+            const m = mentionText.match(/^([@#~])([\w-]*)$/);
+            if (m) {
+              setTarget(mentionRange);
+              setSearch(mentionText);
+              setIndex(0);
             } else {
               setTarget(null);
             }
-          }}
-        >
-          {target && mentionResults().length > 0 &&
-            ReactDOM.createPortal(
-              <div
-                ref={el => {
-                  if (!el)
-                    return;
-                  
-                  requestAnimationFrame(() => {
-                    // @ ts-expect-error
-                    //const domRange = ReactEditor.toDOMRange(editor, target);
-                    //const rect = domRange.getBoundingClientRect();
-                    const inputWrapper = document.querySelector(".msg-wrap");
-                    if (!inputWrapper)
-                      return;
-
-                    const rect = inputWrapper.getBoundingClientRect();
-                    const popupHeight = el.offsetHeight;
-
-                    el.style.position = "absolute";
-                    el.style.top = `${rect.top + window.pageYOffset - popupHeight - 4}px`; // above input
-                    el.style.left = `${rect.left + window.pageXOffset}px`;
-                    el.style.width = `${rect.width - 8}px`;
-                  });
-                }}
-                className="ven-colors mention-popup"
-              >
-                <span className="mention-title">{search[0] === "@" ?
-                  "MEMBERS" : search[0] === "#" ?
-                  "CHANNELS" : search[0] === "~" ?
-                  "SERVERS" : search[0] === ":" ?
-                  "EMOJIS" : "UNKNOWN"}
-                </span>
-                {mentionResults().map((item, i) => {
-                  switch (item.type) {
-                    case "user":
-                      const u = item as User;
-                      return (
-                        <div
-                          key={u.id}
-                          className={`mention-item int ${i === index ? "active" : ""}`}
-                          onClick={() => {
-                            Transforms.select(editor, target);
-                            insertUserMention(editor, u);
-                            setTarget(null);
-                          }}
-                          onMouseEnter={() => setIndex(i)}
-                        >
-                          <img className="avatar" src={getAvatar(u)} alt="avatar" />
-                          <span style={{ fontFamily: getNameFont(u) ?? undefined }}>{u.displayName ?? u.username}</span>
-                          <span className="username">@{u.username}</span>
-                        </div>
-                      );
-                    case "channel":
-                      const c = item as Channel;
-                      return (
-                        <div
-                          key={c.id}
-                          className={`mention-item int ${i === index ? "active" : ""}`}
-                          onClick={() => {
-                            Transforms.select(editor, target);
-                            insertChannelMention(editor, c);
-                            setTarget(null);
-                          }}
-                          onMouseEnter={() => setIndex(i)}
-                        >
-                          {getChannelIcon(c, { className: "icon" })}
-                          <span>{c.name}</span>
-                        </div>
-                      );
-                    case "server":
-                      const s = item as Server;
-                      return (
-                        <div
-                          key={s.id}
-                          className={`mention-item int ${i === index ? "active" : ""}`}
-                          onClick={() => {
-                            Transforms.select(editor, target);
-                            insertServerMention(editor, s);
-                            setTarget(null);
-                          }}
-                          onMouseEnter={() => setIndex(i)}
-                        >
-                          <span>~{s.name}</span>
-                        </div>
-                      );
-                  }
-                })}
-              </div>,
-              document.body
-            )}
-          <Editable
-            ref={editableRef}
-            className="msg-input"
-            placeholder={currentChannel ? `Send a message in #${currentChannel.name}` : "Send a message into the void"}
-            decorate={decorate}
-            renderLeaf={Leaf}
-            renderElement={renderElement}
-            onKeyDown={e => {
-              const t = target;
-              const results = mentionResults();
-
-              if (t && results.length > 0) {
-                switch (e.key) {
-                  case "ArrowDown":
-                    e.preventDefault();
-                    setIndex((index + 1) % results.length);
-                    return;
-                  case "ArrowUp":
-                    e.preventDefault();
-                    setIndex((index - 1 + results.length) % results.length);
-                    return;
-                  case "Tab":
-                  case "Enter":
-                    e.preventDefault();
-                    Transforms.select(editor, t);
-                    switch (results[index].type) {
-                      case "channel":
-                        insertChannelMention(editor, results[index] as Channel);
-                        break;
-                      case "user":
-                        insertUserMention(editor, results[index] as User);
-                        break;
-                      case "role":
-                        //insertRoleMention(editor, results[index] as Role);
-                        break;
-                      case "server":
-                        insertServerMention(editor, results[index] as Server);
-                        break;
-                    }
-                    setTarget(null);
-                    return;
-                  case "Escape":
-                    setTarget(null);
-                    return;
-                }
-              }
-
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                const text = editor.children.map((n) => Node.string(n)).join("\n");
-                // @ts-expect-error
-                editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
-                editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
-                editor.history = { undos: [], redos: [] };
-                // update the editor manually
-                editor.onChange();
-
-                if (!currentChannel || !user)
+          } catch {
+            // lalala yeah i eat transient errors bite me
+          }
+        } else {
+          setTarget(null);
+        }
+      }}
+    >
+      {target && mentionResults().length > 0 &&
+        ReactDOM.createPortal(
+          <div
+            ref={el => {
+              if (!el)
+                return;
+              
+              requestAnimationFrame(() => {
+                // @ ts-expect-error
+                //const domRange = ReactEditor.toDOMRange(editor, target);
+                //const rect = domRange.getBoundingClientRect();
+                const inputWrapper = document.querySelector(".msg-wrap");
+                if (!inputWrapper)
                   return;
 
-                const msg = {
-                  id: -1,
-                  channelId: currentChannel.id,
-                  authorId: user.id,
-                  mentions: [],
-                  reactions: [],
-                  content: text,
-                  previousContent: null,
-                  timestamp: new Date().toString(),
-                  editedTimestamp: null,
-                  isDeleted: false,
-                  isPinned: false,
-                  sending: true,
-                  nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
-                };
+                const rect = inputWrapper.getBoundingClientRect();
+                const popupHeight = el.offsetHeight;
 
-                addMessage(msg);
-                sendMessage(currentChannel.id, text, msg.nonce, { headers: { Authorization: `Bearer ${token}` } }).then(sentMsg => addMessage(sentMsg));
-              }
-
-              queueMicrotask(() => skipMention(e.key === "ArrowLeft"));
+                el.style.position = "absolute";
+                el.style.top = `${rect.top + window.pageYOffset - popupHeight - 4}px`; // above input
+                el.style.left = `${rect.left + window.pageXOffset}px`;
+                el.style.width = `${rect.width - 8}px`;
+              });
             }}
-            onKeyUp={(e) => skipMention(e.key === "ArrowLeft")}
-          />
-        </Slate>
-      </div>
-    </div>
+            className="ven-colors mention-popup"
+          >
+            <span className="mention-title">{
+              search[0] === "@" ? "MEMBERS" :
+              search[0] === "#" ? "CHANNELS" :
+              search[0] === "~" ? "SERVERS" :
+              search[0] === ":" ? "EMOJIS" :
+              "UNKNOWN"
+            }</span>
+            {mentionResults().map((item, i) => {
+              switch (item.type) {
+                case "user":
+                  const u = item as User;
+                  const m = get(u.id, currentServer?.id);
+                  return (
+                    <div
+                      key={u.id}
+                      className={`mention-item int ${i === index ? "active" : ""}`}
+                      onClick={() => {
+                        Transforms.select(editor, target);
+                        insertUserMention(editor, u);
+                        setTarget(null);
+                      }}
+                      onMouseEnter={() => setIndex(i)}
+                    >
+                      <img className="avatar" src={getAvatar(u, m)} alt="avatar" />
+                      <span style={{ fontFamily: getNameFont(u, m) }}>{getDisplayName(u, m)}</span>
+                      <span className="username">@{u.username}</span>
+                    </div>
+                  );
+                case "channel":
+                  const c = item as Channel;
+                  return (
+                    <div
+                      key={c.id}
+                      className={`mention-item int ${i === index ? "active" : ""}`}
+                      onClick={() => {
+                        Transforms.select(editor, target);
+                        insertChannelMention(editor, c);
+                        setTarget(null);
+                      }}
+                      onMouseEnter={() => setIndex(i)}
+                    >
+                      {getChannelIcon(c, { className: "icon" })}
+                      <span>{c.name}</span>
+                    </div>
+                  );
+                case "server":
+                  const s = item as Server;
+                  return (
+                    <div
+                      key={s.id}
+                      className={`mention-item int ${i === index ? "active" : ""}`}
+                      onClick={() => {
+                        Transforms.select(editor, target);
+                        insertServerMention(editor, s);
+                        setTarget(null);
+                      }}
+                      onMouseEnter={() => setIndex(i)}
+                    >
+                      <span>~{s.name}</span>
+                    </div>
+                  );
+              }
+            })}
+          </div>,
+          rootRef.current ?? document.body
+        )}
+      <Editable
+        ref={editableRef}
+        className="msg-input"
+        placeholder={currentChannel ? `Send a message in #${currentChannel.name}` : "Send a message into the void"}
+        decorate={decorate}
+        renderLeaf={Leaf}
+        renderElement={renderElement}
+        onKeyDown={e => {
+          const t = target;
+          const results = mentionResults();
+
+          if (t && results.length > 0) {
+            switch (e.key) {
+              case "ArrowDown":
+                e.preventDefault();
+                setIndex((index + 1) % results.length);
+                return;
+              case "ArrowUp":
+                e.preventDefault();
+                setIndex((index - 1 + results.length) % results.length);
+                return;
+              case "Tab":
+              case "Enter":
+                e.preventDefault();
+                Transforms.select(editor, t);
+                switch (results[index].type) {
+                  case "channel":
+                    insertChannelMention(editor, results[index] as Channel);
+                    break;
+                  case "user":
+                    insertUserMention(editor, results[index] as User);
+                    break;
+                  case "role":
+                    //insertRoleMention(editor, results[index] as Role);
+                    break;
+                  case "server":
+                    insertServerMention(editor, results[index] as Server);
+                    break;
+                }
+                setTarget(null);
+                return;
+              case "Escape":
+                setTarget(null);
+                return;
+            }
+          }
+
+          if (e.key === "Enter") {
+            if (e.shiftKey) {
+              
+            } else {
+              e.preventDefault();
+              const text = editor.children.map((n) => Node.string(n)).join("\n");
+              // @ts-expect-error
+              editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
+              editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
+              editor.history = { undos: [], redos: [] };
+              // update the editor manually
+              editor.onChange();
+
+              if (!currentChannel || !user)
+                return;
+
+              const msg = {
+                id: -1,
+                channelId: currentChannel.id,
+                authorId: user.id,
+                mentions: [],
+                reactions: [],
+                content: text,
+                previousContent: null,
+                timestamp: new Date().toString(),
+                editedTimestamp: null,
+                isDeleted: false,
+                isPinned: false,
+                sending: true,
+                nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
+              };
+
+              addMessage(msg);
+              sendMessage(currentChannel.id, text, msg.nonce, { headers: { Authorization: `Bearer ${token}` } }).then(sentMsg => addMessage(sentMsg));
+            }
+          }
+
+          queueMicrotask(() => skipMention(e.key === "ArrowLeft"));
+        }}
+        onKeyUp={(e) => skipMention(e.key === "ArrowLeft")}
+      />
+    </Slate>
   );
 }

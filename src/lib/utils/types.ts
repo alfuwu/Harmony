@@ -22,9 +22,11 @@ export interface User {
   displayName?: string | null;
   username: string;
   passwordHash: string;
+  status?: string;
   bio?: string | null;
   pronouns?: string | null;
   avatar?: string | null;
+  banner?: string | null;
   nameFont?: string | null;
   joinedAt: string;
   lastSeen: string;
@@ -42,6 +44,7 @@ export interface Member {
   bio?: string | null;
   pronouns?: string | null;
   avatar?: string | null;
+  banner?: string | null;
   nameFont?: string | null;
   joinedAt: string;
   roles: number[];
@@ -86,6 +89,14 @@ export interface AbstractChannel {
   id: number;
   channelType: ChannelType;
   lastMessage?: number | null;
+  name?: string | null;
+  description?: string | null;
+  serverId?: number;
+  parentId?: number;
+  icon?: string | null;
+  position?: number;
+  slowmode?: number;
+  createdAt?: string;
 }
 
 export interface Channel extends AbstractChannel {

@@ -5,20 +5,24 @@ import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
 import { parseMarkdown } from "../../lib/utils/Markdown";
 import { getAvatar, getDisplayName, getNameFont, getPronouns, getRoleColor } from "../../lib/utils/UserUtils";
-import { Member, User } from "../../lib/utils/types";
+import { Channel, Member, Server, User } from "../../lib/utils/types";
 import { useMemberState } from "../../lib/state/Members";
-import UserPopout from "../layout/popouts/UserPopout";
 import { usePopoutState } from "../../lib/state/Popouts";
+import { useAuthState } from "../../lib/state/Auth";
+import { loadServer } from "../../lib/api/serverApi";
+import UserPopout from "../layout/popouts/UserPopout";
 
 const MERGE_WINDOW = 7 * 60 * 1000; // 7 minutes in ms
 
 export default function MessageList() {
-  const { messages } = useMessageState();
+  const { token, user } = useAuthState();
   const serverState = useServerState();
   const channelState = useChannelState();
   const userState = useUserState();
   const memberState = useMemberState();
+  const messageState = useMessageState();
   const container = useRef<HTMLDivElement>(null);
+  const wasAtBottomRef = useRef(true);
   const [hoveredMessages, setHoveredMessages] = useState<Record<string, boolean>>({});
 
   const { open, close } = usePopoutState();
@@ -31,16 +35,54 @@ export default function MessageList() {
     let c = channelState.currentChannel;
     if (!c)
       return [];
-    return messages
+    return messageState.messages
       .filter(m => m.channelId === c.id)
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  }, [channelState, messages]);
+  }, [channelState, messageState.messages]);
+
+  const handleScroll = () => {
+    if (!container.current)
+      return;
+    const el = container.current;
+    wasAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 10; // 10px threshold
+  };
+
+  useEffect(() => {
+    const el = container.current;
+    if (!el)
+      return;
+    el.addEventListener("scroll", handleScroll);
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     if (!container.current)
       return;
-    container.current.scrollTop = container.current.scrollHeight;
+
+    const el = container.current;
+
+    const lastMessage = channelMessages[channelMessages.length - 1];
+    const userSentMessage = user && lastMessage?.authorId === user.id;
+
+    if (userSentMessage || wasAtBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+      wasAtBottomRef.current = true;
+    }
   }, [channelMessages]);
+
+  useEffect(() => {
+    if (!container.current)
+      return;
+    const el = container.current;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (wasAtBottomRef.current)
+        el.scrollTop = el.scrollHeight;
+    });
+
+    resizeObserver.observe(el);
+    return () => resizeObserver.disconnect();
+  }, []);
 
   function formatMessageTimestamp(iso: string): string {
     const date = new Date(iso);
@@ -102,10 +144,10 @@ export default function MessageList() {
           nameFont: null,
         } as User;
 
-        const member = serverState.currentServer ? memberState.get(author.id, serverState.currentServer?.id) : undefined;
+        const member = memberState.get(author.id, serverState.currentServer?.id);
         if (member && member.nameFont !== "standard galactic alphabet") {
           member.nameFont = "standard galactic alphabet";
-          memberState.addMember(member); // send update
+          setTimeout(() => memberState.addMember(member), 0); // send update
         }
         const name = getDisplayName(author, member);
         const avatar = getAvatar(author, member);
@@ -173,8 +215,33 @@ export default function MessageList() {
                 channelState,
                 memberState,
                 userState,
-                onMentionClick: (user: User, member: Member, event: React.MouseEvent) => 
-                  openUserPopout(event.currentTarget as HTMLElement, user, member)
+                onMentionClick: (user: User, member: Member, event: React.MouseEvent) => {
+                  event.preventDefault();
+                  openUserPopout(event.currentTarget as HTMLElement, user, member);
+                },
+                onChannelClick: (channel: Channel, event: React.MouseEvent) => {
+                  if (channelState.currentChannel?.id !== channel.id) {
+                    event.preventDefault();
+                    if (serverState.currentServer?.id !== channel.serverId) {
+                      const server = serverState.get(channel.serverId);
+                      if (server) {
+                        loadServer(server, channelState, memberState, messageState, token!);
+                        serverState.setCurrentServer(server);
+                      } else {
+                        return;
+                      }
+                    }
+                    channelState.setCurrentChannel(channel);
+                  }
+                },
+                onServerClick: (server: Server, event: React.MouseEvent) => {
+                  event.preventDefault();
+                  if (serverState.currentServer?.id !== server.id) {
+                    loadServer(server, channelState, memberState, messageState, token!);
+                    serverState.setCurrentServer(server);
+                    channelState.setCurrentChannel(null);
+                  }
+                },
               })}</span>
             </div>
             {msg.editedTimestamp && <span className="edited-mark"> (edited)</span>}

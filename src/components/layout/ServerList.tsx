@@ -4,6 +4,7 @@ import { useAuthState } from "../../lib/state/Auth";
 import { useChannelState } from "../../lib/state/Channels";
 import { useMemberState } from "../../lib/state/Members";
 import { useServerState } from "../../lib/state/Servers";
+import { useMessageState } from "../../lib/state/Messages";
 import CreateServerModal from "./modals/CreateSeverModal";
 
 export default function ServerList() {
@@ -12,19 +13,20 @@ export default function ServerList() {
   const [modalOpen, setModalOpen] = useState(false);
   const channelState = useChannelState();
   const memberState = useMemberState();
+  const messageState = useMessageState();
 
   return (
     <div className="server-list">
-      <hr style={{ width: "calc(100% - 20px)" }} />
+      <hr />
       {servers.map(s => (
         <div
           key={s.id}
           className={"server uno" + (currentServer && currentServer.id === s.id ? " selected" : "")}
         >
-          <img onClick={() => { loadServer(s, channelState, memberState, token!); setCurrentServer(s); channelState.setCurrentChannel(null); }} className="server-icon" src={s.icon ? "https://" + s.icon : "https://cdn.discordapp.com/emojis/1327190606535069726.png"} alt={s.name || "server"} />
+          <img onClick={() => { loadServer(s, channelState, memberState, messageState, token!); setCurrentServer(s); channelState.setCurrentChannel(null); }} className="server-icon" src={s.icon ? "https://" + s.icon : "https://cdn.discordapp.com/emojis/1327190606535069726.png"} alt={s.name || "server"} />
         </div>
       ))}
-      <hr style={{ width: "calc(100% - 20px)" }} />
+      <hr />
       <div className="uno create-server">
         <svg
           className="create-server"

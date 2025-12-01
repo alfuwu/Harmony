@@ -1,15 +1,19 @@
-import { MemberState } from "../state/Members";
+import { hostUrl } from "../../App";
 import { ServerState } from "../state/Servers";
 import { Member, Role, User } from "./types";
 
 const DEFAULT_AVATAR = "https://cdn.discordapp.com/avatars/1038466644353232967/2cf70b3cc2b0314758dd9f8155228c89.png?size=1024";
 
 export function getAvatar(user: User, member: Member | undefined = undefined): string {
-    return member?.avatar || user.avatar || DEFAULT_AVATAR;
+    return member?.avatar ? `${hostUrl}/api/users/${user.id}/${member.serverId}/avatar` : user.avatar ? `${hostUrl}/api/users/${user.id}/avatar` : DEFAULT_AVATAR;
+}
+
+export function getBanner(user: User, member: Member | undefined = undefined): string {
+    return member?.banner ? `${hostUrl}/api/users/${user.id}/${member.serverId}/banner` : user.banner ? `${hostUrl}/api/users/${user.id}/banner` : DEFAULT_AVATAR;
 }
 
 export function getDisplayName(user: User, member: Member | undefined = undefined): string {
-    return member?.nickname || user.displayName || user.username;
+    return member?.nickname || user?.displayName || user?.username;
 }
 
 export function getNameFont(user: User, member: Member | undefined = undefined): string | undefined {
@@ -38,8 +42,11 @@ export function getDisplayRole(serverState: ServerState, member: Member, require
 
 export function getRoleColor(serverState: ServerState, user: User, member: Member | undefined = undefined, dms: boolean = false): string | undefined {
     if (dms && user.dmColor)
-        return "#" + user.dmColor.toString(16);
-    else if (member)
-        return "#" + getDisplayRole(serverState, member, true)?.color!.toString(16)
+        return "#" + user.dmColor.toString(16).padStart(6, "0");
+    else if (member) {
+        const r = getDisplayRole(serverState, member, true);
+        if (r)
+            return "#" + r.color!.toString(16).padStart(6, "0");
+    }
     return undefined;
 }

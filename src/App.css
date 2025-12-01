@@ -100,12 +100,6 @@
 
   --default-mention-color: hsl(228.14 100% 83.137%);
   /*--default-mention-color: var(--acent-1);*/
-  --mention-color: attr(data-mention-color, var(--default-mention-color));
-  --mention-color-hover: attr(data-mention-color, color-mix(in hsl, var(--default-mention-color), white));
-  --mention-foreground: var(--mention-color);
-  --mention-background-color: color-mix(in hsl, var(--mention-color), black);
-  --mention-background: color-mix(in hsl, var(--mention-background-color), transparent 70%);
-  --mention-background-hover: color-mix(in hsl, var(--mention-background-color), transparent 30%);
 }
 
 .ven-colors {
@@ -223,6 +217,15 @@ h1 {
 hr {
   border: 1px solid var(--border);
   margin: 10px;
+  width: calc(100% - 20px);
+}
+
+:autofill {
+  background-color: var(--bg-1) !important;
+  box-shadow: 0 0 0px 1000px var(--bg-1) inset !important;
+  border: 1px solid var(--button-border) !important;
+  outline: none !important;
+  -webkit-text-fill-color: var(--text-1) !important;
 }
 
 input[type="password"]::-ms-reveal,
@@ -304,12 +307,12 @@ textarea,
 
 /* aligns */
 .valign {
-  flex: 1;
+  flex: 1 1 1px;
   display: flex;
   flex-direction: column;
 }
 .halign {
-  flex: 1;
+  flex: 1 1 1px;
   display: flex;
   flex-direction: row;
 }
@@ -427,9 +430,9 @@ textarea,
 }
 
 /* cancel button */
-.modal-buttons .cancel-btn {
-  /*background: #e5e5e5;*/
-}
+/*.modal-buttons .cancel-btn {
+  background: #e5e5e5;
+}*/
 
 /* create button */
 .modal-buttons .create-btn {
@@ -453,20 +456,20 @@ textarea,
 }
 .channel-list {
   width: 240px;
-  border-right: 1px solid var(--border);
   background: var(--bg-3);
   margin: 0 5px 4px;
-  overflow: hidden;
+  overflow: hidden auto;
 }
 .member-list {
   width: 180px;
-  overflow: hidden;
+  background: var(--bg-3);
   padding: 15px 5px 0;
   margin-top: 15px;
+  overflow: hidden auto;
 }
 .message-list {
   padding: 6px 0 6px 6px;
-  max-height: 80vh;
+  max-height: 100%;
 }
 
 .server-header:hover {
@@ -655,6 +658,7 @@ textarea,
 
 .content-container {
   margin-left: 52px;
+  min-height: 16px;
 }
 .content-container > .timestamp {
   position: absolute;
@@ -691,12 +695,20 @@ textarea,
 }
 
 .mention {
+  /* we need to define these here instead of in :root to allow per-mention overrides */
+  --mention-color: var(--special-mention-color, var(--default-mention-color));
+  --mention-color-hover: var(--special-mention-color, color-mix(in hsl, var(--default-mention-color), white));
+  --mention-foreground: var(--mention-color);
+  --mention-background-color: color-mix(in hsl, var(--mention-color), black);
+  --mention-background: color-mix(in hsl, var(--mention-background-color), transparent 70%);
+  --mention-background-hover: var(--mention-background-color);
+
   background: var(--mention-background);
   color: var(--mention-foreground);
   font-weight: 500;
   padding: 0 2px;
   unicode-bidi: plaintext;
-  border-radius: 3px;
+  border-radius: 5px;
   transition: background-color 150ms 
     ease-out, color 150ms 
     ease-out;
@@ -785,7 +797,6 @@ textarea,
 
 /* message input */
 .real-wrap {
-  border-top: 1px solid #ccc;
   padding: 8px;
 }
 
@@ -855,12 +866,13 @@ textarea,
   color: var(--text-3);
 }
 
-.login-card {
+.login-modal {
   width: 360px;
   padding: 24px;
   background-color: var(--bg-2);
   border: 1px solid var(--border);
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
   border-radius: 12px;
   display: flex;
   flex-direction: column;

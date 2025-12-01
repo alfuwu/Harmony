@@ -1,7 +1,9 @@
 import { ChannelState } from "../state/Channels";
 import { MemberState } from "../state/Members";
+import { MessageState } from "../state/Messages";
 import { Channel, Member, Server } from "../utils/types";
 import { api } from "./http";
+import { getMessages } from "./messageApi";
 
 export async function createServer(name: string, description: string | undefined = undefined, tags: string[] | undefined = undefined, inviteUrls: string[] | undefined = undefined, options: RequestInit = {}) {
   return api(`/servers`, {
@@ -32,7 +34,7 @@ export async function getServerMembers(serverId: number, options: RequestInit = 
   });
 }
 
-export async function loadServer(server: Server, channelState: ChannelState, memberState: MemberState, token: string): Promise<void> {
+export async function loadServer(server: Server, channelState: ChannelState, memberState: MemberState, messageState: MessageState, token: string): Promise<void> {
   if (server.loaded)
     return;
 
@@ -43,4 +45,7 @@ export async function loadServer(server: Server, channelState: ChannelState, mem
   
   const members = await getServerMembers(server.id, { headers: { Authorization: `Bearer ${token}` } });
   memberState.addMembers(members);
+
+  const messages = await getMessages(server.id, undefined, { headers: { Authorization: `Bearer ${token}` } });
+  messageState.addMessages(messages);
 }

@@ -22,7 +22,8 @@ export const MessageProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const addMessages = (msgs: Message[]) => {
     setMessages(prev => {
       const existingNonces = new Set(prev.map(m => m.nonce).filter(n => n !== undefined));
-      const newMessages = msgs.filter(m => m.nonce === undefined || !existingNonces.has(m.nonce));
+      const existingIds = new Set(prev.map(m => m.id));
+      const newMessages = msgs.filter(m => (m.nonce === undefined || !existingNonces.has(m.nonce)) && !existingIds.has(m.id));
       return [...prev, ...newMessages];
     });
   };

@@ -1,5 +1,5 @@
 import React from "react";
-import { Channel, Server, User } from "./types";
+import { AbstractChannel, Server, User } from "./types";
 import { getChannelIcon } from "./ChannelUtils";
 import { getDisplayName, getNameFont, getRoleColor } from "./UserUtils";
 
@@ -676,32 +676,48 @@ export const RULES: MarkdownRule[] = [
       );
     }
   },
-  // user mentions
+  // @everyone and @here
   {
-    name: "mention_user",
-    regex: /<@(?<id>[0-9]+)>/gm,
+    name: "mention_everyone",
+    regex: /@(?<type>everyone|here)/gm,
 
     decorate() {
       return [];
     },
 
     render(match) {
+      return <span className="mention int">{match.match[0]}</span>;
+    }
+  },
+  // user mentions
+  {
+    name: "mention_user",
+    regex: /<@(?<id>-?[0-9]+)>/gm,
+
+    decorate() {
+      return [];
+    },
+
+    render(match) {
+      if (match.match.groups!.id.startsWith("-") && match.match.groups!.id !== "-1")
+        return match.match[0]; // invalid mention
       const fallback = `<@${match.match.groups!.id}>`;
-      const u = match.attributes?.userState.usersList.find(
+      const u = match.attributes?.userState.users.find(
         (u: User) => u.id === Number(match.match.groups!.id)
       );
-      const m = match.attributes?.memberState.get(u.id, match.attributes?.serverState.currentServer?.id);
+      const m = u ? match.attributes?.memberState.get(u.id, match.attributes?.serverState.currentServer?.id) : undefined;
 
       const name = u ? "@" + getDisplayName(u, m) : fallback;
-      const roleColor = getRoleColor(match.attributes?.serverState, u, m, match.attributes?.serverState.currentServer === null);
-      const font = getNameFont(u, m);
+      const roleColor = u ? getRoleColor(match.attributes?.serverState, u, m, match.attributes?.serverState.currentServer === null) : undefined;
+      const font = u ? getNameFont(u, m) : undefined;
 
       return (
         <span
           className="mention int"
           style={{
             fontFamily: font,
-            color: roleColor
+            // @ts-expect-error CSS variable
+            "--special-mention-color": roleColor
           }}
           onClick={u && match.attributes?.onMentionClick ? e => match.attributes.onMentionClick(u, m, e) : undefined}
         >
@@ -726,39 +742,68 @@ export const RULES: MarkdownRule[] = [
         return <span className="mention int">{fallback}</span>;
       const r = s.roles.find(r => r.id == Number(match.match.groups!.id));
       const name = r?.name ? "@" + r?.name : fallback;
-      return <span className="mention int">{name}</span>
+      return (
+        <span
+          className="mention int"
+          style={{
+            // @ts-expect-error CSS variable
+            "--special-mention-color": r && r.color ? `#${r.color.toString(16).padStart(6, "0")}` : undefined
+          }}
+          onClick={r && match.attributes?.onRoleClick ? e => match.attributes.onRoleClick(r, s, e) : undefined}
+        >
+          {name}
+        </span>
+      );
     }
   },
   // channel mentions
   {
     name: "mention_channel",
-    regex: /<#(?<id>[0-9]+)>/gm,
+    regex: /<#(?<id>-?[0-9]+)>/gm,
 
     decorate() {
       return [];
     },
 
     render(match) {
+      if (match.match.groups!.id.startsWith("-") && match.match.groups!.id !== "-1")
+        return match.match[0]; // invalid mention
       const fallback = `<#${match.match.groups!.id}>`;
-      const c = match.attributes?.channelState.get(Number(match.match.groups!.id));
+      const c: AbstractChannel = match.attributes?.channelState.get(Number(match.match.groups!.id));
       const name = c?.name ?? fallback;
-      return <span className="mention int">{c?.name && getChannelIcon(c, { className: "icon" })}{name}</span>
+      return (
+        <span
+          className="mention int"
+          onClick={c && match.attributes?.onChannelClick ? e => match.attributes.onChannelClick(c, e) : undefined}
+        >
+          {c?.name && getChannelIcon(c, { className: "icon" })}{name}
+        </span>
+      );
     }
   },
   // server mentions
   {
     name: "mention_server",
-    regex: /<~(?<id>[0-9]+)>/gm,
+    regex: /<~(?<id>-?[0-9]+)>/gm,
 
     decorate() {
       return [];
     },
 
     render(match) {
+      if (match.match.groups!.id.startsWith("-") && match.match.groups!.id !== "-1")
+        return match.match[0]; // invalid mention
       const fallback = `<~${match.match.groups!.id}>`;
       const s = match.attributes?.serverState.get(Number(match.match.groups!.id));
       const name = s?.name ? "~" + s?.name : fallback;
-      return <span className="mention int">{name}</span>
+      return (
+        <span
+          className="mention int"
+          onClick={s && match.attributes?.onServerClick ? e => match.attributes.onServerClick(s, e) : undefined}
+        >
+          {name}
+        </span>
+      );
     }
   },
 
