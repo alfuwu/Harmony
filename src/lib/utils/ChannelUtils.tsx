@@ -1,14 +1,14 @@
-import AnnouncementChannel from "../../components/svgs/AnnouncementChannel";
-import AnnouncementChannelLocked from "../../components/svgs/AnnouncementChannelLocked";
-import ForumChannel from "../../components/svgs/ForumChannel";
-import ForumChannelLocked from "../../components/svgs/ForumChannelLocked";
-import RulesChannel from "../../components/svgs/RulesChannel";
-import RulesChannelLocked from "../../components/svgs/RulesChannelLocked";
-import TextChannel from "../../components/svgs/TextChannel";
-import TextChannelLocked from "../../components/svgs/TextChannelLocked";
-import VoiceChannel from "../../components/svgs/VoiceChannel";
-import VoiceChannelLocked from "../../components/svgs/VoiceChannelLocked";
-import VoidChannel from "../../components/svgs/VoidChannel";
+import AnnouncementChannel from "../../components/svgs/channels/AnnouncementChannel";
+import AnnouncementChannelLocked from "../../components/svgs/channels/AnnouncementChannelLocked";
+import ForumChannel from "../../components/svgs/channels/ForumChannel";
+import ForumChannelLocked from "../../components/svgs/channels/ForumChannelLocked";
+import RulesChannel from "../../components/svgs/channels/RulesChannel";
+import RulesChannelLocked from "../../components/svgs/channels/RulesChannelLocked";
+import TextChannel from "../../components/svgs/channels/TextChannel";
+import TextChannelLocked from "../../components/svgs/channels/TextChannelLocked";
+import VoiceChannel from "../../components/svgs/channels/VoiceChannel";
+import VoiceChannelLocked from "../../components/svgs/channels/VoiceChannelLocked";
+import VoidChannel from "../../components/svgs/channels/VoidChannel";
 import { AbstractChannel, ChannelType } from "./types";
 
 export function getChannelIcon(channel: AbstractChannel | null, props: any = {}) {

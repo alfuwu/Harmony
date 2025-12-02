@@ -44,6 +44,7 @@ const insertUserMention = (editor: Editor, user: User) => {
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
+// @ts-expect-error
 const insertRoleMention = (editor: Editor, role: Role) => {
   const mention = {
     type: "mention_role",

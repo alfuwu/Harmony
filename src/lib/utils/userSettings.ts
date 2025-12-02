@@ -85,7 +85,7 @@ export enum UserContext {
 // settings
 export interface UserSettings {
     // userId: number;
-    // user: User;
+    // user: null;
 
     // appearance
     theme: Theme;

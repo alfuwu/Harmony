@@ -19,6 +19,8 @@ export interface Message {
 /// users
 export interface User {
   id: number;
+  email?: string | null;
+  phoneNumber?: string | null;
   displayName?: string | null;
   username: string;
   passwordHash: string;
@@ -27,6 +29,7 @@ export interface User {
   pronouns?: string | null;
   avatar?: string | null;
   banner?: string | null;
+  bannerColor: number;
   nameFont?: string | null;
   joinedAt: string;
   lastSeen: string;

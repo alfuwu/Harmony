@@ -24,7 +24,7 @@
   --text-5: hsl(0, 0%, 50%); /* muted channels/chats and timestamps */
   --text-gray-1: hsl(0, 0%, 100%);
   --text-gray-2: hsl(0, 0%, 100%);
-  --text-gray-3: hsl(0, 0%, 100%);
+  --text-gray-3: hsl(38, 41%, 71%);
   --text-gray-4: hsl(221, 14%, 70%);
   --text-gray-5: hsl(0, 0%, 50%);
 
@@ -99,7 +99,7 @@
   --list-button: oklch(49.982% 0.00507 16.71);
 
   --default-mention-color: hsl(228.14 100% 83.137%);
-  /*--default-mention-color: var(--acent-1);*/
+  /*--default-mention-color: var(--accent-1);*/
 }
 
 .ven-colors {
@@ -311,8 +311,18 @@ textarea,
   display: flex;
   flex-direction: column;
 }
+.valign-ungreedy {
+  flex-shrink: 1;
+  display: flex;
+  flex-direction: column;
+}
 .halign {
   flex: 1 1 1px;
+  display: flex;
+  flex-direction: row;
+}
+.halign-ungreedy {
+  flex-shrink: 1;
   display: flex;
   flex-direction: row;
 }
@@ -323,6 +333,12 @@ textarea,
 }
 .ovx-auto {
   overflow-x: auto;
+}
+.ovy-hidden {
+  overflow-y: hidden;
+}
+.ovx-hidden {
+  overflow-x: hidden;
 }
 
 .justify-end {
@@ -357,9 +373,21 @@ textarea,
   cursor: pointer;
 }
 
+/* text overflow */
+.ellipsis {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 /* positioning */
 .rel {
   position: relative;
+}
+
+/* text colors */
+.dangerous {
+  color: var(--red-3);
 }
 
 /* modal backdrop */
@@ -368,6 +396,7 @@ textarea,
   inset: 0;
   opacity: 0;
   background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -384,7 +413,7 @@ textarea,
 
 /* modal container */
 .modal-container {
-  background: var(--bg-3);
+  background: color-mix(in hsl, var(--bg-3), transparent);
   width: 380px;
   max-width: 90vw;
   border-radius: 14px;
@@ -393,7 +422,7 @@ textarea,
   display: grid;
   gap: 16px;
   transition: transform 200ms ease-in-out;
-  transform: scale(0.8) translateY(-20px);
+  transform: scale(0.8) translateY(-10px);
 }
 .open > .modal-container {
   transform: scale(1) translateY(0);
@@ -440,6 +469,178 @@ textarea,
   color: white;
 }
 
+/* user settings */
+.user-panel {
+  background: var(--bg-1);
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  margin: 5px 5px 5px 0;
+  padding: 10px;
+}
+.settings {
+  padding: 0;
+  overflow: hidden;
+  min-height: 70vh;
+  min-width: 40%;
+  display: flex;
+  flex-direction: row;
+}
+.nav-icon {
+  background-color: currentColor;
+  mask: var(--mask-url)
+    center / contain no-repeat;
+  -webkit-mask: var(--mask-url)
+     center / contain no-repeat;
+  margin: 0 8px 0 5px !important;
+}
+.navigation {
+  width: 240px;
+  color: var(--text-gray-3);
+  background-color: color-mix(in hsl, var(--bg-3), transparent);
+  padding: 24px 16px;
+  min-height: 100%;
+}
+.navigation .channel:hover {
+  background-color: var(--bg-2);
+}
+.section-header {
+  font-weight: 700;
+  padding: 4px 8px;
+  font-size: 12px;
+  margin-bottom: -10px;
+}
+.input-wrapper {
+  position: relative;
+  display: inline-block;
+}
+.input-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 20px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.input-wrapper input {
+  padding-left: 36px;
+  width: calc(100% - 26px);
+}
+/* content */
+.settings-content {
+  flex: 1 1 1px;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 50px 30px 30px;
+}
+.settings-header {
+  display: flex;
+  flex-direction: row;
+  font-size: 24px;
+  margin-bottom: 30px;
+}
+.settings-header-icon {
+  width: 24px !important;
+  height: 24px !important;
+}
+.profile-display {
+  border-radius: 7px;
+  background-color: var(--bg-3);
+  width: 100%;
+  overflow: hidden;
+}
+.banner {
+  min-height: 10px;
+  height: 10vh;
+  background-color: var(--banner-color, #000);
+  background-image: var(--banner);
+  background-position: 50%;
+  background-repeat: no-repeat;
+  background-size: cover;
+  transition: background-color .1s;
+  width: 100%;
+}
+.big-avatar {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: -40px 15px 0;
+  background-color: var(--bg-1);
+  padding: 4px;
+}
+.profile-name > button, .profile-details button {
+  position: relative;
+  margin-left: auto;
+  margin-right: 10px;
+  float: right;
+  color: var(--text-2);
+}
+.profile-name > button {
+  top: 10px;
+}
+.profile-details button {
+  top: -40px;
+  padding: 10px 30px;
+  color: var(--text-2);
+}
+.profile-name > div {
+  font-size: 24px;
+  font-weight: 600;
+  display: inline-block;
+  color: var(--text-2);
+}
+.profile-id {
+  font-size: 18px;
+  color: var(--text-5);
+}
+.profile-details {
+  margin: 15px;
+  padding: 20px;
+  border-radius: 5px;
+  background: var(--bg-4);
+  color: var(--text-2);
+}
+.profile-item ~ .profile-item {
+  margin-top: 25px;
+}
+.profile-nav {
+  margin-bottom: 40px;
+}
+.profile-nav > div {
+  margin-right: 15px;
+  position: relative;
+  color: var(--text-1);
+}
+.profile-nav > .selected, .profile-nav > div:hover {
+  color: var(--accent-1);
+}
+.profile-nav > div:hover {
+  color: var(--text-2);
+}
+.profile-nav > .selected::after, .profile-nav > div:hover::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  top: 30px;
+  height: 1px;
+  left: 0;
+  background-color: var(--accent-1);
+}
+.profiles {
+  color: var(--text-2);
+}
+.profiles-item {
+  width: 50%;
+  max-width: 50%;
+  margin-right: 15px;
+}
+.preview {
+  width: 50%;
+  max-width: 50%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 /* lists */
 .server-list, .channel-list, .member-list {
   border-radius: 15px;
@@ -465,6 +666,7 @@ textarea,
   background: var(--bg-3);
   padding: 15px 5px 0;
   margin-top: 15px;
+  margin-right: 8px;
   overflow: hidden auto;
 }
 .message-list {
@@ -480,6 +682,8 @@ textarea,
   padding: 8px;
   display: flex;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
   border-radius: 4px;
   padding: 2px;
   margin: 4px;
@@ -490,7 +694,7 @@ textarea,
 .channel:hover {
   margin-left: 10px;
 }
-.channel:not(.selected):hover {
+.channel:hover {
   background-color: var(--bg-4);
 }
 .channel.selected {
@@ -528,7 +732,8 @@ textarea,
   background: currentColor;
 }
 
-.channel-icon {
+.channel-icon, .nav-icon {
+  min-width: 20px;
   width: 20px;
   height: 20px;
   margin-right: 5px;
@@ -784,6 +989,7 @@ textarea,
   border-radius: 0;
   color: var(--text-2);
   cursor: pointer;
+  z-index: 9999;
 
   &:hover {
     background-color: color-mix(in hsl, var(--hover-raw) 20%, transparent);
@@ -798,6 +1004,7 @@ textarea,
 /* message input */
 .real-wrap {
   padding: 8px;
+  margin-bottom: 5px;
 }
 
 .msg-wrap {

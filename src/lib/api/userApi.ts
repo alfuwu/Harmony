@@ -28,6 +28,17 @@ export async function changeAvatar(file: File, options: RequestInit = {}): Promi
   });
 }
 
+export async function changeBanner(file: File, options: RequestInit = {}): Promise<{ avatar: string }> {
+  const formData = new FormData();
+  formData.append(file.name, file);
+
+  return api(`/@me/banner`, {
+    ...options,
+    method: "POST",
+    body: formData
+  });
+}
+
 export async function updateSettings(settings: UserSettings, options: RequestInit = {}): Promise<void> {
   await api(`/@me/settings`, {
     ...options,

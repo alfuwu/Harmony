@@ -15,7 +15,10 @@ import { ChannelProvider, useChannelState } from "./lib/state/Channels";
 import { MemberProvider, useMemberState } from "./lib/state/Members";
 import { MessageProvider, useMessageState } from "./lib/state/Messages";
 import { initializeClient } from "./lib/client/init";
-import { PopoutProvider } from "./lib/state/Popouts";
+import { PopoutProvider, /*usePopoutState*/ } from "./lib/state/Popouts";
+import { getAvatar } from "./lib/utils/UserUtils";
+//import UserPopout from "./components/layout/popouts/UserPopout";
+import UserSettingsModal from "./components/layout/modals/UserSettingsModal";
 
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
 export const hostUrl = "https://localhost:7217";
@@ -29,6 +32,8 @@ function AppInner() {
   const memberState = useMemberState();
   const userState = useUserState();
   const { addMessages } = useMessageState();
+  //const { open, close } = usePopoutState();
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchMe = async () => {
@@ -83,13 +88,48 @@ function AppInner() {
 
   if (loading)
     return null;
+  
+  const avatar = getAvatar(user);
+  
   return (
     <div className="ven-colors relative" ref={rootRef}>
+      <UserSettingsModal className="modal" open={modalOpen} onClose={() => setModalOpen(false)} />
 
       {user ? (
-        <div className="app">
-          <ServerList />
-          <ChannelList />
+        <div className="app">    
+          <div className="valign-ungreedy">
+            <div className="halign">
+              <ServerList />
+              <ChannelList />
+            </div>
+            <div className="user-panel">
+              <img
+                className="avatar uno int"
+                src={avatar}
+                alt="avatar"
+                onClick={e => {
+                  setModalOpen(true);
+                  /*const rect = e.currentTarget.getBoundingClientRect();
+                  open({
+                    id: "user-profile",
+                    element: (
+                      <UserPopout
+                        user={user}
+                        member={undefined}
+                        serverState={serverState}
+                        onClose={() => close("user-profile")}
+                        position={{
+                          top: rect.bottom + window.scrollY,
+                          left: rect.right + window.scrollX
+                        }}
+                      />
+                    ),
+                    options: {}
+                  });*/
+                }}
+              />
+            </div>
+          </div>
           <div className="valign">
             <TitleBar />
             <div className="halign">

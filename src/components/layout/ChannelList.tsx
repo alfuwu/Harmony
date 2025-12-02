@@ -1,6 +1,6 @@
 import { useChannelState } from "../../lib/state/Channels";
 import { useServerState } from "../../lib/state/Servers";
-import TextChannel from "../svgs/TextChannel";
+import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 
 export default function ChannelList() {
   const { channels, currentChannel, setCurrentChannel } = useChannelState();
@@ -18,7 +18,7 @@ export default function ChannelList() {
           className={"channel uno int" + (currentChannel && currentChannel.id === c.id ? " selected" : "")}
           onClick={() => setCurrentChannel(c)}
         >
-          <TextChannel className="channel-icon" />
+          {getChannelIcon(c, { className: "channel-icon" })}
           {c.name}
         </div>
       ))}
