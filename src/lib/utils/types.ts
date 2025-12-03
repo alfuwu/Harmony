@@ -20,7 +20,9 @@ export interface Message {
 export interface User {
   id: number;
   email?: string | null;
+  emailVerified?: boolean | null;
   phoneNumber?: string | null;
+  phoneNumberVerified?: boolean | null;
   displayName?: string | null;
   username: string;
   passwordHash: string;
@@ -151,6 +153,14 @@ export enum ChannelType {
   GroupDM = 10        // group direct message channel
 }
 
+export enum RelationshipType {
+  Self = 0,
+  Friend = 1,
+  Pending = 2,
+  Regular = 3,
+  Blocked = 4
+}
+
 /// server
 export interface Server {
   id: number;
@@ -182,4 +192,10 @@ export interface Reaction {
 export interface Emoji {
   id?: number | null;
   name: string;
+}
+
+export interface RelationshipEntry {
+  userId: number;
+  type: RelationshipType;
+  isIncoming?: boolean | null;
 }

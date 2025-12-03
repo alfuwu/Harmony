@@ -15,6 +15,10 @@ import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage } from "../../lib/api/messageApi";
 import { rootRef } from "../../App";
 import { useMemberState } from "../../lib/state/Members";
+import data, { Emoji } from "@emoji-mart/data";
+import { init, SearchIndex } from "emoji-mart";
+
+init({ data });
 
 const withMentions = (editor: Editor) => {
   const { isInline, isVoid, markableVoid } = editor;
@@ -30,6 +34,19 @@ const withMentions = (editor: Editor) => {
   editor.markableVoid = element =>
     // @ts-expect-error
     element.type?.startsWith("mention") || markableVoid(element);
+
+  return editor;
+};
+const withEmoji = (editor: Editor) => {
+  const { isInline, isVoid } = editor;
+
+  editor.isInline = element =>
+    // @ts-expect-error
+    element.type === "emoji" ? true : isInline(element);
+
+  editor.isVoid = element =>
+    // @ts-expect-error
+    element.type === "emoji" ? true : isVoid(element);
 
   return editor;
 };
@@ -75,10 +92,22 @@ const insertServerMention = (editor: Editor, server: Server) => {
   Transforms.insertNodes(editor, mention);
   Transforms.move(editor);
 };
+const insertEmoji = (editor: Editor, emoji: Emoji) => {
+  // @ts-expect-error
+  const e = emoji.native ?? emoji.skins?.[0]?.native ?? "";
+  const node = {
+    type: "emoji",
+    emoji: e,
+    children: [{ text: e }]
+  };
+
+  Transforms.insertNodes(editor, node);
+  Transforms.move(editor);
+}
 
 export default function MessageInput() {
   const editor = useMemo(
-    () => withHistory(withMentions(withReact(createEditor()))),
+    () => withHistory(withMentions(withEmoji(withReact(createEditor())))),
     []
   );
 
@@ -96,6 +125,30 @@ export default function MessageInput() {
   const [target, setTarget] = useState<Range | null>(null);
   const [search, setSearch] = useState("");
   const [index, setIndex] = useState(0);
+
+  const [emojiResults, setEmojiResults] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      if (search.startsWith(":")) {
+        const q = search.slice(1);
+        if (!q) {
+          setEmojiResults([]);
+          return;
+        }
+
+        const results = await SearchIndex.search(q);
+        if (!cancelled)
+          setEmojiResults(results.slice(0, 10).map((e: Emoji) => ({ ...e, type: "emoji" })));
+      } else {
+        setEmojiResults([]);
+      }
+    }
+
+    run();
+    return () => { cancelled = true; };
+  }, [search]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -189,26 +242,29 @@ export default function MessageInput() {
     const s = search.toLowerCase();
     if (!s)
       return [];
+    const q = s.slice(1);
 
     if (search.startsWith("#")) {
       const chans = channels.filter(c => c.serverId === currentChannel?.serverId);
       // channel mentions
       return chans
-        .filter(c => c.name?.toLowerCase()?.startsWith(s.slice(1)))
+        .filter(c => c.name?.toLowerCase()?.startsWith(q))
         .slice(0, 10)
         .map(c => ({ ...c, type: "channel" }));
     } else if (search.startsWith("~")) {
       // server mentions
       return servers
-        .filter(srv => srv.name.toLowerCase().startsWith(s.slice(1)))
+        .filter(srv => srv.name.toLowerCase().startsWith(q))
         .slice(0, 10)
         .map(srv => ({ ...srv, type: "server" }));
     } else if (search.startsWith("@")) {
       // user & role mentions
       return users
-        .filter(u => u?.displayName?.toLowerCase()?.startsWith(s.slice(1)) || u.username.toLowerCase().startsWith(s.slice(1)))
+        .filter(u => u?.displayName?.toLowerCase()?.startsWith(q) || u.username.toLowerCase().startsWith(q))
         .slice(0, 10)
         .map(u => ({ ...u, type: "user" }));
+    } else if (search.startsWith(":")) {
+      return emojiResults;
     } else {
       return [];
     }
@@ -220,7 +276,7 @@ export default function MessageInput() {
       return;
     const [node] = Editor.fragment(editor, selection.anchor.path);
     // @ts-expect-error
-    if (node.children[0]?.type?.startsWith("mention"))
+    if (node.children[0]?.type?.startsWith("mention") || node.children[0]?.type === "emoji")
       Transforms.move(editor, { reverse });
   };
 
@@ -259,6 +315,8 @@ export default function MessageInput() {
         return <span {...props.attributes} contentEditable={false} className="mention int">{getChannelIcon(element.channel, { className: "icon" })}{element.channel?.name}</span>;
       case "mention_server":
         return <span {...props.attributes} contentEditable={false} className="mention int">~{element.server?.name}</span>;
+      case "emoji":
+        return <span {...props.attributes} contentEditable={false}>{element.emoji}</span>;
       default:
         return <div {...props.attributes}>{props.children}</div>;
     }
@@ -291,7 +349,7 @@ export default function MessageInput() {
             const mentionRange = Editor.range(editor, from, start);
             const mentionText = Editor.string(editor, mentionRange);
 
-            const m = mentionText.match(/^([@#~])([\w-]*)$/);
+            const m = mentionText.match(/^([@#~:])([\w-]*)$/);
             if (m) {
               setTarget(mentionRange);
               setSearch(mentionText);
@@ -394,6 +452,22 @@ export default function MessageInput() {
                       <span>~{s.name}</span>
                     </div>
                   );
+                case "emoji":
+                  const e = item as unknown as Emoji;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`mention-item int ${i === index ? "active" : ""}`}
+                      onClick={() => {
+                        Transforms.select(editor, target);
+                        insertEmoji(editor, e);
+                        setTarget(null);
+                      }}
+                      onMouseEnter={() => setIndex(i)}
+                    >
+                      <span>{e.skins[0].native} {item.id}</span>
+                    </div>
+                  );
               }
             })}
           </div>,
@@ -410,7 +484,7 @@ export default function MessageInput() {
           const t = target;
           const results = mentionResults();
 
-          if (t && results.length > 0) {
+          if (t && (results.length > 0 || emojiResults.length > 0)) {
             switch (e.key) {
               case "ArrowDown":
                 e.preventDefault();
@@ -436,6 +510,9 @@ export default function MessageInput() {
                     break;
                   case "server":
                     insertServerMention(editor, results[index] as Server);
+                    break;
+                  case "emoji":
+                    insertEmoji(editor, results[index] as unknown as Emoji);
                     break;
                 }
                 setTarget(null);

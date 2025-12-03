@@ -481,7 +481,7 @@ textarea,
   padding: 0;
   overflow: hidden;
   min-height: 70vh;
-  min-width: 40%;
+  min-width: max(40%, calc(30% + 300px));
   display: flex;
   flex-direction: row;
 }
@@ -556,7 +556,6 @@ textarea,
   background-position: 50%;
   background-repeat: no-repeat;
   background-size: cover;
-  transition: background-color .1s;
   width: 100%;
 }
 .big-avatar {
@@ -568,6 +567,11 @@ textarea,
   background-color: var(--bg-1);
   padding: 4px;
 }
+.profile-name {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
 .profile-name > button, .profile-details button {
   position: relative;
   margin-left: auto;
@@ -577,19 +581,24 @@ textarea,
 }
 .profile-name > button {
   top: 10px;
+  min-width: 160px;
 }
 .profile-details button {
   top: -40px;
   padding: 10px 30px;
+  margin-right: -10px;
   color: var(--text-2);
 }
 .profile-name > div {
   font-size: 24px;
   font-weight: 600;
   display: inline-block;
+  position: relative;
+  top: 10px;
   color: var(--text-2);
 }
 .profile-id {
+  font-weight: 500;
   font-size: 18px;
   color: var(--text-5);
 }
@@ -637,8 +646,35 @@ textarea,
 .preview {
   width: 50%;
   max-width: 50%;
-  overflow: hidden;
-  white-space: nowrap;
+  height: fit-content;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.preview .profile-name > div {
+  margin-left: 25px;
+  margin-top: 10px;
+  top: 0;
+  font-size: 20px;
+}
+.unsaved-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #1f1f1f;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #333;
+  z-index: 2000;
+}
+.save-btn {
+  background: #5865f2;
+  color: white;
+  padding: 6px 14px;
+  border-radius: 4px;
 }
 
 /* lists */
@@ -662,7 +698,7 @@ textarea,
   overflow: hidden auto;
 }
 .member-list {
-  width: 180px;
+  width: 220px;
   background: var(--bg-3);
   padding: 15px 5px 0;
   margin-top: 15px;
@@ -1251,6 +1287,17 @@ code {
 }
 .file-preview-frame {
   width: 100%;
+}
+
+.emoji-text {
+  width: 1.375rem;
+  height: 1.375rem;
+  min-height: 1.375rem;
+}
+.emoji-big {
+  width: 3rem;
+  height: 3rem;
+  min-height: 3rem;
 }
 
 @media (prefers-color-scheme: dark) {
