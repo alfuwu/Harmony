@@ -11,11 +11,13 @@ import { usePopoutState } from "../../lib/state/Popouts";
 import { useAuthState } from "../../lib/state/Auth";
 import { loadServer } from "../../lib/api/serverApi";
 import UserPopout from "../layout/popouts/UserPopout";
+import EmojiPopout from "../layout/popouts/EmojiPopout";
+import { getEmojiDataFromNative } from "emoji-mart";
 
 const MERGE_WINDOW = 7 * 60 * 1000; // 7 minutes in ms
 
 export default function MessageList() {
-  const { token, user } = useAuthState();
+  const { token, user, userSettings } = useAuthState();
   const serverState = useServerState();
   const channelState = useChannelState();
   const userState = useUserState();
@@ -206,7 +208,7 @@ export default function MessageList() {
             )}
             <div className="content-container">
               {!showHeader && (
-                <span className="timestamp">
+                <span className="timestamp uno">
                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </span>
               )}
@@ -215,6 +217,7 @@ export default function MessageList() {
                 channelState,
                 memberState,
                 userState,
+                userSettings,
                 onMentionClick: (user: User, member: Member, event: React.MouseEvent) => {
                   event.preventDefault();
                   openUserPopout(event.currentTarget as HTMLElement, user, member);
@@ -242,6 +245,26 @@ export default function MessageList() {
                     channelState.setCurrentChannel(null);
                   }
                 },
+                onEmojiClick: async (emoji: string, event: React.MouseEvent) => {
+                  event.preventDefault();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const name = await getEmojiDataFromNative(emoji);
+                  open({
+                    id: "emoji",
+                    element: (
+                      <EmojiPopout
+                        emoji={emoji}
+                        emojiName={name.id}
+                        userSettings={userSettings}
+                        position={{
+                          top: rect.bottom + window.scrollY,
+                          left: rect.right + window.scrollX
+                        }}
+                      />
+                    ),
+                    options: {}
+                  });
+                }
               })}</span>
             </div>
             {msg.editedTimestamp && <span className="edited-mark"> (edited)</span>}

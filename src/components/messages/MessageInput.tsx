@@ -7,7 +7,7 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useAuthState } from "../../lib/state/Auth";
 import { useUserState } from "../../lib/state/Users";
-import { LEAF_RULES, tokenizeMarkdown } from "../../lib/utils/Markdown";
+import { LEAF_RULES, renderEmoji, tokenizeMarkdown } from "../../lib/utils/Markdown";
 import { AbstractChannel, Channel, Role, Server, User } from "../../lib/utils/types";
 import { getAvatar, getDisplayName, getNameFont, getRoleColor } from "../../lib/utils/UserUtils";
 import { useServerState } from "../../lib/state/Servers";
@@ -17,6 +17,9 @@ import { rootRef } from "../../App";
 import { useMemberState } from "../../lib/state/Members";
 import data, { Emoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
+import { EmojiStyle } from "../../lib/utils/userSettings";
+import Twemoji from "react-twemoji";
+/*import twemoji from "twemoji";*/
 
 init({ data });
 
@@ -25,11 +28,11 @@ const withMentions = (editor: Editor) => {
 
   editor.isInline = element =>
     // @ts-expect-error
-    element.type?.startsWith("mention") ? true : isInline(element);
+    element.type?.startsWith("mention") || isInline(element);
 
   editor.isVoid = element =>
     // @ts-expect-error
-    element.type?.startsWith("mention") ? true : isVoid(element);
+    element.type?.startsWith("mention") || isVoid(element);
     
   editor.markableVoid = element =>
     // @ts-expect-error
@@ -42,11 +45,11 @@ const withEmoji = (editor: Editor) => {
 
   editor.isInline = element =>
     // @ts-expect-error
-    element.type === "emoji" ? true : isInline(element);
+    element.type === "emoji" || isInline(element);
 
   editor.isVoid = element =>
     // @ts-expect-error
-    element.type === "emoji" ? true : isVoid(element);
+    element.type === "emoji" || isVoid(element);
 
   return editor;
 };
@@ -111,7 +114,7 @@ export default function MessageInput() {
     []
   );
 
-  const { token } = useAuthState();
+  const { token, userSettings } = useAuthState();
   const { channels, currentChannel } = useChannelState();
   const { user } = useAuthState();
   const { addMessage } = useMessageState();
@@ -126,6 +129,7 @@ export default function MessageInput() {
   const [search, setSearch] = useState("");
   const [index, setIndex] = useState(0);
 
+  /* could also work by just turning the mentionResults in general into a state but whatever */
   const [emojiResults, setEmojiResults] = useState([]);
   useEffect(() => {
     let cancelled = false;
@@ -316,7 +320,7 @@ export default function MessageInput() {
       case "mention_server":
         return <span {...props.attributes} contentEditable={false} className="mention int">~{element.server?.name}</span>;
       case "emoji":
-        return <span {...props.attributes} contentEditable={false}>{element.emoji}</span>;
+        return <span {...props.attributes} contentEditable={false}>{renderEmoji(userSettings, element.emoji)}</span>;
       default:
         return <div {...props.attributes}>{props.children}</div>;
     }
@@ -342,7 +346,7 @@ export default function MessageInput() {
               const r = Editor.range(editor, prev, from);
               const ch = Editor.string(editor, r);
               if (/[\s]/.test(ch))
-                break; // stop at whitespace (maybe refactor so that servers with whitespace can be more fully typed out?)
+                break; // stop at whitespace (maybe refactor so that servers/users with whitespace can be more fully typed out?)
               from = prev;
             }
 
@@ -465,7 +469,7 @@ export default function MessageInput() {
                       }}
                       onMouseEnter={() => setIndex(i)}
                     >
-                      <span>{e.skins[0].native} {item.id}</span>
+                      <span>{renderEmoji(userSettings, e.skins[0].native)} :{item.id}:</span>
                     </div>
                   );
               }
@@ -512,7 +516,9 @@ export default function MessageInput() {
                     insertServerMention(editor, results[index] as Server);
                     break;
                   case "emoji":
-                    insertEmoji(editor, results[index] as unknown as Emoji);
+                    const e = results[index] as unknown as Emoji;
+                    setEmojiResults([]);
+                    insertEmoji(editor, e);
                     break;
                 }
                 setTarget(null);

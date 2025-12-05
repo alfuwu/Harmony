@@ -1,24 +1,34 @@
 // @ts-expect-error
 import { Theme, AppIcon, IconDisplayType, UserIconDisplayType, NameHoverBehavior, NameFontDisplayType, RoleColor, AnimateContext, VoiceInputMode, SpoilerContext, FriendRequestContext, UserContext, UserSettings } from "../../../lib/utils/userSettings";
 import { useAuthState } from "../../../lib/state/Auth";
-import { updateMe, updateProfile, updateSettings } from "../../../lib/api/userApi";
+import { updateMe, updateProfile, updateSettings, changeAvatar, changeBanner, deleteAvatar, deleteBanner } from "../../../lib/api/userApi";
 import { useEffect, useRef, useState } from "react";
 import Search from "../../svgs/settings/Search";
 import { getAvatar, getBanner, getDisplayName, getNameFont } from "../../../lib/utils/UserUtils";
 import { Server } from "../../../lib/utils/types";
+import { useUserState } from "../../../lib/state/Users";
+import CroppingModal from "./CroppingModal";
 
 export default function UserSettingsModal({ open, onClose }: any) {
-  const { token, user, setUser } = useAuthState();
-  const { userSettings, setUserSettings } = useAuthState();
+  const { token, user, setUser, userSettings, setUserSettings } = useAuthState();
+  const { addUser } = useUserState();
   const [currentTab, setCurrentTab] = useState("My Account");
   const [emailRevealed, setEmailRevealed] = useState(false);
   const [phoneRevealed, setPhoneRevealed] = useState(false);
   const [isMainProfile, setIsMainProfile] = useState(true);
   
   const [name, setName] = useState(user?.displayName);
+  const [pronouns, setPronouns] = useState(user?.pronouns);
+
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [croppingSrc, setCroppingSrc] = useState<string | null>(null);
+  const [showAviCropper, setShowAviCropper] = useState(false);
+  const [showBaniCropper, setShowBaniCropper] = useState(false);
 
   const initialRef = useRef({
     name: user?.displayName,
+    pronouns: user?.pronouns,
     settings: userSettings
   });
 
@@ -28,15 +38,16 @@ export default function UserSettingsModal({ open, onClose }: any) {
   // compare helper
   function computeDirty() {
     const nameChanged = name !== initialRef.current.name;
+    const pronounsChanged = pronouns !== initialRef.current.pronouns;
     /* currently, the user settings object gets populated AFTER this modal gets added to the app, so.. */
     const settingsChanged = JSON.stringify(userSettings) !== JSON.stringify(initialRef.current.settings);
-    return nameChanged;
+    return nameChanged || pronounsChanged;
   }
 
   // recompute whenever dependent values change
   useEffect(() => {
     setHasUnsaved(computeDirty());
-  }, [name, userSettings]);
+  }, [name, pronouns, userSettings]);
 
   const tabs = {
     "USER SETTINGS": [
@@ -57,9 +68,9 @@ export default function UserSettingsModal({ open, onClose }: any) {
 
   function handleChange(key: string, value: any) {
     setUserSettings({
-      ...userSettings,
+      ...userSettings!,
       [key]: value
-    } as UserSettings);
+    });
   }
 
   async function update() {
@@ -78,7 +89,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
 
   async function updateVanity(server: Server | undefined = undefined) {
     return updateProfile(
-      { displayName: name! },
+      { displayName: name, pronouns: pronouns },
       server,
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -92,6 +103,109 @@ export default function UserSettingsModal({ open, onClose }: any) {
 
   function getSettingsIconUrl(tab: string) {
     return tab.toLowerCase().replace(/\s/gm, "").replace(/&/gm, "and");
+  }
+
+  async function handleAvatarPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file)
+      return;
+    // reset value so that the same file can be picked again
+    e.target.value = "";
+
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCroppingSrc(reader.result as string);
+      setShowAviCropper(true);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleBannerPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file)
+      return;
+    e.target.value = "";
+
+    setBannerFile(file);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCroppingSrc(reader.result as string);
+      setShowBaniCropper(true);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleAviCropComplete(croppedBlob: Blob) {
+    const croppedFile = new File([croppedBlob], avatarFile?.name || "avatar.png", {
+      type: croppedBlob.type,
+    });
+
+    try {
+      const res = await changeAvatar(croppedFile, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const updated = { ...user!, avatar: res.avatar };
+      setUser(updated);
+      addUser(updated);
+    } catch (err) {
+      console.error(err);
+    }
+
+    setShowAviCropper(false);
+    setCroppingSrc(null);
+    setAvatarFile(null);
+  }
+
+  async function handleBaniCropComplete(croppedBlob: Blob) {
+    const croppedFile = new File([croppedBlob], bannerFile?.name || "banner.png", {
+      type: croppedBlob.type,
+    });
+
+    try {
+      const res = await changeBanner(croppedFile, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const updated = { ...user!, banner: res.banner };
+      setUser(updated);
+      addUser(updated);
+    } catch (err) {
+      console.error(err);
+    }
+
+    setShowBaniCropper(false);
+    setCroppingSrc(null);
+    setBannerFile(null);
+  }
+
+  async function handleRemoveAvatar() {
+    try {
+      const res = await deleteAvatar({
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const updated = { ...user!, avatar: res.avatar };
+      setUser(updated);
+      addUser(updated);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleRemoveBanner() {
+    try {
+      const res = await deleteBanner({
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const updated = { ...user!, banner: res.banner };
+      setUser(updated);
+      addUser(updated);
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   function setTab(tab: string) {
@@ -195,9 +309,30 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 <div className="profiles-item">
                   <div>Display Name</div>
                   <input value={name ?? ""} placeholder={user?.username} onChange={e => setName(e.target.value !== "" ? e.target.value : null)} />
+                  <hr />
+                  <div>Pronouns</div>
+                  <input value={pronouns ?? ""} placeholder="Add your pronouns" onChange={e => setPronouns(e.target.value !== "" ? e.target.value : null)} />
+                  <hr />
+                  <div>Avatar</div>
+                  <div className="item-actions">
+                    <button onClick={_ => document.getElementById("avatar-picker")?.click()}>
+                      {user?.avatar ? "Change Avatar" : "Add Avatar"}
+                      <input id="avatar-picker" type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarPick} />
+                    </button>
+                    <button className="dangerous" onClick={handleRemoveAvatar}>Remove Avatar</button>
+                  </div>
+                  <hr />
+                  <div>Banner</div>
+                  <div className="item-actions">
+                    <button onClick={_ => document.getElementById("banner-picker")?.click()}>
+                      {user?.avatar ? "Change Banner" : "Add Banner"}
+                      <input id="banner-picker" type="file" accept="image/*" style={{ display: "none" }} onChange={handleBannerPick} />
+                    </button>
+                    <button className="dangerous" onClick={handleRemoveBanner}>Remove Banner</button>
+                  </div>
                 </div>
               ) : (
-                <div>
+                <div className="profiles-item">
                 </div>
               )}
               <div className="preview">
@@ -220,7 +355,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
                     fontFamily: font
                   }}
                 >
-                  <div>{name || displayName}</div>
+                  <div>{name || user?.username}</div>
                 </div>
               </div>
             </div>
@@ -235,7 +370,10 @@ export default function UserSettingsModal({ open, onClose }: any) {
         await updateCore();
       } else if (currentTab === "Profiles") {
         await updateVanity();
-        setUser({ ...user!, displayName: name });
+        const u = { ...user!, displayName: name, pronouns: pronouns };
+        setUser(u);
+        // send react update stuff
+        addUser(u);
       } else {
         await update();
       }
@@ -243,6 +381,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
       // reset initial snapshot to new values
       initialRef.current = {
         name,
+        pronouns,
         settings: userSettings
       };
 
@@ -254,80 +393,100 @@ export default function UserSettingsModal({ open, onClose }: any) {
   }
 
   return (
-    <div className={"modal-backdrop" + (open ? " open" : "")} onClick={_ => onClose()}>
-      <div className="modal-container settings" onClick={e => e.stopPropagation()}>
-        <div className="navigation ovy-auto ovx-hidden">
-          <div className="input-wrapper">
-            <Search className="input-icon" />
-            <input placeholder="Search" />
-          </div>
-          <hr />
-          {Object.entries(tabs).map(([section, items]) => (
-            <div key={section} className="nav-section">
-              <div className="section-header ellipsis">{section}</div>
-              {items.map(item => (
-                <div
-                  key={item}
-                  className={
-                    currentTab === item
-                      ? "channel uno selected"
-                      : "channel uno int"
-                  }
-                  onClick={() => setTab(item)}
-                >
+    <>
+      <div className={"modal-backdrop" + (open ? " open" : "")} onClick={_ => onClose()}>
+        <div className="modal-container settings" onClick={e => e.stopPropagation()}>
+          <div className="navigation ovy-auto ovx-hidden">
+            <div className="input-wrapper">
+              <Search className="input-icon" />
+              <input placeholder="Search" />
+            </div>
+            <hr />
+            {Object.entries(tabs).map(([section, items]) => (
+              <div key={section} className="nav-section">
+                <div className="section-header ellipsis">{section}</div>
+                {items.map(item => (
                   <div
-                    className="nav-icon"
-                    style={{
-                      // @ts-expect-error
-                      "--mask-url": `url('./settings/${getSettingsIconUrl(item)}.png')`
-                    }}
-                  />
-                  {item}
-                </div>
-              ))}
-              <hr />
-            </div>
-          ))}
-          <div
-            key="logout"
-            className="channel uno int dangerous"
-            onClick={() => logout()}
-          >
+                    key={item}
+                    className={
+                      currentTab === item
+                        ? "channel uno selected"
+                        : "channel uno int"
+                    }
+                    onClick={() => setTab(item)}
+                  >
+                    <div
+                      className="nav-icon"
+                      style={{
+                        // @ts-expect-error
+                        "--mask-url": `url('./settings/${getSettingsIconUrl(item)}.png')`
+                      }}
+                    />
+                    {item}
+                  </div>
+                ))}
+                <hr />
+              </div>
+            ))}
             <div
-              className="nav-icon"
-              style={{
-                // @ts-expect-error
-                "--mask-url": `url('./settings/logout.png')`
-              }}
-            />
-            Logout
-          </div>
-        </div>
-        <div className="settings-content ovy-auto">
-          <div className="settings-header ellipsis uno">
-            <div
-              className="nav-icon settings-header-icon uno"
-              style={{
-                // @ts-expect-error
-                "--mask-url": `url('./settings/${getSettingsIconUrl(currentTab)}.png')`
-              }}
-            />
-            {currentTab}
-          </div>
-          {loadCurrentTab()}
-          {hasUnsaved && (
-            <div className="unsaved-bar">
-              <div className="unsaved-message">You have unsaved changes</div>
-              <button
-                className="save-btn"
-                onClick={handleSave}
-              >
-                Save
-              </button>
+              key="logout"
+              className="channel uno int dangerous"
+              onClick={() => logout()}
+            >
+              <div
+                className="nav-icon"
+                style={{
+                  // @ts-expect-error
+                  "--mask-url": `url('./settings/logout.png')`
+                }}
+              />
+              Logout
             </div>
-          )}
+          </div>
+          <div className="settings-content ovy-auto">
+            <div className="settings-header ellipsis uno">
+              <div
+                className="nav-icon settings-header-icon uno"
+                style={{
+                  // @ts-expect-error
+                  "--mask-url": `url('./settings/${getSettingsIconUrl(currentTab)}.png')`
+                }}
+              />
+              {currentTab}
+            </div>
+            {loadCurrentTab()}
+            {hasUnsaved && (
+              <div className="unsaved-bar">
+                <div className="unsaved-message">You have unsaved changes</div>
+                <button
+                  className="save-btn"
+                  onClick={handleSave}
+                >
+                  Save
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+      {showAviCropper && (
+        <CroppingModal
+          src={croppingSrc!}
+          onCancel={() => setShowAviCropper(false)}
+          onComplete={handleAviCropComplete}
+          headerText="Adjust Your Avatar"
+        />
+      )}
+      {showBaniCropper && (
+        <CroppingModal
+          src={croppingSrc!}
+          onCancel={() => setShowBaniCropper(false)}
+          onComplete={handleBaniCropComplete}
+          headerText="Adjust Your Banner"
+          shape="rect"
+          rectAspect={2}
+        />
+      )}
+    </>
   );
 }

@@ -2,6 +2,8 @@ import React from "react";
 import { AbstractChannel, Server, User } from "./types";
 import { getChannelIcon } from "./ChannelUtils";
 import { getDisplayName, getNameFont, getRoleColor } from "./UserUtils";
+import { EmojiStyle, UserSettings } from "./userSettings";
+import Twemoji from "react-twemoji";
 
 export const COLORS = [
   "red", "orange", "yellow", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
@@ -41,7 +43,7 @@ export interface MarkdownRule {
   decorate(match: RegExpExecArray, ctx: { matchIndex: number, text: string }): DecorationRange[];
 
   // permanent parsing (for sent messages)
-  render(match: { match: RegExpExecArray; children: (JSX.Element | string)[]; attributes?: any }): JSX.Element | string;
+  render(match: { match: RegExpExecArray; children: (JSX.Element | string)[]; attributes?: any }): JSX.Element | (JSX.Element | string)[] | string;
 
   // how to render a range with "type" set to this rule's name
   leafRender?: (props: {
@@ -73,10 +75,23 @@ export function tokenizeMarkdown(text: string) {
 
 let globalParseMarkdownId = 0;
 
+function parseRender(rendered: JSX.Element | (JSX.Element | string)[] | string, nodes: JSX.Element[]) {
+  if (React.isValidElement(rendered)) {
+    rendered = React.cloneElement(rendered, { key: globalParseMarkdownId++ });
+    nodes.push(rendered);
+  } else if (typeof rendered === "string") {
+    nodes.push(<span key={globalParseMarkdownId++}>{rendered}</span>);
+  } else if (rendered instanceof Array) {
+    for (var rendered2 of rendered)
+      parseRender(rendered2, nodes);
+  }
+}
+
 // IT'S CLOSE ENOUGH
 // (this does not ensure perfect parity with the editor; ***text*** will show up properly as italic bold despite not showing up as italic bold in the editor)
 export function parseMarkdown(content: string, attributes?: any): JSX.Element[] {
-  if (!content) return [];
+  if (!content)
+    return [];
 
   let firstMatch: { rule: MarkdownRule, match: RegExpExecArray } | null = null;
 
@@ -110,12 +125,7 @@ export function parseMarkdown(content: string, attributes?: any): JSX.Element[] 
   let rendered = rule.render({ match, children: childrenNodes, attributes });
 
   // make sure rendered has a key
-  if (React.isValidElement(rendered)) {
-    rendered = React.cloneElement(rendered, { key: globalParseMarkdownId++ });
-    nodes.push(rendered);
-  } else if (typeof rendered === "string") {
-    nodes.push(<span key={globalParseMarkdownId++}>{rendered}</span>);
-  }
+  parseRender(rendered, nodes);
 
   // text after match
   if (end < content.length)
@@ -128,7 +138,7 @@ export const RULES: MarkdownRule[] = [
   // render "\"
   {
     name: "mds",
-    regex: /\\(\*|_|@|\||`|~|<|\\)/g,
+    regex: /\\(\*|_|@|\||`|~|<|\\|\p{Extended_Pictographic})/ug,
 
     decorate(match) {
       return [
@@ -679,7 +689,7 @@ export const RULES: MarkdownRule[] = [
   // @everyone and @here
   {
     name: "mention_everyone",
-    regex: /@(?<type>everyone|here)/gm,
+    regex: /(?<!\\)@(?<type>everyone|here)/gm,
 
     decorate() {
       return [];
@@ -692,7 +702,7 @@ export const RULES: MarkdownRule[] = [
   // user mentions
   {
     name: "mention_user",
-    regex: /<@(?<id>-?[0-9]+)>/gm,
+    regex: /(?<!\\)<@(?<id>-?[0-9]+)>/gm,
 
     decorate() {
       return [];
@@ -729,7 +739,7 @@ export const RULES: MarkdownRule[] = [
   // role mentions
   {
     name: "mention_role",
-    regex: /<@&(?<id>[0-9]+)>/gm,
+    regex: /(?<!\\)<@&(?<id>[0-9]+)>/gm,
 
     decorate() {
       return [];
@@ -759,7 +769,7 @@ export const RULES: MarkdownRule[] = [
   // channel mentions
   {
     name: "mention_channel",
-    regex: /<#(?<id>-?[0-9]+)>/gm,
+    regex: /(?<!\\)<#(?<id>-?[0-9]+)>/gm,
 
     decorate() {
       return [];
@@ -784,7 +794,7 @@ export const RULES: MarkdownRule[] = [
   // server mentions
   {
     name: "mention_server",
-    regex: /<~(?<id>-?[0-9]+)>/gm,
+    regex: /(?<!\\)<~(?<id>-?[0-9]+)>/gm,
 
     decorate() {
       return [];
@@ -806,13 +816,50 @@ export const RULES: MarkdownRule[] = [
       );
     }
   },
+  // big emoji
+  {
+    name: "big_emoji",
+    regex: /^(\p{Extended_Pictographic}\ufe0f?){1,64}$/ug,
+
+    decorate() {
+      return [];
+    },
+
+    render(match) {
+      const text = match.match[0];
+
+      // Split into individual emoji codepoints (each may include FE0F)
+      const parts = Array.from(text.matchAll(/\p{Extended_Pictographic}\uFE0F?/ug)).map(m => m[0]);
+
+      return parts.map(emoji =>
+        renderEmoji(
+          match.attributes.userSettings,
+          emoji,
+          `emoji-${match.attributes.noBigEmoji ? "text" : "big"} int`,
+          match.attributes.onEmojiClick
+        )
+      );
+    }
+  },
+  // emoji
+  {
+    name: "emoji",
+    regex: /(?<!\\)(\p{Extended_Pictographic})/ug,
+
+    decorate() {
+      return [];
+    },
+
+    render(match) {
+      return renderEmoji(match.attributes.userSettings, match.match[1], "emoji-text int", match.attributes.onEmojiClick);
+    }
+  }
 
   //{ type: "italicbold", regex: /(?<filler>^|[^*])(?<mds>\*\*\*)(?<content>.*?)(?<esc>[^*])(?<mds2>\*\*\*)(?<endFiller>$|[^*])/gm },
   //{ type: "italicunderline", regex: /(?<filler>^|[^_])(?<mds>___)(?<content>.*?)(?<esc>[^_])(?<mds2>___)(?<endFiller>$|[^_])/gm },
-  //{ type: "emoji", regex: /<:(?<name>[a-zA-Z0-9_]{1,32}):(?<id>[0-9]+)>/gm }
 ];
 
-export const LEAF_RULES = [... RULES.filter(rule => rule.leafRender),
+export const LEAF_RULES = [...RULES.filter(rule => rule.leafRender),
   {
     name: "mds",
     leafRender: ({ attributes, children }: any) => {
@@ -834,3 +881,39 @@ export const LEAF_RULES = [... RULES.filter(rule => rule.leafRender),
     }
   }
 ];
+
+export function renderEmoji(userSettings: UserSettings | null, emoji: string, className: string = "emoji-text", onClick: Function | null = null) {
+  return (
+    userSettings?.emojiStyle === EmojiStyle.System ? (
+      <span
+        className={className.replace(/emoji-([a-z]+)/g, match => match + "-system")}
+        onClick={e => {
+          if (onClick == null)
+            return;
+          onClick(emoji, e);
+        }}
+      >
+        {emoji}
+      </span>
+    ) : (
+      <Twemoji
+        options={{
+          className,
+          folder: "svg",
+          ext: ".svg"
+        }}
+        noWrapper={true}
+      >
+        <span
+          onClick={e => {
+            if (onClick == null)
+              return;
+            onClick(emoji, e);
+          }}
+        >
+          {emoji}
+        </span>
+      </Twemoji>
+    )
+  );
+}

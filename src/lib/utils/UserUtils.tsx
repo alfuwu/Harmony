@@ -19,7 +19,7 @@ export function getDisplayName(user: User | null | undefined, member: Member | u
 export function getNameFont(user: User | null | undefined, member: Member | undefined = undefined): string | undefined {
     const font = member?.nameFont || user?.nameFont || undefined;
     if (font !== undefined)
-        return font.startsWith("https://") ? `url(${font})` : font;
+        return font.includes('-') ? `url(${font})` : font;
     return undefined;
 }
 

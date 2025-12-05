@@ -82,6 +82,11 @@ export enum UserContext {
     NoOne
 }
 
+export enum EmojiStyle {
+    Twemoji,
+    System
+}
+
 // settings
 export interface UserSettings {
     // userId: number;
@@ -103,6 +108,7 @@ export interface UserSettings {
     alwaysExpandRoles: boolean;
     showRoleIcons: boolean;
     showOwnerCrown: boolean;
+    emojiStyle: EmojiStyle;
 
     // accessibility
     reduceMotion: boolean;
