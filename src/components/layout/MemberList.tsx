@@ -1,7 +1,7 @@
 import { useMemberState } from "../../lib/state/Members";
 import { usePopoutState } from "../../lib/state/Popouts";
 import { useServerState } from "../../lib/state/Servers";
-import { getAvatar, getDisplayName, getNameFont, getRoleColor } from "../../lib/utils/UserUtils";
+import { getAvatar, getDisplayName, getRoleColor } from "../../lib/utils/UserUtils";
 import UserPopout from "./popouts/UserPopout";
 
 export default function MemberList() {
@@ -16,7 +16,6 @@ export default function MemberList() {
         const name = getDisplayName(m.user, m);
         const avatar = getAvatar(m.user, m);
         const roleColor = getRoleColor(serverState, m.user, m, serverState.currentServer === null);
-        const font = getNameFont(m.user, m);
 
         return m.serverId === serverState.currentServer?.id && (
           <div
@@ -47,7 +46,7 @@ export default function MemberList() {
               key={m.user.id}
               className="author uno"
               style={{
-                fontFamily: font,
+                fontFamily: `${m.nameFont}, ${m.user.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`,
                 color: roleColor,
                 pointerEvents: "none"
               }}

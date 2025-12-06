@@ -256,6 +256,7 @@ input[type="range"] {
 
 button {
   cursor: pointer;
+  user-select: none;
 }
 
 button:hover {
@@ -616,6 +617,10 @@ textarea,
 .profile-item ~ .profile-item {
   margin-top: 25px;
 }
+.profiles-content {
+  max-height: 90vh;
+  overflow: hidden auto;
+}
 .profile-nav {
   margin-bottom: 40px;
 }
@@ -679,6 +684,7 @@ textarea,
   color: white;
   padding: 6px 14px;
   border-radius: 4px;
+  margin: 0 5px;
 }
 .cropper-canvas {
   cursor: grab;
@@ -687,6 +693,16 @@ textarea,
   position: relative;
   display: inline-block;
   border-radius: 15px;
+}
+.about-me {
+  padding: 0.6em 1.2em;
+  color: #ffffff;
+  background-color: var(--bg-3);
+  border-radius: 8px;
+  border: 1px solid var(--button-border);
+}
+.about-me > div {
+  height: 10rem;
 }
 
 /* lists */
@@ -1080,6 +1096,7 @@ textarea,
   padding: 2px;
   border-radius: 5px;
   border: 2px solid var(--border);
+  z-index: 9999;
 }
 .mention-title {
   font-weight: 700;
@@ -1226,6 +1243,8 @@ code {
 }
 
 .mds {
+  font-weight: 500 !important;
+  font-style: normal !important;
   color: gray !important;
   text-decoration: none !important;
   text-decoration-line: none !important;

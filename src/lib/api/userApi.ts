@@ -22,6 +22,16 @@ export async function changeBanner(file: File, options: RequestInit = {}): Promi
     body: formData
   });
 }
+export async function changeFont(file: File, options: RequestInit = {}): Promise<{ nameFont: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return binapi(`/users/@me/font`, {
+    ...options,
+    method: "POST",
+    body: formData
+  });
+}
 
 export async function deleteAvatar(options: RequestInit = {}): Promise<{ avatar: string | null }> {
   return api(`/users/@me/avatar`, {
@@ -31,6 +41,12 @@ export async function deleteAvatar(options: RequestInit = {}): Promise<{ avatar:
 }
 export async function deleteBanner(options: RequestInit = {}): Promise<{ banner: string | null }> {
   return api(`/users/@me/banner`, {
+    ...options,
+    method: "DELETE"
+  });
+}
+export async function deleteFont(options: RequestInit = {}): Promise<{ nameFont: string | null }> {
+  return api(`/users/@me/font`, {
     ...options,
     method: "DELETE"
   });

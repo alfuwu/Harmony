@@ -3,7 +3,9 @@ export interface Message {
   id: number;
   channelId: number;
   authorId: number;
+  mentionsEveryone?: boolean | null;
   mentions?: number[] | null;
+  mentionRoles?: number[] | null;
   reactions?: Reaction[] | null;
   content: string;
   previousContent?: string[] | null;

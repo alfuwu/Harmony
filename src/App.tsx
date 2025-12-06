@@ -24,6 +24,13 @@ const IS_DEVELOPMENT = window.location.hostname === "localhost";
 export const hostUrl = "https://localhost:7217";
 export const rootRef = createRef<HTMLDivElement>();
 
+window.addEventListener("keydown", function (e) {
+  // disable CTRL + F
+  if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+    e.preventDefault();
+  }
+});
+
 function AppInner() {
   const { user, setUser, token, setToken, userSettings, setUserSettings } = useAuthState();
   const [loading, setLoading] = useState(true);
@@ -107,7 +114,7 @@ function AppInner() {
                 className="avatar uno int"
                 src={avatar}
                 alt="avatar"
-                onClick={e => {
+                onClick={_e => {
                   setModalOpen(true);
                   /*const rect = e.currentTarget.getBoundingClientRect();
                   open({

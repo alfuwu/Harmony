@@ -1,7 +1,7 @@
 import React from "react";
 import { AbstractChannel, Server, User } from "./types";
 import { getChannelIcon } from "./ChannelUtils";
-import { getDisplayName, getNameFont, getRoleColor } from "./UserUtils";
+import { getDisplayName, getRoleColor } from "./UserUtils";
 import { EmojiStyle, UserSettings } from "./userSettings";
 import Twemoji from "react-twemoji";
 
@@ -719,13 +719,12 @@ export const RULES: MarkdownRule[] = [
 
       const name = u ? "@" + getDisplayName(u, m) : fallback;
       const roleColor = u ? getRoleColor(match.attributes?.serverState, u, m, match.attributes?.serverState.currentServer === null) : undefined;
-      const font = u ? getNameFont(u, m) : undefined;
 
       return (
         <span
           className="mention int"
           style={{
-            fontFamily: font,
+            fontFamily: `${m?.nameFont}, ${u?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`,
             // @ts-expect-error CSS variable
             "--special-mention-color": roleColor
           }}

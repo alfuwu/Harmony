@@ -4,7 +4,7 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
 import { parseMarkdown } from "../../lib/utils/Markdown";
-import { getAvatar, getDisplayName, getNameFont, getPronouns, getRoleColor } from "../../lib/utils/UserUtils";
+import { getAvatar, getDisplayName, getPronouns, getRoleColor } from "../../lib/utils/UserUtils";
 import { Channel, Member, Server, User } from "../../lib/utils/types";
 import { useMemberState } from "../../lib/state/Members";
 import { usePopoutState } from "../../lib/state/Popouts";
@@ -116,7 +116,7 @@ export default function MessageList() {
     return `${month}/${day}/${year}`;
   }
 
-  function openUserPopout(target: HTMLElement, user: User, member: Member | undefined) {
+  function openUserPopout(target: Element, user: User, member: Member | undefined) {
     const rect = target.getBoundingClientRect();
     open({
       id: "user-profile",
@@ -147,15 +147,10 @@ export default function MessageList() {
         } as User;
 
         const member = memberState.get(author.id, serverState.currentServer?.id);
-        if (member && member.nameFont !== "standard galactic alphabet") {
-          member.nameFont = "standard galactic alphabet";
-          setTimeout(() => memberState.addMember(member), 0); // send update
-        }
         const name = getDisplayName(author, member);
         const avatar = getAvatar(author, member);
         const roleColor = getRoleColor(serverState, author, member, serverState.currentServer === null);
         const pronouns = getPronouns(author, member);
-        const font = getNameFont(author, member);
 
         let showHeader = true;
         const prevMsg = channelMessages[i - 1];
@@ -177,19 +172,19 @@ export default function MessageList() {
                   src={avatar}
                   alt="avatar"
                   onClick={e => 
-                    openUserPopout(e.currentTarget as HTMLElement, author, member)}
+                    openUserPopout(e.currentTarget, author, member)}
                 />
                 <div className="header-meta">
                   <span
                     className="author int"
                     style={{
-                      fontFamily: !hover ? font : undefined,
+                      fontFamily: !hover ? `${member?.nameFont}, ${author.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif` : undefined,
                       color: roleColor
                     }}
                     onMouseEnter={() => setHover(msg.id + msg.timestamp, true)}
                     onMouseLeave={() => setHover(msg.id + msg.timestamp, false)}
                     onClick={e => 
-                      openUserPopout(e.currentTarget as HTMLElement, author, member)}
+                      openUserPopout(e.currentTarget, author, member)}
                     data-hover={hover}
                   >
                     {hover && <span className="semitrans">@</span>}
@@ -220,7 +215,7 @@ export default function MessageList() {
                 userSettings,
                 onMentionClick: (user: User, member: Member, event: React.MouseEvent) => {
                   event.preventDefault();
-                  openUserPopout(event.currentTarget as HTMLElement, user, member);
+                  openUserPopout(event.currentTarget, user, member);
                 },
                 onChannelClick: (channel: Channel, event: React.MouseEvent) => {
                   if (channelState.currentChannel?.id !== channel.id) {

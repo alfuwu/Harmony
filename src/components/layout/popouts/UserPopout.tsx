@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Member, User } from "../../../lib/utils/types";
-import { getAvatar, getDisplayName, getNameFont, getRoleColor } from "../../../lib/utils/UserUtils";
+import { getAvatar, getDisplayName, getRoleColor } from "../../../lib/utils/UserUtils";
 import { ServerState } from "../../../lib/state/Servers";
 
 interface UserPopoutProps {
@@ -15,7 +15,6 @@ export default function UserPopout({ user, member, serverState, onClose, positio
   const name = getDisplayName(user, member);
   const avatar = getAvatar(user, member);
   const roleColor = serverState ? getRoleColor(serverState, user, member, true) : undefined;
-  const font = getNameFont(user, member);
   
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -50,7 +49,7 @@ export default function UserPopout({ user, member, serverState, onClose, positio
     >
       <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
         <img src={avatar} alt="avatar" style={{ width: 32, height: 32, borderRadius: "50%", marginRight: "8px" }} />
-        <span style={{ fontFamily: font ?? undefined, color: roleColor ?? undefined }}>{name}</span>
+        <span style={{ fontFamily: `${member?.nameFont}, ${user.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`, color: roleColor ?? undefined }}>{name}</span>
       </div>
       <div>
         <strong>Username:</strong> @{user.username}

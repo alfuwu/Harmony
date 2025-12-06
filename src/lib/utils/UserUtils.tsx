@@ -16,11 +16,15 @@ export function getDisplayName(user: User | null | undefined, member: Member | u
     return member?.nickname || user?.displayName || user?.username || "Unknown User";
 }
 
-export function getNameFont(user: User | null | undefined, member: Member | undefined = undefined): string | undefined {
+export function isCustomFont(font: string): boolean {
+    return !!font.match(/[a-f0-9]{32}/);
+}
+
+export function getNameFont(user: User | null | undefined, member: Member | undefined = undefined): [string | undefined, boolean] {
     const font = member?.nameFont || user?.nameFont || undefined;
     if (font !== undefined)
-        return font.includes('-') ? `url(${font})` : font;
-    return undefined;
+        return isCustomFont(font) ? [`${hostUrl}/api/users/${user!.id}/${member?.nameFont ? `${member?.serverId}/` : ''}font/${font}`, true] : [font, false];
+    return [undefined, false];
 }
 
 export function getPronouns(user: User, member: Member | undefined = undefined): string | undefined {

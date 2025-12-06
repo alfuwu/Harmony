@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
 
-// TODO: fix bug where same aspect rectangles have smaller minimum zoom than they hsould
 export default function CroppingModal({
   src,
   onCancel,
@@ -47,17 +46,28 @@ export default function CroppingModal({
     const img = imgRef.current;
 
     // target size before scale
-    const { renderW, renderH } = getRenderSize(img);
+    const { renderW, renderH, imgRatio } = getRenderSize(img);
     const paddingX = getPaddingX();
 
-    let bgX = canvas.width / 2 - paddingX;
-    let bgY = canvas.height / 2 - paddingY;
+    let bgX = canvas.width / 2;
+    let bgY = canvas.height / 2;
     if (shape === "rect") {
-      if (rectAspect > 1)
-        bgX *= rectAspect;
-      else
+      if (rectAspect > 1) {
         bgY /= rectAspect;
+        if (imgRatio > 1) { // image is also rectangular, which means we need to expand sizeX to fill
+          bgX *= imgRatio;
+          bgY *= imgRatio;
+        }
+      } else {
+        bgX *= rectAspect;
+        if (imgRatio < 1)
+          bgX /= imgRatio;
+        else
+          bgX *= imgRatio;
+      }
     }
+    bgX -= paddingX;
+    bgY -= paddingY;
 
     ctx.save();
     ctx.fillStyle = "rgba(160, 169, 192, 0.4)";
@@ -144,17 +154,17 @@ export default function CroppingModal({
     else
       renderH = baseSize / imgRatio;
 
-    return { renderW, renderH };
+    return { renderW, renderH, imgRatio };
   }
 
   useEffect(() => {
-    const { renderW, renderH } = getRenderSize(imgRef.current);
+    const { renderW, renderH, imgRatio } = getRenderSize(imgRef.current);
 
     const paddingX = getPaddingX();
 
     // evil black magic mathematics hack
-    const regX = paddingX;
-    const regY = paddingY;
+    let regX = paddingX;
+    let regY = paddingY;
     let paddedX = (paddingX / scale);
     let paddedY = (paddingY / scale);
 
@@ -163,15 +173,25 @@ export default function CroppingModal({
     let sizeX = (viewRadius / scale);
     let sizeY = (viewRadius / scale);
     
-    /*if (shape === "rect") {
+    if (shape === "rect") {
       if (rectAspect > 1) {
         sizeY /= rectAspect;
         paddedY /= rectAspect;
+        if (imgRatio > 1) { // image is also rectangular, which means we need to expand sizeX to fill
+          sizeX *= imgRatio;
+          sizeY *= imgRatio;
+          regY /= imgRatio;
+          paddedY *= imgRatio;
+        }
       } else {
         sizeX *= rectAspect;
         paddedX *= rectAspect;
+        if (imgRatio > 1) {
+          regX /= imgRatio;
+          paddedX /= imgRatio;
+        }
       }
-    }*/
+    }
 
     sizeX += (regX - paddedX); // here we use the evil black magic
     sizeY += (regY - paddedY);
@@ -197,6 +217,7 @@ export default function CroppingModal({
     draw();
   }, [position, scale]);
 
+  // not perfectly 1:1 with what the cropping modal shows
   async function handleDone() {
     const img = imgRef.current;
     const exportCanvas = document.createElement("canvas");
@@ -259,7 +280,8 @@ export default function CroppingModal({
         <div className="zoom-control">
           <input
             type="range"
-            min="1"
+            // hacky solution to the fact that vertically tall rectangular images don't like vertically tall rectangular cropping rectangles
+            min={shape === "circle" || rectAspect >= 1 || (imgRef.current.width / imgRef.current.height >= 1) ? 1 : imgRef.current.width / imgRef.current.height}
             max="5"
             step="0.01"
             value={scale}

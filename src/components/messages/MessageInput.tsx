@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import { Slate, Editable, withReact } from "slate-react";
+import { useState, useMemo, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
+import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { createEditor, Node, Editor, Transforms, Range, Text } from "slate";
 import { withHistory } from "slate-history";
 import ReactDOM from "react-dom";
@@ -9,7 +9,7 @@ import { useAuthState } from "../../lib/state/Auth";
 import { useUserState } from "../../lib/state/Users";
 import { LEAF_RULES, renderEmoji, tokenizeMarkdown } from "../../lib/utils/Markdown";
 import { AbstractChannel, Channel, Role, Server, User } from "../../lib/utils/types";
-import { getAvatar, getDisplayName, getNameFont, getRoleColor } from "../../lib/utils/UserUtils";
+import { getAvatar, getDisplayName, getRoleColor } from "../../lib/utils/UserUtils";
 import { useServerState } from "../../lib/state/Servers";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage } from "../../lib/api/messageApi";
@@ -17,12 +17,10 @@ import { rootRef } from "../../App";
 import { useMemberState } from "../../lib/state/Members";
 import data, { Emoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
-import { EmojiStyle } from "../../lib/utils/userSettings";
-import Twemoji from "react-twemoji";
-/*import twemoji from "twemoji";*/
 
 init({ data });
-
+// TODO: inserting an editable void right after another replaces the previous editable void
+// TODO: make it so that the editor properly parses things like <@0> into editable void mentions
 const withMentions = (editor: Editor) => {
   const { isInline, isVoid, markableVoid } = editor;
 
@@ -108,7 +106,17 @@ const insertEmoji = (editor: Editor, emoji: Emoji) => {
   Transforms.move(editor);
 }
 
-export default function MessageInput() {
+const MessageInput = forwardRef(function MessageInput({
+  isChannel = true,
+  placeholderText = undefined,
+  initialText = undefined,
+  setText = undefined
+}: {
+  isChannel?: boolean,
+  placeholderText?: string,
+  initialText?: string | null | undefined,
+  setText?: React.Dispatch<React.SetStateAction<string | null | undefined>>
+}, ref) {
   const editor = useMemo(
     () => withHistory(withMentions(withEmoji(withReact(createEditor())))),
     []
@@ -128,6 +136,16 @@ export default function MessageInput() {
   const [target, setTarget] = useState<Range | null>(null);
   const [search, setSearch] = useState("");
   const [index, setIndex] = useState(0);
+
+  useImperativeHandle(ref, () => ({
+    setText(text: string) {
+      // @ts-expect-error
+      editor.children = [{ type: "paragraph", children: [{ text: text }] }];
+      editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
+      editor.history = { undos: [], redos: [] };
+      editor.onChange();
+    }
+  }));
 
   /* could also work by just turning the mentionResults in general into a state but whatever */
   const [emojiResults, setEmojiResults] = useState([]);
@@ -154,21 +172,24 @@ export default function MessageInput() {
     return () => { cancelled = true; };
   }, [search]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const tag = document.activeElement?.tagName.toLowerCase();
-      if (document.activeElement === editableRef.current || tag === "input" || tag === "textarea")
-        return;
-      if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter")
-        return;
-      editableRef.current?.focus();
-    };
+  if (isChannel) {
+    useEffect(() => {
+      const handler = (e: KeyboardEvent) => {
+        const tag = document.activeElement?.tagName.toLowerCase();
+        // @ts-expect-error
+        if (document.activeElement === editableRef.current || tag === "input" || tag === "textarea" || document.activeElement?.isContentEditable)
+          return;
+        if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter")
+          return;
+        editableRef.current?.focus();
+      };
 
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
+      window.addEventListener("keydown", handler);
+      return () => window.removeEventListener("keydown", handler);
+    }, []);
+  }
 
-  const initialValue = [{ type: "paragraph", children: [{ text: "" }] }];
+  const initialValue = [{ type: "paragraph", children: [{ text: initialText ?? "" }] }];
 
   const getFullText = (): [any[], string[], string] => {
     const blocks = editor.children as any[];
@@ -295,7 +316,7 @@ export default function MessageInput() {
             contentEditable={false}
             className="mention int"
             style={{
-              fontFamily: getNameFont(element.user, m),
+              fontFamily: `${m?.nameFont}, ${element.user?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`,
               "--special-mention-color": getRoleColor(serverState, element.user, m, currentServer === null)
             }}
           >
@@ -367,9 +388,12 @@ export default function MessageInput() {
         } else {
           setTarget(null);
         }
+
+        if (setText)
+          setText(editor.children.map((n) => Node.string(n)).join("\n"));
       }}
     >
-      {target && mentionResults().length > 0 &&
+      {target && editableRef.current === document.activeElement && mentionResults().length > 0 &&
         ReactDOM.createPortal(
           <div
             ref={el => {
@@ -377,23 +401,28 @@ export default function MessageInput() {
                 return;
               
               requestAnimationFrame(() => {
-                // @ ts-expect-error
-                //const domRange = ReactEditor.toDOMRange(editor, target);
-                //const rect = domRange.getBoundingClientRect();
-                const inputWrapper = document.querySelector(".msg-wrap");
-                if (!inputWrapper)
-                  return;
+                let rect: DOMRect;
+                if (isChannel) {
+                  const inputWrapper = document.querySelector(".msg-wrap");
+                  if (!inputWrapper)
+                    return;
 
-                const rect = inputWrapper.getBoundingClientRect();
+                  rect = inputWrapper.getBoundingClientRect();
+                } else {
+                  // @ts-expect-error
+                  const domRange = ReactEditor.toDOMRange(editor, target);
+                  rect = domRange.getBoundingClientRect();
+                }
                 const popupHeight = el.offsetHeight;
 
                 el.style.position = "absolute";
                 el.style.top = `${rect.top + window.pageYOffset - popupHeight - 4}px`; // above input
                 el.style.left = `${rect.left + window.pageXOffset}px`;
-                el.style.width = `${rect.width - 8}px`;
+                if (isChannel)
+                  el.style.width = `${rect.width - 8}px`;
               });
             }}
-            className="ven-colors mention-popup"
+            className="ven-colors mention-popup uno"
           >
             <span className="mention-title">{
               search[0] === "@" ? "MEMBERS" :
@@ -419,7 +448,7 @@ export default function MessageInput() {
                       onMouseEnter={() => setIndex(i)}
                     >
                       <img className="avatar" src={getAvatar(u, m)} alt="avatar" />
-                      <span style={{ fontFamily: getNameFont(u, m) }}>{getDisplayName(u, m)}</span>
+                      <span style={{ fontFamily: `${m?.nameFont}, ${u.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif` }}>{getDisplayName(u, m)}</span>
                       <span className="username">@{u.username}</span>
                     </div>
                   );
@@ -480,7 +509,7 @@ export default function MessageInput() {
       <Editable
         ref={editableRef}
         className="msg-input"
-        placeholder={currentChannel ? `Send a message in #${currentChannel.name}` : "Send a message into the void"}
+        placeholder={placeholderText ? placeholderText : isChannel ? currentChannel ? `Send a message in #${currentChannel.name}` : "Send a message into the void" : "Type..."}
         decorate={decorate}
         renderLeaf={Leaf}
         renderElement={renderElement}
@@ -529,41 +558,39 @@ export default function MessageInput() {
             }
           }
 
-          if (e.key === "Enter") {
-            if (e.shiftKey) {
-              
-            } else {
-              e.preventDefault();
-              const text = editor.children.map((n) => Node.string(n)).join("\n");
-              // @ts-expect-error
-              editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
-              editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
-              editor.history = { undos: [], redos: [] };
-              // update the editor manually
-              editor.onChange();
+          if (e.key === "Enter" && isChannel) {
+            e.preventDefault();
+            const text = editor.children.map((n) => Node.string(n)).join("\n");
+            if (text === "")
+              return;
+            // @ts-expect-error
+            editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
+            editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
+            editor.history = { undos: [], redos: [] };
+            // update the editor manually
+            editor.onChange();
 
-              if (!currentChannel || !user)
-                return;
+            if (!currentChannel || !user)
+              return;
 
-              const msg = {
-                id: -1,
-                channelId: currentChannel.id,
-                authorId: user.id,
-                mentions: [],
-                reactions: [],
-                content: text,
-                previousContent: null,
-                timestamp: new Date().toString(),
-                editedTimestamp: null,
-                isDeleted: false,
-                isPinned: false,
-                sending: true,
-                nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
-              };
+            const msg = {
+              id: -1,
+              channelId: currentChannel.id,
+              authorId: user.id,
+              mentions: [],
+              reactions: [],
+              content: text,
+              previousContent: null,
+              timestamp: new Date().toString(),
+              editedTimestamp: null,
+              isDeleted: false,
+              isPinned: false,
+              sending: true,
+              nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
+            };
 
-              addMessage(msg);
-              sendMessage(currentChannel.id, text, msg.nonce, { headers: { Authorization: `Bearer ${token}` } }).then(sentMsg => addMessage(sentMsg));
-            }
+            addMessage(msg);
+            sendMessage(currentChannel.id, text, msg.nonce, { headers: { Authorization: `Bearer ${token}` } }).then(sentMsg => addMessage(sentMsg));
           }
 
           queueMicrotask(() => skipMention(e.key === "ArrowLeft"));
@@ -572,4 +599,6 @@ export default function MessageInput() {
       />
     </Slate>
   );
-}
+});
+
+export default MessageInput;

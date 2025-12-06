@@ -1,17 +1,24 @@
 // @ts-expect-error
 import { Theme, AppIcon, IconDisplayType, UserIconDisplayType, NameHoverBehavior, NameFontDisplayType, RoleColor, AnimateContext, VoiceInputMode, SpoilerContext, FriendRequestContext, UserContext, UserSettings } from "../../../lib/utils/userSettings";
 import { useAuthState } from "../../../lib/state/Auth";
-import { updateMe, updateProfile, updateSettings, changeAvatar, changeBanner, deleteAvatar, deleteBanner } from "../../../lib/api/userApi";
+import { updateMe, updateProfile, updateSettings, changeAvatar, changeBanner, deleteAvatar, deleteBanner, deleteFont, changeFont } from "../../../lib/api/userApi";
 import { useEffect, useRef, useState } from "react";
 import Search from "../../svgs/settings/Search";
-import { getAvatar, getBanner, getDisplayName, getNameFont } from "../../../lib/utils/UserUtils";
+import { getAvatar, getBanner, getDisplayName } from "../../../lib/utils/UserUtils";
 import { Server } from "../../../lib/utils/types";
 import { useUserState } from "../../../lib/state/Users";
 import CroppingModal from "./CroppingModal";
+import MessageInput from "../../messages/MessageInput";
+import { useMessageState } from "../../../lib/state/Messages";
+import { useMemberState } from "../../../lib/state/Members";
+import { useServerState } from "../../../lib/state/Servers";
 
 export default function UserSettingsModal({ open, onClose }: any) {
   const { token, user, setUser, userSettings, setUserSettings } = useAuthState();
   const { addUser } = useUserState();
+  const { setMessages } = useMessageState();
+  const { setMembers } = useMemberState();
+  const { setServers } = useServerState();
   const [currentTab, setCurrentTab] = useState("My Account");
   const [emailRevealed, setEmailRevealed] = useState(false);
   const [phoneRevealed, setPhoneRevealed] = useState(false);
@@ -19,9 +26,15 @@ export default function UserSettingsModal({ open, onClose }: any) {
   
   const [name, setName] = useState(user?.displayName);
   const [pronouns, setPronouns] = useState(user?.pronouns);
+  const [bio, setBio] = useState(user?.bio);
+
+  const inputRef = useRef(null);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [fontFile, setFontFile] = useState<File | string | null>(null);
+  const [fAviFile, setFAviFile] = useState<File | null>(null);
+  const [fBaniFile, setFBaniFile] = useState<File | null>(null);
   const [croppingSrc, setCroppingSrc] = useState<string | null>(null);
   const [showAviCropper, setShowAviCropper] = useState(false);
   const [showBaniCropper, setShowBaniCropper] = useState(false);
@@ -29,6 +42,8 @@ export default function UserSettingsModal({ open, onClose }: any) {
   const initialRef = useRef({
     name: user?.displayName,
     pronouns: user?.pronouns,
+    bio: user?.bio,
+    nameFont: user?.nameFont,
     settings: userSettings
   });
 
@@ -37,17 +52,37 @@ export default function UserSettingsModal({ open, onClose }: any) {
 
   // compare helper
   function computeDirty() {
-    const nameChanged = name !== initialRef.current.name;
-    const pronounsChanged = pronouns !== initialRef.current.pronouns;
-    /* currently, the user settings object gets populated AFTER this modal gets added to the app, so.. */
-    const settingsChanged = JSON.stringify(userSettings) !== JSON.stringify(initialRef.current.settings);
-    return nameChanged || pronounsChanged;
+    // currently, the user settings object gets populated AFTER this modal gets added to the app, so..
+    //const settingsChanged = JSON.stringify(userSettings) !== JSON.stringify(initialRef.current.settings);
+    return name !== initialRef.current.name ||
+      pronouns !== initialRef.current.pronouns ||
+      bio !== initialRef.current.bio ||
+      fAviFile !== null ||
+      fBaniFile !== null ||
+      fontFile !== null && (typeof fontFile !== "string" || fontFile !== initialRef.current.nameFont);
   }
 
   // recompute whenever dependent values change
   useEffect(() => {
     setHasUnsaved(computeDirty());
-  }, [name, pronouns, userSettings]);
+  }, [name, pronouns, bio, fAviFile, fBaniFile, fontFile, userSettings]);
+
+  useEffect(() => {
+    if (fontFile && typeof fontFile !== "string") {
+      const blobUrl = URL.createObjectURL(fontFile);
+
+      const style = document.createElement("style");
+      style.textContent = `@font-face{font-family:"UploadedFont";src:url(${blobUrl});}`;
+      document.head.appendChild(style);
+
+      return () => {
+        setTimeout(() => {
+          document.head.removeChild(style);
+          URL.revokeObjectURL(blobUrl);
+        }, 50); // do with small timeout to prevent font flashing
+      };
+    }
+  }, [fontFile]);
 
   const tabs = {
     "USER SETTINGS": [
@@ -88,8 +123,12 @@ export default function UserSettingsModal({ open, onClose }: any) {
   }
 
   async function updateVanity(server: Server | undefined = undefined) {
+    const body = { displayName: name, pronouns, bio };
+    if (typeof fontFile === "string")
+      // @ts-expect-error
+      body.nameFont = fontFile;
     return updateProfile(
-      { displayName: name, pronouns: pronouns },
+      body,
       server,
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -98,6 +137,10 @@ export default function UserSettingsModal({ open, onClose }: any) {
   async function logout() {
     onClose();
     setUser(null);
+    // reset cache
+    setMessages([]);
+    setMembers([]);
+    setServers([]);
     localStorage.removeItem("token");
   }
 
@@ -136,26 +179,24 @@ export default function UserSettingsModal({ open, onClose }: any) {
     reader.readAsDataURL(file);
   }
 
+  async function handleFontPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file)
+      return;
+    e.target.value = "";
+
+    setFontFile(file);
+  }
+
   async function handleAviCropComplete(croppedBlob: Blob) {
     const croppedFile = new File([croppedBlob], avatarFile?.name || "avatar.png", {
       type: croppedBlob.type,
     });
 
-    try {
-      const res = await changeAvatar(croppedFile, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const updated = { ...user!, avatar: res.avatar };
-      setUser(updated);
-      addUser(updated);
-    } catch (err) {
-      console.error(err);
-    }
-
     setShowAviCropper(false);
     setCroppingSrc(null);
     setAvatarFile(null);
+    setFAviFile(croppedFile);
   }
 
   async function handleBaniCropComplete(croppedBlob: Blob) {
@@ -163,21 +204,10 @@ export default function UserSettingsModal({ open, onClose }: any) {
       type: croppedBlob.type,
     });
 
-    try {
-      const res = await changeBanner(croppedFile, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const updated = { ...user!, banner: res.banner };
-      setUser(updated);
-      addUser(updated);
-    } catch (err) {
-      console.error(err);
-    }
-
     setShowBaniCropper(false);
     setCroppingSrc(null);
     setBannerFile(null);
+    setFBaniFile(croppedFile);
   }
 
   async function handleRemoveAvatar() {
@@ -208,6 +238,20 @@ export default function UserSettingsModal({ open, onClose }: any) {
     }
   }
 
+  async function handleRemoveFont() {
+    try {
+      const res = await deleteFont({
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const updated = { ...user!, nameFont: res.nameFont };
+      setUser(updated);
+      addUser(updated);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   function setTab(tab: string) {
     if (hasUnsaved)
       return;
@@ -218,7 +262,6 @@ export default function UserSettingsModal({ open, onClose }: any) {
     const displayName = getDisplayName(user);
     const avatar = getAvatar(user);
     const banner = getBanner(user);
-    const font = getNameFont(user);
 
     switch(currentTab) {
       case "My Account":
@@ -232,26 +275,27 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 "--banner": banner ? `url('${banner}')` : `url('${avatar}')`
               }}
             />
-            <div
-              className="profile-name uno"
-              style={{
-                fontFamily: font
-              }}
-            >
+            <div className="profile-name uno">
               <img
                 className="big-avatar uno"
                 src={avatar}
                 alt="avatar"
               />
               <div>
-                {displayName}
+                <div 
+                  style={{
+                    fontFamily: `${user?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`
+                  }}
+                >
+                  {displayName}
+                </div>
                 <div className="profile-id">ID: {user?.id}</div>
               </div>
               <button onClick={() => setTab("Profiles")}>
                 Edit User Profile
               </button>
             </div>
-            <div className="profile-details">
+            <div className="profile-details uno">
               <div className="profile-item">
                 <div>
                   <div>Display Name</div>
@@ -304,55 +348,71 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 Per-server Profiles
               </div>
             </div>
+            {!isMainProfile && (
+              <>
+                <div className="uno">Server</div>
+                {/* do smthn to make a server dropdown thing */}
+              </>
+            )}
             <div className="profiles-content halign">
-              {isMainProfile ? (
-                <div className="profiles-item">
-                  <div>Display Name</div>
-                  <input value={name ?? ""} placeholder={user?.username} onChange={e => setName(e.target.value !== "" ? e.target.value : null)} />
-                  <hr />
-                  <div>Pronouns</div>
-                  <input value={pronouns ?? ""} placeholder="Add your pronouns" onChange={e => setPronouns(e.target.value !== "" ? e.target.value : null)} />
-                  <hr />
-                  <div>Avatar</div>
-                  <div className="item-actions">
-                    <button onClick={_ => document.getElementById("avatar-picker")?.click()}>
-                      {user?.avatar ? "Change Avatar" : "Add Avatar"}
-                      <input id="avatar-picker" type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarPick} />
-                    </button>
-                    <button className="dangerous" onClick={handleRemoveAvatar}>Remove Avatar</button>
-                  </div>
-                  <hr />
-                  <div>Banner</div>
-                  <div className="item-actions">
-                    <button onClick={_ => document.getElementById("banner-picker")?.click()}>
-                      {user?.avatar ? "Change Banner" : "Add Banner"}
-                      <input id="banner-picker" type="file" accept="image/*" style={{ display: "none" }} onChange={handleBannerPick} />
-                    </button>
-                    <button className="dangerous" onClick={handleRemoveBanner}>Remove Banner</button>
-                  </div>
+              <div className="profiles-item">
+                <div className="uno">Display Name</div>
+                <input value={name ?? ""} placeholder={user?.username} onChange={e => setName(e.target.value !== "" ? e.target.value : null)} />
+                <hr />
+                <div className="uno">Pronouns</div>
+                <input value={pronouns ?? ""} placeholder="Add your pronouns" onChange={e => setPronouns(e.target.value !== "" ? e.target.value : null)} />
+                <hr />
+                <div className="uno">Avatar</div>
+                <div className="item-actions">
+                  <button onClick={_ => document.getElementById("avatar-picker")?.click()}>
+                    {user?.avatar ? "Change Avatar" : "Add Avatar"}
+                    <input id="avatar-picker" type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarPick} />
+                  </button>
+                  <button className="dangerous" onClick={handleRemoveAvatar}>Remove Avatar</button>
                 </div>
-              ) : (
-                <div className="profiles-item">
+                <hr />
+                <div className="uno">Banner</div>
+                <div className="item-actions">
+                  <button onClick={_ => document.getElementById("banner-picker")?.click()}>
+                    {user?.banner ? "Change Banner" : "Add Banner"}
+                    <input id="banner-picker" type="file" accept="image/*" style={{ display: "none" }} onChange={handleBannerPick} />
+                  </button>
+                  <button className="dangerous" onClick={handleRemoveBanner}>Remove Banner</button>
+                  {/* add color picker here to change banner color */}
                 </div>
-              )}
+                <hr />
+                <div className="uno">Name Font</div>
+                <div className="item-actions">
+                  <button onClick={_ => document.getElementById("font-picker")?.click()}>
+                    {user?.nameFont ? "Change Font" : "Add Font"}
+                    <input id="font-picker" type="file" accept=".ttf,.otf,.woff,.woff2,.sfnt" style={{ display: "none" }} onChange={handleFontPick} />
+                  </button>
+                  <button className="dangerous" onClick={handleRemoveFont}>Remove Font</button>
+                </div>
+                <hr />
+                <div className="uno">About Me</div>
+                <div className="about-me">
+                  <MessageInput isChannel={false} placeholderText="Write your bio" initialText={bio} setText={setBio} ref={inputRef} />
+                </div>
+              </div>
               <div className="preview">
                 <div
                   className="banner"
                   style={{
                     // @ts-expect-error
                     "--banner-color": "#" + (user?.bannerColor?.toString(16)?.padStart(6, "0") ?? "000000"),
-                    "--banner": banner ? `url('${banner}')` : ""
+                    "--banner": fBaniFile ? `url(${URL.createObjectURL(fBaniFile)})` : banner ? `url(${banner})` : ""
                   }}
                 />
                   <img
                     className="big-avatar uno"
-                    src={avatar}
+                    src={fAviFile ? URL.createObjectURL(fAviFile) : avatar}
                     alt="avatar"
                   />
                 <div
                   className="profile-name uno"
                   style={{
-                    fontFamily: font
+                    fontFamily: `UploadedFont, ${user?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`
                   }}
                 >
                   <div>{name || user?.username}</div>
@@ -361,27 +421,89 @@ export default function UserSettingsModal({ open, onClose }: any) {
             </div>
           </div>
         );
+      case "Privacy & Safety":
+        return (
+          <div>
+            <div className="profiles-item">
+              <div className="uno">Display Name</div>
+              <input value={name ?? ""} placeholder={user?.username} onChange={e => setName(e.target.value !== "" ? e.target.value : null)} />
+              <hr />
+            </div>
+          </div>
+        )
     }
+  }
+
+  function handleRevert() {
+    setName(initialRef.current.name);
+    setPronouns(initialRef.current.pronouns);
+    setBio(initialRef.current.bio);
+    // @ts-expect-error magic ref thing
+    inputRef.current?.setText(initialRef.current.bio);
+    setUserSettings(initialRef.current.settings);
+
+    setFAviFile(null);
+    setFBaniFile(null);
+    setFontFile(null);
+    setAvatarFile(null);
+    setBannerFile(null);
   }
 
   async function handleSave() {
     try {
+      let u = { ...user! };
       if (currentTab === "My Account") {
         await updateCore();
       } else if (currentTab === "Profiles") {
         await updateVanity();
-        const u = { ...user!, displayName: name, pronouns: pronouns };
-        setUser(u);
-        // send react update stuff
-        addUser(u);
+        u = { ...u, displayName: name, pronouns, bio };
       } else {
         await update();
+      }
+
+      try {
+        if (fAviFile !== null) {
+          const res = await changeAvatar(fAviFile, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          u.avatar = res.avatar;
+          setFAviFile(null);
+        }
+        if (fBaniFile !== null) {
+          const res = await changeBanner(fBaniFile, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          u.banner = res.banner;
+          setFBaniFile(null);
+        }
+        if (fontFile !== null) {
+          if (fontFile instanceof File) {
+            const res = await changeFont(fontFile, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+
+            u.nameFont = res.nameFont;
+          } else {
+            u.nameFont = fontFile;
+          }
+          setFontFile(null);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+      if (u != user) { // send react update stuff
+        setUser(u);
+        addUser(u);
       }
 
       // reset initial snapshot to new values
       initialRef.current = {
         name,
         pronouns,
+        bio,
+        nameFont: u.nameFont,
         settings: userSettings
       };
 
@@ -394,8 +516,8 @@ export default function UserSettingsModal({ open, onClose }: any) {
 
   return (
     <>
-      <div className={"modal-backdrop" + (open ? " open" : "")} onClick={_ => onClose()}>
-        <div className="modal-container settings" onClick={e => e.stopPropagation()}>
+      <div className={"modal-backdrop" + (open ? " open" : "")} onMouseDown={_ => !hasUnsaved && onClose()}>
+        <div className="modal-container settings" onMouseDown={e => e.stopPropagation()}>
           <div className="navigation ovy-auto ovx-hidden">
             <div className="input-wrapper">
               <Search className="input-icon" />
@@ -404,7 +526,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
             <hr />
             {Object.entries(tabs).map(([section, items]) => (
               <div key={section} className="nav-section">
-                <div className="section-header ellipsis">{section}</div>
+                <div className="section-header uno ellipsis">{section}</div>
                 {items.map(item => (
                   <div
                     key={item}
@@ -419,7 +541,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
                       className="nav-icon"
                       style={{
                         // @ts-expect-error
-                        "--mask-url": `url('./settings/${getSettingsIconUrl(item)}.png')`
+                        "--mask-url": `url(./settings/${getSettingsIconUrl(item)}.png)`
                       }}
                     />
                     {item}
@@ -437,7 +559,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 className="nav-icon"
                 style={{
                   // @ts-expect-error
-                  "--mask-url": `url('./settings/logout.png')`
+                  "--mask-url": `url(./settings/logout.png)`
                 }}
               />
               Logout
@@ -449,7 +571,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 className="nav-icon settings-header-icon uno"
                 style={{
                   // @ts-expect-error
-                  "--mask-url": `url('./settings/${getSettingsIconUrl(currentTab)}.png')`
+                  "--mask-url": `url(./settings/${getSettingsIconUrl(currentTab)}.png)`
                 }}
               />
               {currentTab}
@@ -457,13 +579,11 @@ export default function UserSettingsModal({ open, onClose }: any) {
             {loadCurrentTab()}
             {hasUnsaved && (
               <div className="unsaved-bar">
-                <div className="unsaved-message">You have unsaved changes</div>
-                <button
-                  className="save-btn"
-                  onClick={handleSave}
-                >
-                  Save
-                </button>
+                <div className="uno">You have unsaved changes</div>
+                <div>
+                  <button onClick={handleRevert}>Revert</button>
+                  <button className="save-btn" onClick={handleSave}>Save</button>
+                </div>
               </div>
             )}
           </div>
