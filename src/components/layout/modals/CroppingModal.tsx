@@ -23,7 +23,8 @@ export default function CroppingModal({
   const [scale, setScale] = useState(1);
   const baseSize = 1024;
   const realSize = 250;
-  const paddingY = 10 * (baseSize / realSize);
+  const paddedPixelsY = 10; // apparently this is a magic number
+  const paddingY = paddedPixelsY * (baseSize / realSize);
 
   useEffect(() => {
     const img = imgRef.current;
@@ -67,7 +68,7 @@ export default function CroppingModal({
       }
     }
     bgX -= paddingX;
-    bgY -= paddingY;
+    bgY -= paddingY / 2;
 
     ctx.save();
     ctx.fillStyle = "rgba(160, 169, 192, 0.4)";
@@ -88,9 +89,9 @@ export default function CroppingModal({
     ctx.drawImage(
       img,
       position.x - renderW / 2 + paddingX,
-      position.y - renderH / 2 + paddingY,
+      position.y - renderH / 2 + paddingY / 2,
       renderW - paddingX * 2,
-      renderH - paddingY * 2
+      renderH - paddingY
     );
 
     ctx.restore();
@@ -164,9 +165,9 @@ export default function CroppingModal({
 
     // evil black magic mathematics hack
     let regX = paddingX;
-    let regY = paddingY;
+    let regY = paddingY / 2;
     let paddedX = (paddingX / scale);
-    let paddedY = (paddingY / scale);
+    let paddedY = (paddingY / scale) / 2;
 
     const viewRadius = baseSize / 2;
 
@@ -217,41 +218,42 @@ export default function CroppingModal({
     draw();
   }, [position, scale]);
 
-  // not perfectly 1:1 with what the cropping modal shows
   async function handleDone() {
     const img = imgRef.current;
+    const { renderW, renderH, imgRatio } = getRenderSize(img);
+
     const exportCanvas = document.createElement("canvas");
     const ctx = exportCanvas.getContext("2d")!;
-
+    const rat = baseSize / realSize;
+    const cat = canvasRef.current!.clientWidth * rat;
+    const bat = canvasRef.current!.clientHeight * rat;
     exportCanvas.width = baseSize;
     exportCanvas.height = baseSize;
 
-    const cx = baseSize / 2;
-    const cy = baseSize / 2;
+    // TODO: fix rect exports. they're not perfect
+    if (shape === "rect") {
+      if (imgRatio > 1)
+        exportCanvas.width *= imgRatio;
+      else
+        exportCanvas.height *= imgRatio;
+    }
 
-    const { renderW, renderH } = getRenderSize(img);
+    const cx = exportCanvas.width / 2;
+    const cy = exportCanvas.height / 2;
+
+    const paddingX = getPaddingX();
 
     ctx.save();
-    if (shape === "rect") {
-      let bgX = cx;
-      let bgY = cy;
-      if (rectAspect > 1)
-        bgY /= rectAspect;
-      else
-        bgX *= rectAspect;
-
-      ctx.beginPath();
-      ctx.rect(cx - bgX, cy - bgY, bgX * 2, bgY * 2);
-      ctx.clip();
-    }
     ctx.translate(cx, cy);
-    ctx.scale(scale, scale);
+    ctx.scale(scale * (cat / baseSize), scale * (bat / baseSize));
 
+    // why is this needed???
+    const magicYThing = paddedPixelsY * (exportCanvas.width / realSize) / 2;
     ctx.drawImage(
       img,
-      position.x - renderW / 2,
+      position.x - renderW / 2 + paddingX - magicYThing / 2,
       position.y - renderH / 2,
-      renderW,
+      renderW - paddingX * 2 + magicYThing,
       renderH
     );
 

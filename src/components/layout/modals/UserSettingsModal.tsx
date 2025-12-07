@@ -272,7 +272,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
               style={{
                 // @ts-expect-error
                 "--banner-color": "#" + (user?.bannerColor?.toString(16)?.padStart(6, "0") ?? "000000"),
-                "--banner": banner ? `url('${banner}')` : `url('${avatar}')`
+                "--banner": banner ? `url('${banner}')` : undefined
               }}
             />
             <div className="profile-name uno">
@@ -352,6 +352,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
               <>
                 <div className="uno">Server</div>
                 {/* do smthn to make a server dropdown thing */}
+                <hr />
               </>
             )}
             <div className="profiles-content halign">
@@ -392,7 +393,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 <hr />
                 <div className="uno">About Me</div>
                 <div className="about-me">
-                  <MessageInput isChannel={false} placeholderText="Write your bio" initialText={bio} setText={setBio} ref={inputRef} />
+                  <MessageInput isChannel={false} placeholderText="Write your bio" initialText={bio} setText={setBio} giveNull={true} ref={inputRef} />
                 </div>
               </div>
               <div className="preview">

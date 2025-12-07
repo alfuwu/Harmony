@@ -15,6 +15,7 @@ export interface UserState {
 
 const UserContext = createContext<UserState | undefined>(undefined);
 
+// TODO: fix font getting ratelimited and then not fetching again
 function registerUserFont(user: User) {
   const [url, isCustom] = getNameFont(user);
   if (!isCustom)

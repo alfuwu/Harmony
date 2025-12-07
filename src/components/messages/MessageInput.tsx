@@ -110,12 +110,14 @@ const MessageInput = forwardRef(function MessageInput({
   isChannel = true,
   placeholderText = undefined,
   initialText = undefined,
-  setText = undefined
+  setText = undefined,
+  giveNull = false,
 }: {
   isChannel?: boolean,
   placeholderText?: string,
   initialText?: string | null | undefined,
-  setText?: React.Dispatch<React.SetStateAction<string | null | undefined>>
+  setText?: React.Dispatch<React.SetStateAction<string | null | undefined>>,
+  giveNull?: boolean
 }, ref) {
   const editor = useMemo(
     () => withHistory(withMentions(withEmoji(withReact(createEditor())))),
@@ -138,9 +140,9 @@ const MessageInput = forwardRef(function MessageInput({
   const [index, setIndex] = useState(0);
 
   useImperativeHandle(ref, () => ({
-    setText(text: string) {
+    setText(text: string | null | undefined) {
       // @ts-expect-error
-      editor.children = [{ type: "paragraph", children: [{ text: text }] }];
+      editor.children = [{ type: "paragraph", children: [{ text: text ?? "" }] }];
       editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
       editor.history = { undos: [], redos: [] };
       editor.onChange();
@@ -389,8 +391,10 @@ const MessageInput = forwardRef(function MessageInput({
           setTarget(null);
         }
 
-        if (setText)
-          setText(editor.children.map((n) => Node.string(n)).join("\n"));
+        if (setText) {
+          const text = editor.children.map((n) => Node.string(n)).join("\n");
+          setText(giveNull && text.length == 0 ? null : text);
+        }
       }}
     >
       {target && editableRef.current === document.activeElement && mentionResults().length > 0 &&
