@@ -46,7 +46,7 @@ export default function MemberList() {
               key={m.user.id}
               className="author uno"
               style={{
-                fontFamily: `${m.nameFont}, ${m.user.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`,
+                fontFamily: `"${m.nameFont}", "${m.user.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`,
                 color: roleColor,
                 pointerEvents: "none"
               }}

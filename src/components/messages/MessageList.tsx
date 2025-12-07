@@ -178,7 +178,7 @@ export default function MessageList() {
                   <span
                     className="author int"
                     style={{
-                      fontFamily: !hover ? `${member?.nameFont}, ${author.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif` : undefined,
+                      fontFamily: !hover ? `"${member?.nameFont}", "${author.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif` : undefined,
                       color: roleColor
                     }}
                     onMouseEnter={() => setHover(msg.id + msg.timestamp, true)}

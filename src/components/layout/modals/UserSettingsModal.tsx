@@ -272,7 +272,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
               style={{
                 // @ts-expect-error
                 "--banner-color": "#" + (user?.bannerColor?.toString(16)?.padStart(6, "0") ?? "000000"),
-                "--banner": banner ? `url('${banner}')` : undefined
+                "--banner": banner ? `url(${banner})` : undefined
               }}
             />
             <div className="profile-name uno">
@@ -284,7 +284,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
               <div>
                 <div 
                   style={{
-                    fontFamily: `${user?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`
+                    fontFamily: `"${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
                   }}
                 >
                   {displayName}
@@ -299,7 +299,11 @@ export default function UserSettingsModal({ open, onClose }: any) {
               <div className="profile-item">
                 <div>
                   <div>Display Name</div>
-                  <div>
+                  <div
+                    style={{
+                      fontFamily: `"${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
+                    }}
+                  >
                     {user?.displayName ? user.displayName : "You haven't added a display name yet."}
                   </div>
                 </div>
@@ -413,7 +417,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 <div
                   className="profile-name uno"
                   style={{
-                    fontFamily: `UploadedFont, ${user?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`
+                    fontFamily: `"UploadedFont", "${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
                   }}
                 >
                   <div>{name || user?.username}</div>

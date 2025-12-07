@@ -49,7 +49,7 @@ export default function UserPopout({ user, member, serverState, onClose, positio
     >
       <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
         <img src={avatar} alt="avatar" style={{ width: 32, height: 32, borderRadius: "50%", marginRight: "8px" }} />
-        <span style={{ fontFamily: `${member?.nameFont}, ${user.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`, color: roleColor ?? undefined }}>{name}</span>
+        <span style={{ fontFamily: `"${member?.nameFont}", "${user.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`, color: roleColor ?? undefined }}>{name}</span>
       </div>
       <div>
         <strong>Username:</strong> @{user.username}
