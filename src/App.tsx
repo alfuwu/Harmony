@@ -32,13 +32,14 @@ window.addEventListener("keydown", function (e) {
 });
 
 function AppInner() {
-  const { user, setUser, token, setToken, userSettings, setUserSettings } = useAuthState();
+  const authState = useAuthState();
+  const { user, setUser, token, setToken, userSettings, setUserSettings } = authState;
   const [loading, setLoading] = useState(true);
   const serverState = useServerState();
   const channelState = useChannelState();
+  const messageState = useMessageState();
   const memberState = useMemberState();
   const userState = useUserState();
-  const { addMessages } = useMessageState();
   //const { open, close } = usePopoutState();
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -72,22 +73,23 @@ function AppInner() {
       // @ts-expect-error
       window.members = memberState.members;
       // @ts-expect-error
+      window.messages = messageState.messages;
+      // @ts-expect-error
       window.users = userState.users;
       // @ts-expect-error
       window.settings = userSettings;
-    }, [serverState.servers, channelState.channels, memberState.members, userState.users, userSettings]);
+    }, [serverState.servers, channelState.channels, memberState.members, messageState.messages, userState.users, userSettings]);
   }
 
   useEffect(() => {
     if (user && token) {
       initializeClient({
-        token,
-        addServers: serverState.addServers,
-        setCurrentServer: serverState.setCurrentServer,
-        addChannels: channelState.addChannels,
-        setCurrentChannel: channelState.setCurrentChannel,
-        addMembers: memberState.addMembers,
-        addMessages,
+        authState,
+        serverState,
+        channelState,
+        messageState,
+        memberState,
+        userState,
         setUserSettings
       });
     }

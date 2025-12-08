@@ -10,12 +10,14 @@ import { initializeClient } from "../../lib/client/init";
 import { useMessageState } from "../../lib/state/Messages";
 
 export default function LoginScreen() {
-  const { setUser, setToken, setUserSettings } = useAuthState();
-  const { addUser } = useUserState();
+  const authState = useAuthState();
+  const { setUser, setToken, setUserSettings } = authState;
   const serverState = useServerState();
   const channelState = useChannelState();
+  const messageState = useMessageState();
   const memberState = useMemberState();
-  const { addMessages } = useMessageState();
+  const userState = useUserState();
+  const { addUser } = userState;
 
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState("");
@@ -39,13 +41,12 @@ export default function LoginScreen() {
       setUser(me);
       addUser(me);
       initializeClient({
-        token: result.token,
-        addServers: serverState.addServers,
-        setCurrentServer: serverState.setCurrentServer,
-        addChannels: channelState.addChannels,
-        setCurrentChannel: channelState.setCurrentChannel,
-        addMembers: memberState.addMembers,
-        addMessages,
+        authState,
+        serverState,
+        channelState,
+        messageState,
+        memberState,
+        userState,
         setUserSettings
       });
     } catch (e: any) {
@@ -64,13 +65,12 @@ export default function LoginScreen() {
       setUser(me);
       addUser(me);
       initializeClient({
-        token: result.token,
-        addServers: serverState.addServers,
-        setCurrentServer: serverState.setCurrentServer,
-        addChannels: channelState.addChannels,
-        setCurrentChannel: channelState.setCurrentChannel,
-        addMembers: memberState.addMembers,
-        addMessages,
+        authState,
+        serverState,
+        channelState,
+        messageState,
+        memberState,
+        userState,
         setUserSettings
       });
     } catch (e: any) {

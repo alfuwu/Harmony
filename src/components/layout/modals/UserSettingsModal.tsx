@@ -301,7 +301,7 @@ export default function UserSettingsModal({ open, onClose }: any) {
                   <div>Display Name</div>
                   <div
                     style={{
-                      fontFamily: `"${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
+                      fontFamily: user?.displayName ? `"${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif` : undefined
                     }}
                   >
                     {user?.displayName ? user.displayName : "You haven't added a display name yet."}
