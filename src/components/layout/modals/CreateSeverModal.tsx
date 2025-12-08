@@ -3,14 +3,14 @@ import { useAuthState } from "../../../lib/state/Auth";
 import { useServerState } from "../../../lib/state/Servers";
 import { createServer, loadServer } from "../../../lib/api/serverApi";
 import { useChannelState } from "../../../lib/state/Channels";
-import { useMemberState } from "../../../lib/state/Members";
 import { useMessageState } from "../../../lib/state/Messages";
+import { useUserState } from "../../../lib/state/Users";
 
 export default function CreateServerModal({ open, onClose }: any) {
   const { token } = useAuthState();
   const { setCurrentServer, addServer } = useServerState();
   const channelState = useChannelState();
-  const memberState = useMemberState();
+  const userState = useUserState();
   const messageState = useMessageState();
 
   const [name, setName] = useState("");
@@ -27,7 +27,7 @@ export default function CreateServerModal({ open, onClose }: any) {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    await loadServer(s, channelState, memberState, messageState, token!);
+    await loadServer(s, channelState, userState, messageState, token!);
     addServer(s);
     setCurrentServer(s);
     onClose();

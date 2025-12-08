@@ -1,7 +1,6 @@
 import * as signalR from "@microsoft/signalr";
 import { AuthState } from "../state/Auth";
 import { hostUrl } from "../../App";
-import { MemberState } from "../state/Members";
 import { MessageState } from "../state/Messages";
 import { ChannelState } from "../state/Channels";
 import { ServerState } from "../state/Servers";
@@ -14,14 +13,12 @@ export function initSignalR({
   serverState,
   channelState,
   messageState,
-  memberState,
   userState
 }: {
   authState: AuthState;
   serverState: ServerState;
   channelState: ChannelState;
   messageState: MessageState;
-  memberState: MemberState;
   userState: UserState;
 }) {
   connection = new signalR.HubConnectionBuilder()
@@ -36,7 +33,7 @@ export function initSignalR({
   connection.on("DelMsg", messageState.removeMessage);
   
   connection.on("UpdUsr", u => { userState.addUser(u); console.log("USER UPDATE: ", u); });
-  connection.on("UpdMem", memberState.addMember);
+  connection.on("UpdMem", userState.addMember);
 
   connection.on("UpdServ", serverState.addServer);
   connection.on("DelServ", serverState.removeServer);

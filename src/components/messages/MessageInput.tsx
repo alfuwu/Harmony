@@ -14,7 +14,6 @@ import { useServerState } from "../../lib/state/Servers";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage } from "../../lib/api/messageApi";
 import { rootRef } from "../../App";
-import { useMemberState } from "../../lib/state/Members";
 import data, { Emoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
 
@@ -131,7 +130,7 @@ const MessageInput = forwardRef(function MessageInput({
   const { users } = useUserState();
   const serverState = useServerState();
   const { servers, currentServer } = serverState;
-  const { get } = useMemberState();
+  const { getMember } = useUserState();
 
   const editableRef = useRef<HTMLDivElement | null>(null);
 
@@ -311,7 +310,7 @@ const MessageInput = forwardRef(function MessageInput({
     const { element } = props;
     switch (element.type) {
       case "mention_user":
-        const m = get(element.user?.id, currentServer?.id);
+        const m = getMember(element.user?.id, currentServer?.id);
         return (
           <span
             {...props.attributes}
@@ -439,7 +438,7 @@ const MessageInput = forwardRef(function MessageInput({
               switch (item.type) {
                 case "user":
                   const u = item as User;
-                  const m = get(u.id, currentServer?.id);
+                  const m = getMember(u.id, currentServer?.id);
                   return (
                     <div
                       key={u.id}

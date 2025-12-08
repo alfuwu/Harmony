@@ -715,7 +715,7 @@ export const RULES: MarkdownRule[] = [
       const u = match.attributes?.userState.users.find(
         (u: User) => u.id === Number(match.match.groups!.id)
       );
-      const m = u ? match.attributes?.memberState.get(u.id, match.attributes?.serverState.currentServer?.id) : undefined;
+      const m = u ? match.attributes?.userState.getMember(u.id, match.attributes?.serverState.currentServer?.id) : undefined;
 
       const name = u ? "@" + getDisplayName(u, m) : fallback;
       const roleColor = u ? getRoleColor(match.attributes?.serverState, u, m, match.attributes?.serverState.currentServer === null) : undefined;

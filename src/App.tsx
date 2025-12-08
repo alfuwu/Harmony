@@ -12,7 +12,6 @@ import { AuthProvider, useAuthState } from "./lib/state/Auth";
 import { UserProvider, useUserState } from "./lib/state/Users";
 import { ServerProvider, useServerState } from "./lib/state/Servers";
 import { ChannelProvider, useChannelState } from "./lib/state/Channels";
-import { MemberProvider, useMemberState } from "./lib/state/Members";
 import { MessageProvider, useMessageState } from "./lib/state/Messages";
 import { initializeClient } from "./lib/client/init";
 import { PopoutProvider, /*usePopoutState*/ } from "./lib/state/Popouts";
@@ -38,7 +37,6 @@ function AppInner() {
   const serverState = useServerState();
   const channelState = useChannelState();
   const messageState = useMessageState();
-  const memberState = useMemberState();
   const userState = useUserState();
   //const { open, close } = usePopoutState();
   const [modalOpen, setModalOpen] = useState(false);
@@ -71,14 +69,14 @@ function AppInner() {
       // @ts-expect-error
       window.channels = channelState.channels;
       // @ts-expect-error
-      window.members = memberState.members;
+      window.members = userState.members;
       // @ts-expect-error
       window.messages = messageState.messages;
       // @ts-expect-error
       window.users = userState.users;
       // @ts-expect-error
       window.settings = userSettings;
-    }, [serverState.servers, channelState.channels, memberState.members, messageState.messages, userState.users, userSettings]);
+    }, [serverState.servers, channelState.channels, userState.members, messageState.messages, userState.users, userSettings]);
   }
 
   useEffect(() => {
@@ -88,7 +86,6 @@ function AppInner() {
         serverState,
         channelState,
         messageState,
-        memberState,
         userState,
         setUserSettings
       });
@@ -172,11 +169,9 @@ export default function App() {
         <UserProvider>
           <ServerProvider>
             <ChannelProvider>
-              <MemberProvider>
-                <MessageProvider>
-                  <AppInner />
-                </MessageProvider>
-              </MemberProvider>
+              <MessageProvider>
+                <AppInner />
+              </MessageProvider>
             </ChannelProvider>
           </ServerProvider>
         </UserProvider>

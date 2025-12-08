@@ -1,4 +1,4 @@
-import { useMemberState } from "../../lib/state/Members";
+import { useUserState } from "../../lib/state/Users";
 import { usePopoutState } from "../../lib/state/Popouts";
 import { useServerState } from "../../lib/state/Servers";
 import { getAvatar, getDisplayName, getRoleColor } from "../../lib/utils/UserUtils";
@@ -6,13 +6,13 @@ import UserPopout from "./popouts/UserPopout";
 
 export default function MemberList() {
   const serverState = useServerState();
-  const memberState = useMemberState();
+  const userState = useUserState();
   
   const { open, close } = usePopoutState();
 
   return (
     <div>
-      {memberState.members.map(m => {
+      {userState.members.map(m => {
         const name = getDisplayName(m.user, m);
         const avatar = getAvatar(m.user, m);
         const roleColor = getRoleColor(serverState, m.user, m, serverState.currentServer === null);

@@ -10,14 +10,12 @@ import { useUserState } from "../../../lib/state/Users";
 import CroppingModal from "./CroppingModal";
 import MessageInput from "../../messages/MessageInput";
 import { useMessageState } from "../../../lib/state/Messages";
-import { useMemberState } from "../../../lib/state/Members";
 import { useServerState } from "../../../lib/state/Servers";
 
 export default function UserSettingsModal({ open, onClose }: any) {
   const { token, user, setUser, userSettings, setUserSettings } = useAuthState();
-  const { addUser } = useUserState();
+  const { addUser, setMembers } = useUserState();
   const { setMessages } = useMessageState();
-  const { setMembers } = useMemberState();
   const { setServers } = useServerState();
   const [currentTab, setCurrentTab] = useState("My Account");
   const [emailRevealed, setEmailRevealed] = useState(false);

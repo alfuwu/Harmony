@@ -5,7 +5,6 @@ import { login, registerUser } from "../../lib/api/authApi";
 import { api } from "../../lib/api/http";
 import { useServerState } from "../../lib/state/Servers";
 import { useChannelState } from "../../lib/state/Channels";
-import { useMemberState } from "../../lib/state/Members";
 import { initializeClient } from "../../lib/client/init";
 import { useMessageState } from "../../lib/state/Messages";
 
@@ -15,7 +14,6 @@ export default function LoginScreen() {
   const serverState = useServerState();
   const channelState = useChannelState();
   const messageState = useMessageState();
-  const memberState = useMemberState();
   const userState = useUserState();
   const { addUser } = userState;
 
@@ -45,7 +43,6 @@ export default function LoginScreen() {
         serverState,
         channelState,
         messageState,
-        memberState,
         userState,
         setUserSettings
       });
@@ -69,7 +66,6 @@ export default function LoginScreen() {
         serverState,
         channelState,
         messageState,
-        memberState,
         userState,
         setUserSettings
       });

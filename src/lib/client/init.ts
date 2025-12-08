@@ -4,19 +4,16 @@ import { getServerChannels, getServerMembers, getServers } from "../api/serverAp
 import { initSignalR } from "../api/signalrClient";
 import { AuthState } from "../state/Auth";
 import { ChannelState } from "../state/Channels";
-import { MemberState } from "../state/Members";
 import { MessageState } from "../state/Messages";
 import { ServerState } from "../state/Servers";
 import { UserState } from "../state/Users";
 import { UserSettings } from "../utils/userSettings";
-//import { connectRealtime } from "./realtime";
 
 export async function initializeClient({
   authState,
   serverState,
   channelState,
   messageState,
-  memberState,
   userState,
   setUserSettings
 }: {
@@ -24,7 +21,6 @@ export async function initializeClient({
   serverState: ServerState;
   channelState: ChannelState;
   messageState: MessageState;
-  memberState: MemberState;
   userState: UserState;
   setUserSettings: (settings: UserSettings) => void
 }) {
@@ -34,7 +30,7 @@ export async function initializeClient({
   const { addServers, setCurrentServer } = serverState;
   const { addChannels, setCurrentChannel } = channelState;
   const { addMessages } = messageState;
-  const { addMembers } = memberState;
+  const { addMembers } = userState;
 
   // fetch servers
   const servers = await getServers({ headers: { Authorization: `Bearer ${authState.token}` } });
@@ -66,5 +62,5 @@ export async function initializeClient({
   const settings = await api(`/users/@me/settings`, { headers: { Authorization: `Bearer ${authState.token}` } });
   setUserSettings(settings);
 
-  initSignalR({ authState, serverState, channelState, messageState, memberState, userState });
+  initSignalR({ authState, serverState, channelState, messageState, userState });
 }

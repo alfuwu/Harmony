@@ -6,7 +6,6 @@ import { useUserState } from "../../lib/state/Users";
 import { parseMarkdown } from "../../lib/utils/Markdown";
 import { getAvatar, getDisplayName, getPronouns, getRoleColor } from "../../lib/utils/UserUtils";
 import { Channel, Member, Server, User } from "../../lib/utils/types";
-import { useMemberState } from "../../lib/state/Members";
 import { usePopoutState } from "../../lib/state/Popouts";
 import { useAuthState } from "../../lib/state/Auth";
 import { loadServer } from "../../lib/api/serverApi";
@@ -21,7 +20,6 @@ export default function MessageList() {
   const serverState = useServerState();
   const channelState = useChannelState();
   const userState = useUserState();
-  const memberState = useMemberState();
   const messageState = useMessageState();
   const container = useRef<HTMLDivElement>(null);
   const wasAtBottomRef = useRef(true);
@@ -146,7 +144,7 @@ export default function MessageList() {
           nameFont: null,
         } as User;
 
-        const member = memberState.get(author.id, serverState.currentServer?.id);
+        const member = userState.getMember(author.id, serverState.currentServer?.id);
         const name = getDisplayName(author, member);
         const avatar = getAvatar(author, member);
         const roleColor = getRoleColor(serverState, author, member, serverState.currentServer === null);
@@ -210,7 +208,6 @@ export default function MessageList() {
               <span className={"content" + (msg.sending ? " sending" : "")}>{parseMarkdown(msg.content, {
                 serverState,
                 channelState,
-                memberState,
                 userState,
                 userSettings,
                 onMentionClick: (user: User, member: Member, event: React.MouseEvent) => {
@@ -223,7 +220,7 @@ export default function MessageList() {
                     if (serverState.currentServer?.id !== channel.serverId) {
                       const server = serverState.get(channel.serverId);
                       if (server) {
-                        loadServer(server, channelState, memberState, messageState, token!);
+                        loadServer(server, channelState, userState, messageState, token!);
                         serverState.setCurrentServer(server);
                       } else {
                         return;
@@ -235,7 +232,7 @@ export default function MessageList() {
                 onServerClick: (server: Server, event: React.MouseEvent) => {
                   event.preventDefault();
                   if (serverState.currentServer?.id !== server.id) {
-                    loadServer(server, channelState, memberState, messageState, token!);
+                    loadServer(server, channelState, userState, messageState, token!);
                     serverState.setCurrentServer(server);
                     channelState.setCurrentChannel(null);
                   }
