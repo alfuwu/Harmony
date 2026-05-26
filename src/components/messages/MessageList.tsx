@@ -4,7 +4,7 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
 import { parseMarkdown } from "../../lib/utils/Markdown";
-import { getAvatar, getDisplayName, getPronouns, getRoleColor } from "../../lib/utils/UserUtils";
+import { getAvatar, getDisplayName, getPronouns, getRoleColor, mentionedIn } from "../../lib/utils/UserUtils";
 import { Channel, Member, Server, User } from "../../lib/utils/types";
 import { usePopoutState } from "../../lib/state/Popouts";
 import { useAuthState } from "../../lib/state/Auth";
@@ -24,6 +24,9 @@ export default function MessageList() {
   const container = useRef<HTMLDivElement>(null);
   const wasAtBottomRef = useRef(true);
   const [hoveredMessages, setHoveredMessages] = useState<Record<string, boolean>>({});
+  const [messageHover, setMessageHover] = useState<string | null>(null);
+  
+  const reMember = userState.getMember(user!.id, serverState.currentServer?.id);
 
   const { open, close } = usePopoutState();
 
@@ -116,14 +119,15 @@ export default function MessageList() {
 
   function openUserPopout(target: Element, user: User, member: Member | undefined) {
     const rect = target.getBoundingClientRect();
+    const id = `user-profile-${rect.bottom}-${rect.left}`;
     open({
-      id: "user-profile",
+      id,
       element: (
         <UserPopout
           user={user}
           member={member}
           serverState={serverState}
-          onClose={() => close("user-profile")}
+          onClose={() => close(id)}
           position={{
             top: rect.bottom + window.scrollY,
             left: rect.right + window.scrollX
@@ -133,6 +137,64 @@ export default function MessageList() {
       options: {}
     });
   }
+
+  const markdownData = {
+    serverState,
+    channelState,
+    userState,
+    userSettings,
+    onMentionClick: (user: User, member: Member, event: React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+      openUserPopout(event.currentTarget, user, member);
+    },
+    onChannelClick: (channel: Channel, event: React.MouseEvent) => {
+      event.stopPropagation();
+      if (channelState.currentChannel?.id !== channel.id) {
+        event.preventDefault();
+        if (serverState.currentServer?.id !== channel.serverId) {
+          const server = serverState.get(channel.serverId);
+          if (server) {
+            loadServer(server, channelState, userState, messageState, token!);
+            serverState.setCurrentServer(server);
+          } else {
+            return;
+          }
+        }
+        channelState.setCurrentChannel(channel);
+      }
+    },
+    onServerClick: (server: Server, event: React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (serverState.currentServer?.id !== server.id) {
+        loadServer(server, channelState, userState, messageState, token!);
+        serverState.setCurrentServer(server);
+        channelState.setCurrentChannel(null);
+      }
+    },
+    onEmojiClick: async (emoji: string, event: React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      const name = await getEmojiDataFromNative(emoji);
+      open({
+        id: "emoji",
+        element: (
+          <EmojiPopout
+            emoji={emoji}
+            emojiName={name.id}
+            userSettings={userSettings}
+            position={{
+              top: rect.bottom + window.scrollY,
+              left: rect.right + window.scrollX
+            }}
+          />
+        ),
+        options: {}
+      });
+    }
+  };
 
   return (
     <div className="message-list ovy-auto" ref={container}>
@@ -162,7 +224,12 @@ export default function MessageList() {
         const hover = hoveredMessages[msg.id + msg.timestamp] || false;
 
         return (
-          <div key={msg.id + msg.timestamp + "idx:" + i} className={"message" + (msg.isDeleted ? " deleted" : "")}> 
+          <div
+            key={msg.id + msg.timestamp + "idx:" + i}
+            className={"message" + (msg.isDeleted ? " deleted" : "") + (mentionedIn(msg, user!, reMember) ? " mentioned" : "")}
+            onMouseEnter={() => setMessageHover(msg.id + msg.timestamp)}
+            onMouseLeave={() => setMessageHover(null)}
+          > 
             {showHeader && (
               <div className="group-header">
                 <img
@@ -176,7 +243,7 @@ export default function MessageList() {
                   <span
                     className="author int"
                     style={{
-                      fontFamily: !hover ? `"${member?.nameFont}", "${author.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif` : undefined,
+                      fontFamily: `"${member?.nameFont}", "${author.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`,
                       color: roleColor
                     }}
                     onMouseEnter={() => setHover(msg.id + msg.timestamp, true)}
@@ -185,8 +252,9 @@ export default function MessageList() {
                       openUserPopout(e.currentTarget, author, member)}
                     data-hover={hover}
                   >
-                    {hover && <span className="semitrans">@</span>}
-                    {hover ? author.username : name}
+                    {/*hover && <span className="semitrans">@</span>*/}
+                    {parseMarkdown(name, markdownData)}
+                    {/*hover ? author.username : parseMarkdown(name, markdownData)*/}
                   </span>
                   <span className="timestamp">
                     <span className="mr uno">•</span>
@@ -205,59 +273,20 @@ export default function MessageList() {
                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </span>
               )}
-              <span className={"content" + (msg.sending ? " sending" : "")}>{parseMarkdown(msg.content, {
-                serverState,
-                channelState,
-                userState,
-                userSettings,
-                onMentionClick: (user: User, member: Member, event: React.MouseEvent) => {
-                  event.preventDefault();
-                  openUserPopout(event.currentTarget, user, member);
-                },
-                onChannelClick: (channel: Channel, event: React.MouseEvent) => {
-                  if (channelState.currentChannel?.id !== channel.id) {
-                    event.preventDefault();
-                    if (serverState.currentServer?.id !== channel.serverId) {
-                      const server = serverState.get(channel.serverId);
-                      if (server) {
-                        loadServer(server, channelState, userState, messageState, token!);
-                        serverState.setCurrentServer(server);
-                      } else {
-                        return;
-                      }
-                    }
-                    channelState.setCurrentChannel(channel);
-                  }
-                },
-                onServerClick: (server: Server, event: React.MouseEvent) => {
-                  event.preventDefault();
-                  if (serverState.currentServer?.id !== server.id) {
-                    loadServer(server, channelState, userState, messageState, token!);
-                    serverState.setCurrentServer(server);
-                    channelState.setCurrentChannel(null);
-                  }
-                },
-                onEmojiClick: async (emoji: string, event: React.MouseEvent) => {
-                  event.preventDefault();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  const name = await getEmojiDataFromNative(emoji);
-                  open({
-                    id: "emoji",
-                    element: (
-                      <EmojiPopout
-                        emoji={emoji}
-                        emojiName={name.id}
-                        userSettings={userSettings}
-                        position={{
-                          top: rect.bottom + window.scrollY,
-                          left: rect.right + window.scrollX
-                        }}
-                      />
-                    ),
+              <span className={"content" + (msg.sending ? " sending" : "")}>{parseMarkdown(msg.content, markdownData)}</span>
+              {messageHover === msg.id + msg.timestamp && !msg.isDeleted && (
+                <div className="message-actions">
+                  <button onClick={() => open({
+                    id: "react",
+                    element: <div className="react-picker">Reaction emoji picker goes here</div>,
                     options: {}
-                  });
-                }
-              })}</span>
+                  })}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+                      <path fill="currentColor" d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-5-9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm10.66-3.66a1.5 1.5 0 0 1-2.12 2.12A1.5 1.5 0 0 1 17.66 9.34zM12 17c2.33 0 4.31-1.46 5.11-3.5H6.89A7.001 7.001 0 0 0 12 17zM7.34 9.34a1.5 1.5 0 1 1-2.12-2.12A1.5 1.5 0 0 1 7.34 9.34z" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
             {msg.editedTimestamp && <span className="edited-mark"> (edited)</span>}
             {msg.previousContent && msg.previousContent.length > 0 && (

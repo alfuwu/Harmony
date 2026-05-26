@@ -1,6 +1,6 @@
 import { hostUrl } from "../../App";
 import { ServerState } from "../state/Servers";
-import { Member, Role, User } from "./types";
+import { Member, Message, Role, User } from "./types";
 
 const DEFAULT_AVATAR = "https://cdn.discordapp.com/avatars/1038466644353232967/2cf70b3cc2b0314758dd9f8155228c89.png?size=1024";
 
@@ -53,4 +53,12 @@ export function getRoleColor(serverState: ServerState, user: User, member: Membe
             return "#" + r.color!.toString(16).padStart(6, "0");
     }
     return undefined;
+}
+
+export function mentionedIn(message: Message, user: User, member: Member | undefined = undefined): boolean {
+    if (message.mentions && message.mentions.includes(user.id))
+        return true;
+    if (member && message.mentionRoles && member.roles.some(r => message.mentionRoles!.includes(r)))
+        return true;
+    return message.mentionsEveryone || false;
 }

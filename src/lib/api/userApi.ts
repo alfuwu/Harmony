@@ -1,4 +1,4 @@
-import { Server } from "../utils/types";
+import { Review, Server, User } from "../utils/types";
 import { UserSettings } from "../utils/userSettings";
 import { api, binapi } from "./http";
 
@@ -74,4 +74,34 @@ export async function updateMe(user: { email?: string | null, phoneNumber?: stri
     method: "PATCH",
     body: JSON.stringify(user)
   })
+}
+
+export async function getReviews(user: User, options: RequestInit = {}): Promise<Review[]> {
+  return api(`/users/${user.id}/reviews`, {
+    ...options,
+    method: "GET"
+  });
+}
+
+export async function submitReview(user: User, content: string, options: RequestInit = {}): Promise<void> {
+  await api(`/users/${user.id}/reviews`, {
+    ...options,
+    method: "POST",
+    body: JSON.stringify({ content })
+  });
+}
+
+export async function updateReview(user: User, content: string, options: RequestInit = {}): Promise<void> {
+  await api(`/users/${user.id}/reviews`, {
+    ...options,
+    method: "PATCH",
+    body: JSON.stringify({ content })
+  });
+}
+
+export async function deleteReview(user: User, options: RequestInit = {}): Promise<void> {
+  await api(`/users/${user.id}/reviews`, {
+    ...options,
+    method: "DELETE"
+  });
 }

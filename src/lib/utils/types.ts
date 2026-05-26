@@ -28,7 +28,9 @@ export interface User {
   displayName?: string | null;
   username: string;
   passwordHash: string;
-  status?: string;
+  status?: string | null;
+  showStatusWhileOffline?: boolean;
+  onlineStatus?: OnlineStatus;
   bio?: string | null;
   pronouns?: string | null;
   avatar?: string | null;
@@ -44,6 +46,14 @@ export interface User {
   dmNameDisplayType?: RoleDisplayType | null;
 }
 
+export enum OnlineStatus {
+  Online = 0,
+  Idle = 1,
+  Focusing = 2,
+  DND = 3,
+  Offline = 4
+}
+
 export interface Member {
   user: User;
   serverId: number;
@@ -55,6 +65,33 @@ export interface Member {
   nameFont?: string | null;
   joinedAt: string;
   roles: number[];
+}
+
+export interface Review {
+  authorId: number;
+  subjectId: number;
+  content: string;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface Presence {
+  userId: number;
+  onlineStatus: OnlineStatus;
+  statusText?: string | null;
+  showStatusWhileOffline?: boolean;
+}
+
+export interface VoiceState {
+  userId: number;
+  channelId?: number;
+  serverId?: number;
+  muted?: boolean;
+  deafeaned?: boolean;
+  selfMuted?: boolean;
+  selfDeafeaned?: boolean;
+  streaming?: boolean;
+  cameraOn?: boolean;
 }
 
 /// roles
@@ -71,13 +108,14 @@ export interface Role {
   colors?: number[] | null;
   displayType: RoleDisplayType;
   visibleTo?: number[] | null;
+  categoryId?: number | null;
 }
 
 export interface FullRole extends Role {
   linkedRoles?: number[] | null;
   mutuallyExclusiveRoles?: number[] | null;
   prerequisites?: RolePrerequisite[] | null;
-  priority: number;
+  permissionPriority: number;
   grantableRoles?: number[] | null;
   canPing?: number[] | null;
 }
@@ -89,7 +127,22 @@ export enum RoleDisplayType {
   GradientGlow = 3
 }
 
-export interface RolePrerequisite {}
+export interface RolePrerequisite {
+  type: PrequisiteType;
+  requiredRoleId?: number;
+  minAccountAge?: string;
+  minServerDuration?: string;
+  minMessageCount?: number;
+  autoGrant: boolean;
+  autoRevoke: boolean;
+}
+
+export enum PrequisiteType {
+  RoleHeld = 0,
+  AccountAge = 1,
+  MembershipDuration = 2,
+  MessageCount = 3
+}
 
 /// channels
 export interface AbstractChannel {
@@ -152,7 +205,9 @@ export enum ChannelType {
   Calendar = 7,       // calendar channel, used for scheduling & showing events
   Document = 8,       // document channel, used for collaborative document editing
   DM = 9,             // direct message channel between two users
-  GroupDM = 10        // group direct message channel
+  GroupDM = 10,       // group direct message channel
+  Canvas = 11,        // canvas channel, used for collaborative drawing
+  Lounge = 12,        // lounge channel, used for voice channels with proximity voice chat based off your avatar's position in a 2d space
 }
 
 export enum RelationshipType {

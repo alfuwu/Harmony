@@ -20,7 +20,7 @@ import { getAvatar } from "./lib/utils/UserUtils";
 import UserSettingsModal from "./components/layout/modals/UserSettingsModal";
 
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
-export const hostUrl = "https://localhost:7217";
+export const hostUrl = "http://localhost:5000";
 export const rootRef = createRef<HTMLDivElement>();
 
 window.addEventListener("keydown", function (e) {
@@ -137,9 +137,9 @@ function AppInner() {
             </div>
           </div>
           <div className="valign">
-            <TitleBar />
             <div className="halign">
               <div className="valign">
+                <TitleBar />
                 <div className="valign ovy-auto justify-end">
                   <MessageList />
                 </div>

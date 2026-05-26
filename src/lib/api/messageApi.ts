@@ -5,7 +5,12 @@ export async function sendMessage(channelId: number, content: string, nonce: num
   return {...await api(`/channels/${channelId}/messages`, {
     ...options,
     method: "POST",
-    body: JSON.stringify({ content, nonce })
+    body: JSON.stringify({
+      content,
+      nonce,
+      mentions: [...content.matchAll(/<@(-?\d+)>/g)].map(m => Number(m[1])),
+      mentionsRoles: [...content.matchAll(/<@&(-?\d+)>/g)].map(m => Number(m[1])),
+      mentionsEveryone: content.includes("@everyone") || content.includes("@here") })
   }), sending: false };
 }
 

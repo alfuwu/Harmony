@@ -16,6 +16,7 @@ import { sendMessage } from "../../lib/api/messageApi";
 import { rootRef } from "../../App";
 import data, { Emoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
+import { connection } from "../../lib/api/signalrClient";
 
 init({ data });
 // TODO: inserting an editable void right after another replaces the previous editable void
@@ -560,6 +561,9 @@ const MessageInput = forwardRef(function MessageInput({
                 return;
             }
           }
+
+          //connection?.send("Typing", { channelId: currentChannel?.id ?? 0, userId: user?.id ?? 0 });
+          connection?.invoke("StartTyping", currentChannel?.id ?? 0);
 
           if (e.key === "Enter" && isChannel) {
             e.preventDefault();

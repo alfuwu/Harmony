@@ -1,4 +1,4 @@
-import { useState, useCallback, useContext, createRef, useEffect } from "react";
+import { useState, useCallback, useContext, createRef, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createContext } from "react";
 import { rootRef } from "../../App";
@@ -14,6 +14,7 @@ export interface Popout {
   options: any;
   closeWhenClickOutside?: boolean;
   ref?: React.RefObject<HTMLDivElement>;
+  triggerRef?: React.RefObject<HTMLElement>
 }
 
 export const PopoutContext = createContext<PopoutState | undefined>(undefined);
@@ -21,11 +22,34 @@ export const PopoutContext = createContext<PopoutState | undefined>(undefined);
 export const PopoutProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<Popout[]>([]);
 
+  const recentlyClosedRef = useRef<Map<string, number>>(new Map());
+
+  // doesn't actually close all popouts
+  const closeAll = useCallback(() => {
+    setItems(prev => {
+      const now = Date.now();
+      prev
+        .filter(i => i.closeWhenClickOutside !== false)
+        .forEach(i => recentlyClosedRef.current.set(i.id, now));
+      return prev.filter(i => i.closeWhenClickOutside === false);
+    });
+  }, []);
+
   const open = useCallback((popout: Popout) => {
     setItems(prev => {
+      const closedAt = recentlyClosedRef.current.get(popout.id);
+      if (closedAt !== undefined && Date.now() - closedAt < 100) {
+        //recentlyClosedRef.current.delete(popout.id);
+        return prev; // stay closed
+      }
+
       const exists = prev.find(i => i.id === popout.id);
       if (exists)
-        return prev.map(i => i.id === popout.id ? { ...i, element: popout.element, options: popout.options, ref: createRef<HTMLDivElement>() } : i);
+        return prev.map(i =>
+          i.id === popout.id
+            ? { ...i, element: popout.element, options: popout.options, ref: createRef<HTMLDivElement>() }
+            : i
+        );
       return [...prev, { ...popout, ref: createRef<HTMLDivElement>() }];
     });
   }, []);
@@ -33,14 +57,9 @@ export const PopoutProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const close = useCallback((id: string) => {
     setItems(prev => prev.filter(i => i.id !== id));
   }, []);
-
-  // doesn't actually close all popouts
-  const closeAll = useCallback(() => {
-    setItems(prev => prev.filter(i => i.closeWhenClickOutside === false));
-  }, []);
-
+  
   useEffect(() => {
-    function handleGlobalMouseDown(event: MouseEvent) {
+    function handleGlobalMouseUp(event: MouseEvent) {
       if (items.length === 0)
         return;
 
@@ -53,9 +72,9 @@ export const PopoutProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       closeAll();
     }
 
-    document.addEventListener("mousedown", handleGlobalMouseDown, { capture: true });
+    document.addEventListener("mouseup", handleGlobalMouseUp, { capture: true });
 
-    return () => document.removeEventListener("mousedown", handleGlobalMouseDown, { capture: true });
+    return () => document.removeEventListener("mouseup", handleGlobalMouseUp, { capture: true });
   }, [items, closeAll]);
 
   const value = { open, close };
