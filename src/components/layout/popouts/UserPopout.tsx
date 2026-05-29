@@ -1,22 +1,594 @@
-import { useLayoutEffect, useRef, useState } from "react";
-import { Member, User } from "../../../lib/utils/types";
-import { getAvatar, getDisplayName, getRoleColor } from "../../../lib/utils/UserUtils";
+import { useLayoutEffect, useRef, useState, useEffect, useCallback } from "react";
+import { Channel, Member, OnlineStatus, Review, Server, User } from "../../../lib/utils/types";
+import {
+  getAvatar,
+  getBanner,
+  getBio,
+  getDisplayName,
+  getPronouns,
+  getRoleColor,
+} from "../../../lib/utils/UserUtils";
 import { ServerState } from "../../../lib/state/Servers";
+import { ChannelState } from "../../../lib/state/Channels";
+import { UserState } from "../../../lib/state/Users";
+import { UserSettings } from "../../../lib/utils/userSettings";
+import { Popout } from "../../../lib/state/Popouts";
+import { loadServer } from "../../../lib/api/serverApi";
+import { MessageState } from "../../../lib/state/Messages";
+import EmojiPopout from "./EmojiPopout";
+import { getEmojiDataFromNative } from "emoji-mart";
+import { parseMarkdown } from "../../../lib/utils/Markdown";
+import {
+  getReviews,
+  submitReview,
+  updateReview,
+  deleteReview,
+} from "../../../lib/api/userApi";
 
 interface UserPopoutProps {
   user: User;
   member?: Member;
-  serverState?: ServerState;
+  serverState: ServerState;
+  channelState: ChannelState;
+  messageState: MessageState;
+  userState: UserState;
+  userSettings: UserSettings | null;
+  currentUser: User | null;
+  open: (popout: Popout) => void;
+  close: (id: string) => void;
   onClose: () => void;
-  position: { top: number; left?: number; right?: number; };
+  token: string | null;
+  position: { top: number; left?: number; right?: number };
 }
 
-export default function UserPopout({ user, member, serverState, onClose, position }: UserPopoutProps) {
-  const name = getDisplayName(user, member);
-  const avatar = getAvatar(user, member);
+// ─── module-level reviews cache ─────────────────────────────────────────────
+const reviewsCache = new Map<number, Review[]>();
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+const STATUS_META: Record<OnlineStatus, { label: string; color: string; dot: string }> = {
+  [OnlineStatus.Online]:   { label: "Online",         color: "var(--online)",  dot: "●" },
+  [OnlineStatus.Idle]:     { label: "Idle",           color: "var(--idle)",    dot: "◐" },
+  [OnlineStatus.Focusing]: { label: "Focusing",       color: "var(--blue-2)",  dot: "◎" },
+  [OnlineStatus.DND]:      { label: "Do Not Disturb", color: "var(--dnd)",     dot: "⊖" },
+  [OnlineStatus.Offline]:  { label: "Offline",        color: "var(--offline)", dot: "○" },
+};
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+  });
+}
+
+function intToHex(n: number) {
+  return `#${(n >>> 0).toString(16).padStart(6, "0")}`;
+}
+
+function parseFlags(flags: number): string[] {
+  const labels: Record<number, string> = {
+    
+  };
+  return Object.entries(labels)
+    .filter(([bit]) => flags & Number(bit))
+    .map(([, label]) => label);
+}
+
+// ─── sub-components ──────────────────────────────────────────────────────────
+function StatusDot({ status, size = 12 }: { status?: OnlineStatus; size?: number }) {
+  const s = status ?? OnlineStatus.Offline;
+  const { color, dot } = STATUS_META[s];
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: "var(--bg-3)",
+        color,
+        fontSize: size * 0.85,
+        lineHeight: 1,
+        flexShrink: 0,
+      }}
+    >
+      {dot}
+    </span>
+  );
+}
+
+function Badge({ label }: { label: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "1px 7px",
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: 600,
+        background: "color-mix(in hsl, var(--accent-2), transparent 75%)",
+        color: "var(--accent-1)",
+        border: "1px solid color-mix(in hsl, var(--accent-2), transparent 50%)",
+        letterSpacing: "0.04em",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        color: "var(--text-5)",
+        marginBottom: 4,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Divider() {
+  return (
+    <div
+      style={{
+        height: 1,
+        background: "var(--border)",
+        margin: "10px 0",
+      }}
+    />
+  );
+}
+
+interface ReviewsModalProps {
+  user: User;
+  currentUser: User | null;
+  userState: UserState;
+  opts: RequestInit;
+  onClose: () => void;
+}
+
+function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsModalProps) {
+  const [reviews, setReviews]     = useState<Review[]>(reviewsCache.get(user.id) ?? []);
+  const [loading, setLoading]     = useState(!reviewsCache.has(user.id));
+  const [error, setError]         = useState<string | null>(null);
+  const [draft, setDraft]         = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const { getUser, getMember } = userState;
+
+  const myReview = reviews.find(r => r.authorId === currentUser?.id);
+
+  useEffect(() => {
+    if (myReview)
+      setDraft(myReview.content);
+  }, [myReview?.content]);
+
+  useEffect(() => {
+    if (reviewsCache.has(user.id))
+      return;
+    let cancelled = false;
+    setLoading(true);
+    getReviews(user, opts)
+      .then(data => {
+        if (cancelled)
+          return;
+        reviewsCache.set(user.id, data);
+        setReviews(data);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setError("Failed to load reviews.");
+      })
+      .finally(() => {
+        if (!cancelled)
+          setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [user.id]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!draft.trim() || submitting)
+      return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (myReview)
+        await updateReview(user, draft.trim(), opts);
+      else
+        await submitReview(user, draft.trim(), opts);
+
+      reviewsCache.delete(user.id);
+      const fresh = await getReviews(user, opts);
+      reviewsCache.set(user.id, fresh);
+      setReviews(fresh);
+    } catch {
+      setError("Failed to submit review.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [draft, myReview, submitting, user]);
+
+  const handleDelete = useCallback(async () => {
+    if (submitting)
+      return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await deleteReview(user, opts);
+      reviewsCache.delete(user.id);
+      const fresh = await getReviews(user, opts);
+      reviewsCache.set(user.id, fresh);
+      setReviews(fresh);
+      setDraft("");
+    } catch {
+      setError("Failed to delete review.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [submitting, user]);
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 1100,
+          background: "rgba(0,0,0,0.55)",
+        }}
+      />
+
+      <div
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 1101,
+          width: 400,
+          maxWidth: "calc(100vw - 32px)",
+          maxHeight: "80vh",
+          borderRadius: 14,
+          background: "var(--bg-3)",
+          border: "1px solid var(--border)",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
+          display: "flex",
+          flexDirection: "column",
+          animation: "popout-in 160ms cubic-bezier(0.2,0,0,1.4) both",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 16px 10px",
+            borderBottom: "1px solid var(--border)",
+            flexShrink: 0,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)" }}>
+              Reviews
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-5)", marginTop: 1 }}>
+              {getDisplayName(user)} · {reviews.length} review{reviews.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              width: 24, height: 24, padding: 0,
+              borderRadius: 5, border: "none",
+              background: "rgba(255,255,255,0.07)",
+              color: "var(--text-4)", fontSize: 13,
+              cursor: "pointer", display: "flex",
+              alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div
+          className="ovy-auto"
+          style={{
+            flex: 1,
+            padding: "10px 14px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            minHeight: 0,
+          }}
+        >
+          {loading && (
+            <div style={{ color: "var(--text-5)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>
+              Loading reviews…
+            </div>
+          )}
+
+          {!loading && reviews.length === 0 && (
+            <div style={{ color: "var(--text-5)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>
+              No reviews yet. Be the first!
+            </div>
+          )}
+
+          {reviews.map(review => {
+            const isMine = review.authorId === currentUser?.id;
+            const reviewUser = getUser(review.authorId) ?? null;
+            return (
+              <div
+                key={review.authorId ?? review.content}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  padding: "9px 10px",
+                  borderRadius: 8,
+                  background: isMine
+                    ? "color-mix(in hsl, var(--accent-2), transparent 82%)"
+                    : "color-mix(in hsl, var(--bg-4), transparent 40%)",
+                  border: isMine
+                    ? "1px solid color-mix(in hsl, var(--accent-2), transparent 55%)"
+                    : "1px solid var(--border-light)",
+                }}
+              >
+                <img
+                  src={getAvatar(reviewUser)}
+                  alt={getDisplayName(reviewUser)}
+                  style={{
+                    width: 32, height: 32, borderRadius: "50%",
+                    objectFit: "cover", flexShrink: 0, marginTop: 1,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-2)" }}>
+                      {getDisplayName(reviewUser)}
+                    </span>
+                    {isMine && (
+                      <span style={{ fontSize: 10, color: "var(--accent-1)", fontWeight: 600 }}>
+                        YOU
+                      </span>
+                    )}
+                    {review.createdAt && (
+                      <span style={{ fontSize: 11, color: "var(--text-5)", marginLeft: "auto", flexShrink: 0 }}>
+                        {formatDate(review.createdAt)}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-3)", lineHeight: 1.45, wordBreak: "break-word" }}>
+                    {review.content}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {currentUser && currentUser.id !== user.id && (
+          <div
+            style={{
+              padding: "10px 14px 14px",
+              borderTop: "1px solid var(--border)",
+              flexShrink: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 7,
+            }}
+          >
+            <SectionLabel>{myReview ? "Edit your review" : "Write a review"}</SectionLabel>
+            <textarea
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              placeholder={`Say something about ${getDisplayName(user)}…`}
+              rows={3}
+              style={{
+                resize: "none",
+                width: "100%",
+                padding: "7px 9px",
+                borderRadius: 7,
+                background: "var(--bg-1)",
+                border: "1px solid var(--border)",
+                color: "var(--text-2)",
+                fontSize: 13,
+                lineHeight: 1.45,
+                outline: "none",
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+              }}
+            />
+            {error && (
+              <div style={{ fontSize: 12, color: "var(--red-2)" }}>{error}</div>
+            )}
+            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+              {myReview && (
+                <button
+                  onClick={handleDelete}
+                  disabled={submitting}
+                  style={{
+                    padding: "5px 13px", borderRadius: 6, border: "none",
+                    background: "color-mix(in hsl, var(--red-2), transparent 80%)",
+                    color: "var(--red-2)", fontSize: 12, fontWeight: 600,
+                    cursor: submitting ? "not-allowed" : "pointer",
+                    opacity: submitting ? 0.6 : 1,
+                  }}
+                >
+                  Delete
+                </button>
+              )}
+              <button
+                onClick={handleSubmit}
+                disabled={!draft.trim() || submitting}
+                style={{
+                  padding: "5px 16px", borderRadius: 6, border: "none",
+                  background: "var(--accent-1)",
+                  color: "#fff", fontSize: 12, fontWeight: 600,
+                  cursor: (!draft.trim() || submitting) ? "not-allowed" : "pointer",
+                  opacity: (!draft.trim() || submitting) ? 0.5 : 1,
+                }}
+              >
+                {submitting ? "Saving..." : myReview ? "Update" : "Submit"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+interface ReviewsButtonProps {
+  user: User;
+  currentUser: User | null;
+  userState: UserState;
+  token: string | null;
+  open: (popout: Popout) => void;
+  close: (id: string) => void;
+}
+
+function ReviewsButton({ user, currentUser, userState, token, open, close }: ReviewsButtonProps) {
+  const [previews, setPreviews] = useState<Review[]>(
+    reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.slice(0, 4) : [],
+  );
+  const [count, setCount] = useState(
+    reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.length : 0,
+  );
+  const { getUser, getMember } = userState;
+
+  const opts = {
+    headers: { Authorization: `Bearer ${token}` },
+  }
+
+  useEffect(() => {
+    if (reviewsCache.has(user.id))
+      return;
+    getReviews(user, opts)
+      .then(data => {
+        reviewsCache.set(user.id, data);
+        // oldest = earliest createdAt
+        const sorted = [...data].sort(
+          (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+        );
+        setPreviews(sorted.slice(0, 4));
+        setCount(data.length);
+      })
+      .catch(() => { /* silent – button still works */ });
+  }, [user.id]);
+
+  const sortedPreviews = [...previews].sort(
+    (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+  );
+
+  return (
+    <>
+      <button
+        onClick={() => open({
+          id: "user-reviews",
+          element: <ReviewsModal
+            user={user}
+            currentUser={currentUser}
+            userState={userState}
+            opts={opts}
+            onClose={() => close("user-reviews")}
+          />,
+          options: {}
+        })}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          width: "100%",
+          padding: "7px 10px",
+          borderRadius: 8,
+          border: "1px solid var(--border)",
+          background: "color-mix(in hsl, var(--bg-4), transparent 50%)",
+          color: "var(--text-3)",
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: "pointer",
+          gap: 8,
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span>Reviews</span>
+          {count > 0 && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                background: "color-mix(in hsl, var(--accent-2), transparent 70%)",
+                color: "var(--accent-1)",
+                borderRadius: 10,
+                padding: "1px 6px",
+              }}
+            >
+              {count}
+            </span>
+          )}
+        </span>
+
+        {sortedPreviews.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", flexDirection: "row-reverse" }}>
+            {sortedPreviews.slice().reverse().map((r, i) => {
+              const rUser = getUser(r.authorId) ?? null;
+              
+              return <img
+                key={r.authorId ?? i}
+                src={getAvatar(rUser)}
+                alt={getDisplayName(rUser)}
+                title={getDisplayName(rUser)}
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  objectFit: "cover",
+                  border: "2px solid var(--bg-3)",
+                  marginLeft: i === sortedPreviews.length - 1 ? 0 : -6,
+                  flexShrink: 0,
+                }}
+              />
+            })}
+          </div>
+        )}
+      </button>
+    </>
+  );
+}
+
+export default function UserPopout({
+  user,
+  member,
+  serverState,
+  channelState,
+  messageState,
+  userState,
+  userSettings,
+  currentUser,
+  open,
+  close,
+  onClose,
+  token,
+  position,
+}: UserPopoutProps) {
+  const name      = getDisplayName(user, member);
+  const avatar    = getAvatar(user, member);
   const roleColor = serverState ? getRoleColor(serverState, user, member, true) : undefined;
-  
-  const ref = useRef<HTMLDivElement>(null);
+  const resolvedBannerUrl = getBanner(user, member);
+  const resolvedBio       = getBio(user, member);
+  const resolvedPronouns  = getPronouns(user, member);
+  const resolvedNameFont  = member?.nameFont ?? user.nameFont;
+
+  const ref  = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
   useLayoutEffect(() => {
@@ -26,38 +598,390 @@ export default function UserPopout({ user, member, serverState, onClose, positio
     }
   }, []);
 
-  const clampedLeft = position.left ? Math.max(0, Math.min(position.left, window.innerWidth - size.width)) : undefined;
-  const clampedRight = position.right ? Math.max(0, Math.min(position.right, window.innerWidth + size.width)) : undefined;
-  const clampedTop = Math.max(0, Math.min(position.top, window.innerHeight - size.height));
+  const clampedLeft  = position.left  != null
+    ? Math.max(0, Math.min(position.left,  window.innerWidth  - size.width))
+    : undefined;
+  const clampedRight = position.right != null
+    ? Math.max(0, Math.min(position.right, window.innerWidth  + size.width))
+    : undefined;
+  const clampedTop   = Math.max(0, Math.min(position.top, window.innerHeight - size.height));
+
+  const bannerBg    = resolvedBannerUrl ? `url(${resolvedBannerUrl})` : undefined;
+  const bannerColor = intToHex(user.bannerColor);
+  const status      = user.onlineStatus ?? OnlineStatus.Offline;
+  const statusMeta  = STATUS_META[status];
+  const flags       = parseFlags(user.flags);
+
+  function openUserPopout(target: Element, u: User, m: Member | undefined) {
+    const rect = target.getBoundingClientRect();
+    const id   = `user-profile-${rect.bottom}-${rect.left}`;
+    open({
+      id,
+      element: (
+        <UserPopout
+          user={u}
+          member={m}
+          serverState={serverState}
+          channelState={channelState}
+          messageState={messageState}
+          userState={userState}
+          userSettings={userSettings}
+          currentUser={currentUser}
+          open={open}
+          close={close}
+          onClose={() => close(id)}
+          token={token}
+          position={{ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX }}
+        />
+      ),
+      options: {},
+    });
+  }
+
+  const markdownData = {
+    serverState,
+    channelState,
+    userState,
+    userSettings,
+    onMentionClick: (u: User, m: Member, event: React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+      openUserPopout(event.currentTarget, u, m);
+    },
+    onChannelClick: (channel: Channel, event: React.MouseEvent) => {
+      event.stopPropagation();
+      if (channelState.currentChannel?.id !== channel.id) {
+        event.preventDefault();
+        if (serverState.currentServer?.id !== channel.serverId) {
+          const s = serverState.get(channel.serverId);
+          if (s) {
+            loadServer(s, channelState, userState, messageState, token!);
+            serverState.setCurrentServer(s);
+          } else return;
+        }
+        channelState.setCurrentChannel(channel);
+      }
+    },
+    onServerClick: (server: Server, event: React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+      if (serverState.currentServer?.id !== server.id) {
+        loadServer(server, channelState, userState, messageState, token!);
+        serverState.setCurrentServer(server);
+        channelState.setCurrentChannel(null);
+      }
+    },
+    onEmojiClick: async (emoji: string, event: React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+      const rect     = event.currentTarget.getBoundingClientRect();
+      const emojiInfo = await getEmojiDataFromNative(emoji);
+      open({
+        id: "emoji",
+        element: (
+          <EmojiPopout
+            emoji={emoji}
+            emojiName={emojiInfo.id}
+            userSettings={userSettings}
+            position={{ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX }}
+          />
+        ),
+        options: {},
+      });
+    },
+  };
 
   return (
-    <div
-      ref={ref}
-      className="user-popout"
-      style={{
-        position: "fixed",
-        top: clampedTop,
-        left: clampedLeft ? clampedLeft : clampedRight! - size.width,
-        zIndex: 1000,
-        background: "var(--bg-3)",
-        border: "1px solid #ccc",
-        borderRadius: "6px",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-        padding: "8px",
-        minWidth: "200px",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
-        <img src={avatar} alt="avatar" style={{ width: 32, height: 32, borderRadius: "50%", marginRight: "8px" }} />
-        <span style={{ fontFamily: `"${member?.nameFont}", "${user.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`, color: roleColor ?? undefined }}>{name}</span>
+    <>
+      <div
+        ref={ref}
+        style={{
+          position: "fixed",
+          top: clampedTop,
+          left: clampedLeft !== undefined ? clampedLeft : clampedRight! - size.width,
+          zIndex: 1000,
+          width: 280,
+          borderRadius: 12,
+          overflow: "hidden",
+          background: "var(--bg-3)",
+          border: "1px solid var(--border)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
+          display: "flex",
+          flexDirection: "column",
+          animation: "popout-in 150ms cubic-bezier(0.2,0,0,1.4) both",
+        }}
+      >
+        <div
+          style={{
+            height: 72,
+            backgroundImage: bannerBg 
+                  ? bannerBg 
+                  : `linear-gradient(135deg, ${bannerColor}, color-mix(in hsl, ${bannerColor}, black 30%))`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            position: "relative",
+            flexShrink: 0,
+          }}
+        >
+          <button
+            onClick={onClose}
+            className="close-btn"
+            style={{
+              position: "absolute",
+              top: 6, right: 6,
+              width: 22, height: 22,
+              padding: 0, borderRadius: 4,
+              background: "rgba(0,0,0,0.45)",
+              border: "none", color: "#fff",
+              fontSize: 13, lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer",
+            }}
+            title="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div style={{ padding: "0 12px", position: "relative", marginBottom: 4 }}>
+          <div
+            style={{
+              position: "absolute",
+              top: -26, left: 12,
+              width: 52, height: 52,
+              borderRadius: "50%",
+              background: "var(--bg-3)",
+              padding: 3,
+              boxSizing: "border-box",
+              boxShadow: `0 0 0 3px ${statusMeta.color}`,
+            }}
+          >
+            <img
+              src={avatar}
+              alt={name}
+              style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover", display: "block" }}
+            />
+            <div style={{ position: "absolute", bottom: 1, right: 1 }}>
+              <StatusDot status={status} size={14} />
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex", flexWrap: "wrap", gap: 4,
+              justifyContent: "flex-end",
+              paddingTop: 6, minHeight: 28,
+            }}
+          >
+            {flags.map(f => <Badge key={f} label={f} />)}
+          </div>
+        </div>
+
+        <div
+          className="ovy-auto"
+          style={{
+            padding: "0 14px 14px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 0,
+            maxHeight: "calc(90vh - 160px)",
+          }}
+        >
+          <div style={{ marginBottom: 2 }}>
+            <div
+              style={{
+                fontFamily: resolvedNameFont
+                  ? `"${resolvedNameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
+                  : "inherit",
+                fontSize: 18,
+                fontWeight: 700,
+                color: roleColor ?? "var(--text-2)",
+                lineHeight: 1.2,
+                wordBreak: "break-word",
+              }}
+            >
+              {name}
+            </div>
+            <div
+              style={{
+                fontSize: 13, color: "var(--text-5)", fontWeight: 500,
+                display: "flex", alignItems: "center", gap: 6, marginTop: 2,
+              }}
+            >
+              <span>@{user.username}</span>
+              {resolvedPronouns && (
+                <>
+                  <span style={{ color: "var(--border)" }}>·</span>
+                  <span style={{ color: "var(--text-4)" }}>{resolvedPronouns}</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              marginBottom: 8, marginTop: 2,
+            }}
+          >
+            <StatusDot status={status} size={10} />
+            <span style={{ fontSize: 12, color: statusMeta.color, fontWeight: 600 }}>
+              {statusMeta.label}
+            </span>
+            {user.status && (
+              <span
+                style={{
+                  fontSize: 12, color: "var(--text-4)",
+                  overflow: "hidden", textOverflow: "ellipsis",
+                  whiteSpace: "nowrap", maxWidth: 140,
+                }}
+                title={user.status}
+              >
+                — {user.status}
+              </span>
+            )}
+          </div>
+
+          <Divider />
+
+          {resolvedBio && (
+            <div style={{ marginBottom: 10 }}>
+              <SectionLabel>About me</SectionLabel>
+              <div
+                style={{
+                  fontSize: 13, color: "var(--text-3)",
+                  lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                  background: "color-mix(in hsl, var(--bg-4), transparent 40%)",
+                  borderRadius: 6, padding: "6px 8px",
+                  border: "1px solid var(--border-light)",
+                }}
+              >
+                {parseMarkdown(resolvedBio, markdownData)}
+              </div>
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: member ? "1fr 1fr" : "1fr",
+              gap: 8, marginBottom: 8,
+            }}
+          >
+            <div>
+              <SectionLabel>Member since</SectionLabel>
+              <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
+                {formatDate(user.joinedAt)}
+              </div>
+            </div>
+            {member && (
+              <div>
+                <SectionLabel>Joined server</SectionLabel>
+                <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
+                  {formatDate(member.joinedAt)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Divider />
+          <div style={{ marginBottom: 8 }}>
+            <ReviewsButton user={user} currentUser={currentUser} userState={userState} open={open} close={close} token={token} />
+          </div>
+
+          {member && member.roles.length > 0 && (
+            <>
+              <Divider />
+              <div style={{ marginBottom: 8 }}>
+                <SectionLabel>Roles — {member.roles.length}</SectionLabel>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                  {member.roles.map(roleId => {
+                    const role  = serverState?.get(member.serverId)?.roles.find((r: any) => r.id === roleId);
+                    const color = role?.color ? intToHex(role.color) : "var(--text-4)";
+                    return (
+                      <span
+                        key={roleId}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          padding: "2px 7px", borderRadius: 4,
+                          fontSize: 12, fontWeight: 600,
+                          background: "color-mix(in hsl, var(--bg-1), transparent 30%)",
+                          border: `1px solid color-mix(in hsl, ${color}, transparent 60%)`,
+                          color,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 8, height: 8, borderRadius: "50%",
+                            background: color, flexShrink: 0, display: "inline-block",
+                          }}
+                        />
+                        {role?.name ?? `Role ${roleId}`}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+
+          {(user.dmColor || (user.dmColors && user.dmColors.length > 0)) && (
+            <>
+              <Divider />
+              <div style={{ marginBottom: 4 }}>
+                <SectionLabel>DM accent</SectionLabel>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  {user.dmColors
+                    ? user.dmColors.map((c, i) => (
+                        <span
+                          key={i}
+                          title={intToHex(c)}
+                          style={{
+                            display: "inline-block",
+                            width: 18, height: 18, borderRadius: 4,
+                            background: intToHex(c),
+                            border: "1px solid rgba(255,255,255,0.15)",
+                            cursor: "default", flexShrink: 0,
+                          }}
+                        />
+                      ))
+                    : user.dmColor && (
+                        <span
+                          title={intToHex(user.dmColor)}
+                          style={{
+                            display: "inline-block",
+                            width: 18, height: 18, borderRadius: 4,
+                            background: intToHex(user.dmColor),
+                            border: "1px solid rgba(255,255,255,0.15)",
+                            cursor: "default",
+                          }}
+                        />
+                      )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {(status === OnlineStatus.Offline || user.showStatusWhileOffline) && user.lastSeen && (
+            <>
+              <Divider />
+              <div>
+                <SectionLabel>Last seen</SectionLabel>
+                <div style={{ fontSize: 12, color: "var(--text-5)" }}>
+                  {formatDate(user.lastSeen)}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <style>{`
+          @keyframes popout-in {
+            from { opacity: 0; transform: scale(0.93) translateY(-6px); }
+            to   { opacity: 1; transform: scale(1)    translateY(0); }
+          }
+        `}</style>
       </div>
-      <div>
-        <strong>Username:</strong> @{user.username}
-      </div>
-      <div>
-        <strong>ID:</strong> {user.id}
-      </div>
-      <button onClick={onClose} style={{ marginTop: "8px" }}>Close</button>
-    </div>
+    </>
   );
 }

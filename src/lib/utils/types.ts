@@ -12,7 +12,6 @@ export interface Message {
   references?: number[] | null;
   timestamp: string;
   editedTimestamp?: string | null;
-  isDeleted: boolean;
   isPinned: boolean;
   sending?: boolean;
   nonce?: number;
@@ -39,11 +38,16 @@ export interface User {
   nameFont?: string | null;
   joinedAt: string;
   lastSeen: string;
-  isDeleted: boolean;
   flags: number;
   dmColor?: number | null;
   dmColors?: number[] | null;
   dmNameDisplayType?: RoleDisplayType | null;
+  timeZone?: string | null;
+  title?: string | null;
+  titleIsSystem?: boolean | null;
+  titleGrantedAt?: string | null;
+  totalXp?: number | null;
+  level?: number | null;
 }
 
 export enum OnlineStatus {
@@ -65,6 +69,17 @@ export interface Member {
   nameFont?: string | null;
   joinedAt: string;
   roles: number[];
+  totalXp?: number | null;
+  level?: number | null;
+}
+
+export interface QuotebookEntry {
+  id: number;
+  userId: number;
+  messageId: number;
+  channelId: number;
+  note?: string | null;
+  savedAt: string;
 }
 
 export interface Review {
@@ -72,7 +87,7 @@ export interface Review {
   subjectId: number;
   content: string;
   createdAt: string;
-  updatedAt: string | null;
+  editedAt?: string | null;
 }
 
 export interface Presence {

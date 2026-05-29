@@ -469,7 +469,7 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      return <span className={`h${match.match[1].length}`}>{match.children}</span>;
+      return <p className={`h${match.match[1].length}`}>{match.children}</p>;
     },
     
     leafRender: ({ attributes, children, leaf }) => {
@@ -632,42 +632,56 @@ export const RULES: MarkdownRule[] = [
   // links
   {
     name: "link",
-    regex: /\[(?<content>[^/]+)\]\((?<link>https?:\/\/[^\s/$.?#]+?\.[^\s]+?)\)|(?<content2>https?:\/\/[^\s/$.?#]+?\.[^\s]+)/gm,
-    parseInner: (match) => match.groups?.link !== undefined,
+    regex: /\[(?<content>[^\/]+)\]\((?:<(?<linkWithBrackets>https?:\/\/[^\s\/$.?#]+?\.[^\s]+?)>|(?<link>https?:\/\/[^\s\/$.?#]+?\.[^\s]+?))\)|<(?<content2>https?:\/\/[^\s\/$.?#]+?\.[^\s]+)>|(?<content3>https?:\/\/[^\s\/$.?#]+?\.[^\s]+)/gm,
+    parseInner: (match) => match.groups?.link !== undefined || match.groups?.linkWithBrackets !== undefined,
 
     decorate(match) {
       const start = match.index;
 
-      return match.groups?.link ? [
-        {
-          type: "mds",
-          anchor: start,
-          focus: start + 1
-        },
-        {
-          type: "mds",
-          anchor: start + match.groups.content.length + 1,
-          focus: start + match.groups.content.length + 3
-        },
+      if (match.groups?.link || match.groups?.linkWithBrackets) {
+        const hasInnerBrackets = !!match.groups.linkWithBrackets;
+        const actualLink = match.groups.linkWithBrackets ?? match.groups.link;
+        const contentLen = match.groups.content.length;
+
+        const tokens = [
+          { type: "mds", anchor: start, focus: start + 1 },
+          { 
+            type: "mds", 
+            anchor: start + contentLen + 1, 
+            focus: start + contentLen + (hasInnerBrackets ? 4 : 3)
+          },
+          {
+            type: "link",
+            attributes: { link: actualLink },
+            anchor: start + contentLen + (hasInnerBrackets ? 4 : 3),
+            focus: start + contentLen + (hasInnerBrackets ? 4 : 3) + actualLink.length
+          },
+          { 
+            type: "mds", 
+            anchor: start + match[0].length - (hasInnerBrackets ? 2 : 1), 
+            focus: start + match[0].length 
+          }
+        ];
+
+        return tokens;
+      } 
+      
+      if (match.groups?.content2)
+        return [
+          { type: "mds", anchor: start, focus: start + 1 },
+          {
+            type: "link",
+            attributes: { link: match.groups.content2 },
+            anchor: start + 1,
+            focus: start + match[0].length - 1
+          },
+          { type: "mds", anchor: start + match[0].length - 1, focus: start + match[0].length }
+        ];
+        
+      return [
         {
           type: "link",
-          attributes: {
-            link: match.groups.link
-          },
-          anchor: start + match.groups.content.length + 3,
-          focus: start + match.groups.content.length + match.groups.link.length + 3
-        },
-        {
-          type: "mds",
-          anchor: start + match[0].length - 1,
-          focus: start + match[0].length
-        }
-      ] : [
-        {
-          type: "link",
-          attributes: {
-            link: match.groups!.content2
-          },
+          attributes: { link: match.groups!.content3 },
           anchor: start,
           focus: start + match[0].length
         }
@@ -675,7 +689,8 @@ export const RULES: MarkdownRule[] = [
     },
 
     render(match) {
-      return <a target="_blank" href={match.match.groups!.link ?? match.match.groups!.content2} >{match.children}</a>;
+      const url = match.match.groups!.linkWithBrackets ?? match.match.groups!.link ?? match.match.groups!.content2 ?? match.match.groups!.content3;
+      return <a target="_blank" href={url}>{match.children}</a>;
     },
     
     leafRender: ({ attributes, children }) => {

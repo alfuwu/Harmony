@@ -13,6 +13,11 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+  
+  -webkit-user-select: none; /* Safari, Chrome, Opera */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* Internet Explorer/Edge */
+  user-select: none;         /* Standard */
 
   /* variables */
   /* text colors */
@@ -256,7 +261,10 @@ input[type="range"] {
 
 button {
   cursor: pointer;
-  user-select: none;
+  -webkit-user-select: none; /* Safari, Chrome, Opera */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* Internet Explorer/Edge */
+  user-select: none;         /* Standard */
 }
 
 button:hover {
@@ -352,7 +360,10 @@ textarea,
 
 /* no user select */
 .uno {
-  user-select: none;
+  -webkit-user-select: none; /* Safari, Chrome, Opera */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* Internet Explorer/Edge */
+  user-select: none;         /* Standard */
 }
 
 /* margins */
@@ -404,7 +415,10 @@ textarea,
   display: flex;
   align-items: center;
   justify-content: center;
-  user-select: none;
+  -webkit-user-select: none; /* Safari, Chrome, Opera */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* Internet Explorer/Edge */
+  user-select: none;         /* Standard */
   pointer-events: none;
   z-index: 2000;
   transition: opacity 200ms ease-in-out;
@@ -412,7 +426,10 @@ textarea,
 .modal-backdrop.open {
   opacity: 1;
   pointer-events: auto;
-  user-select: auto;
+  -webkit-user-select: auto; /* Safari, Chrome, Opera */
+  -moz-user-select: auto;    /* Firefox */
+  -ms-user-select: auto;     /* Internet Explorer/Edge */
+  user-select: auto;         /* Standard */
 }
 
 /* modal container */
@@ -729,7 +746,14 @@ textarea,
   background: var(--bg-3);
   padding: 15px 5px 0;
   margin: 0 8px 4px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden auto;
+}
+.real-member-list {
+  overflow: auto;
+  flex: 1 1 1px;
+  flex-grow: 1;
 }
 .message-list {
   padding: 6px 0 30px 6px;
@@ -974,6 +998,7 @@ textarea,
 }
 
 .edited-mark {
+  margin-left: 4px;
   font-size: 12px;
   color: #888;
 }
@@ -1056,7 +1081,6 @@ textarea,
 }
 
 .window-buttons {
-  height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1101,7 +1125,10 @@ textarea,
 .msg-input {
   line-height: 1.375rem;
   height: fit-content;
-  user-select: text;
+  -webkit-user-select: text; /* Safari, Chrome, Opera */
+  -moz-user-select: text;    /* Firefox */
+  -ms-user-select: text;     /* Internet Explorer/Edge */
+  user-select: text;         /* Standard */
   width: 100%;
   color: var(--text-0);
 }
@@ -1148,6 +1175,32 @@ textarea,
   font-weight: 500;
   color: var(--text-gray-5);
 }
+
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 16px;
+  height: 20px;
+  font-size: 12px;
+  color: var(--text-4);
+}
+ 
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+ 
+.typing-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-4);
+  animation: typing-bounce 1.2s ease-in-out infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 /* login screen layout */
 .login-screen {
@@ -1217,7 +1270,10 @@ h1, h2, h3 {
   color: transparent;
   cursor: pointer;
   transition: color 0.2s ease, background-color 0.2s ease;
-  user-select: none;
+  -webkit-user-select: none; /* Safari, Chrome, Opera */
+  -moz-user-select: none;    /* Firefox */
+  -ms-user-select: none;     /* Internet Explorer/Edge */
+  user-select: none;         /* Standard */
 }
 .spoiler, .spoiler-edit {
   padding: 0.2em 0.4em;
@@ -1295,17 +1351,23 @@ code {
   content: "";
   position: absolute;
   left: -1px;
-  top: calc(50% - 8px);
-  border-radius: 1px;
-  height: 16px;
+  top: -2px;
+  bottom: -2px;
+  border-radius: 3px;
   width: 3px;
   background: currentColor;
+}
+.quote:has(> .subheader)::after {
+  background: #777;
 }
 .mds + .quote {
   padding-left: unset;
 }
 .mds + .quote::after {
   background: transparent;
+}
+.quote + span + .quote::after, .quote + .quote::after {
+  top: -20px;
 }
 .list {
   position: relative;
@@ -1389,4 +1451,49 @@ code {
   font-family: 'standard galactic alphabet';
   src: url('https://alfuwu.github.io/Images/sga.ttf') format('truetype'),
     /*url('https://alfuwu.github.io/Images/sga.ttf') format('truetype');*/
+}
+ 
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* testing */
+.context-menu {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  padding: 4px;
+  min-width: 180px;
+  user-select: none;
+}
+ 
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-3);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 100ms;
+}
+.context-menu-item:hover { background: var(--hover); }
+.context-menu-item.danger { color: var(--red-2); }
+.context-menu-item.danger:hover { background: color-mix(in hsl, var(--red-2), transparent 80%); }
+.context-menu-item.disabled { opacity: 0.4; cursor: default; }
+ 
+.context-menu-icon { font-size: 15px; flex-shrink: 0; }
+.context-menu-divider { height: 1px; background: var(--border); margin: 3px 6px; }
+
+.server-list {
+  overflow-y: auto;
+  overflow-x: hidden;
 }

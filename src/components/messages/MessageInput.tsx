@@ -111,12 +111,14 @@ const MessageInput = forwardRef(function MessageInput({
   placeholderText = undefined,
   initialText = undefined,
   setText = undefined,
+  onEnter = undefined,
   giveNull = false,
 }: {
   isChannel?: boolean,
   placeholderText?: string,
   initialText?: string | null | undefined,
   setText?: React.Dispatch<React.SetStateAction<string | null | undefined>>,
+  onEnter?: (s: string) => void,
   giveNull?: boolean
 }, ref) {
   const editor = useMemo(
@@ -562,42 +564,49 @@ const MessageInput = forwardRef(function MessageInput({
             }
           }
 
-          //connection?.send("Typing", { channelId: currentChannel?.id ?? 0, userId: user?.id ?? 0 });
           connection?.invoke("StartTyping", currentChannel?.id ?? 0);
 
-          if (e.key === "Enter" && isChannel) {
-            e.preventDefault();
-            const text = editor.children.map((n) => Node.string(n)).join("\n");
-            if (text === "")
-              return;
-            // @ts-expect-error
-            editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
-            editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
-            editor.history = { undos: [], redos: [] };
-            // update the editor manually
-            editor.onChange();
+          if (e.key === "Enter" && !e.shiftKey) {
+            if (isChannel) {
+              e.preventDefault();
+              const text = editor.children.map((n) => Node.string(n)).join("\n");
+              if (text === "")
+                return;
+              // @ts-expect-error
+              editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
+              editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
+              editor.history = { undos: [], redos: [] };
+              // update the editor manually
+              editor.onChange();
 
-            if (!currentChannel || !user)
-              return;
+              if (!currentChannel || !user)
+                return;
 
-            const msg = {
-              id: -1,
-              channelId: currentChannel.id,
-              authorId: user.id,
-              mentions: [],
-              reactions: [],
-              content: text,
-              previousContent: null,
-              timestamp: new Date().toString(),
-              editedTimestamp: null,
-              isDeleted: false,
-              isPinned: false,
-              sending: true,
-              nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
-            };
+              const msg = {
+                id: -1,
+                channelId: currentChannel.id,
+                authorId: user.id,
+                mentions: [],
+                reactions: [],
+                content: text,
+                previousContent: null,
+                timestamp: new Date().toString(),
+                editedTimestamp: null,
+                isDeleted: false,
+                isPinned: false,
+                sending: true,
+                nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`)
+              };
 
-            addMessage(msg);
-            sendMessage(currentChannel.id, text, msg.nonce, { headers: { Authorization: `Bearer ${token}` } }).then(sentMsg => addMessage(sentMsg));
+              addMessage(msg);
+              sendMessage(currentChannel.id, text, msg.nonce, { headers: { Authorization: `Bearer ${token}` } }).then(sentMsg => addMessage(sentMsg));
+            } else if (onEnter) {
+              e.preventDefault();
+              const text = editor.children.map((n) => Node.string(n)).join("\n");
+              if (text === "")
+                return;
+              onEnter(text);
+            }
           }
 
           queueMicrotask(() => skipMention(e.key === "ArrowLeft"));

@@ -1,29 +1,91 @@
 import { useState } from "react";
-import { loadServer } from "../../lib/api/serverApi";
+import { loadServer, leaveServer } from "../../lib/api/serverApi";
 import { useAuthState } from "../../lib/state/Auth";
 import { useChannelState } from "../../lib/state/Channels";
 import { useServerState } from "../../lib/state/Servers";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
 import CreateServerModal from "./modals/CreateSeverModal";
+import ContextMenu, { ContextMenuItem } from "./ContextMenu";
+import { joinServer } from "../../lib/api/signalrClient";
+import { hostUrl } from "../../App";
+ 
+interface Props {
+  onDmClick: () => void;
+  showDms: boolean;
+}
 
-export default function ServerList() {
+export default function ServerList({ onDmClick, showDms }: Props) {
   const { token } = useAuthState();
-  const { servers, currentServer, setCurrentServer } = useServerState();
+  const { servers, currentServer, setCurrentServer, removeServer } = useServerState();
   const [modalOpen, setModalOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; serverId: number } | null>(null);
   const channelState = useChannelState();
   const userState = useUserState();
   const messageState = useMessageState();
 
+  async function handleSelectServer(s: any) {
+    await loadServer(s, channelState, userState, messageState, token!);
+    setCurrentServer(s);
+    channelState.setCurrentChannel(null);
+    localStorage.setItem("currentServerId", String(s.id));
+    joinServer(s.id);
+  }
+ 
+  async function handleLeaveServer(serverId: number) {
+    try {
+      await leaveServer(serverId, { headers: { Authorization: `Bearer ${token}` } });
+      removeServer(serverId);
+      if (currentServer?.id === serverId)
+        setCurrentServer(null); channelState.setCurrentChannel(null);
+    } catch (e) { console.error(e); }
+  }
+ 
+  function openCtx(e: React.MouseEvent, serverId: number) {
+    e.preventDefault(); e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, serverId });
+  }
+ 
+  function buildCtxItems(serverId: number): ContextMenuItem[] {
+    const server = servers.find(s => s.id === serverId);
+    if (!server)
+      return [];
+    
+    const items: ContextMenuItem[] = [
+      { label: "Copy Server ID", icon: "🆔", onClick: () => navigator.clipboard.writeText(String(serverId)) },
+    ];
+    if (server.inviteUrls?.[0]) {
+      items.push({ label: "Copy Invite Link", icon: "🔗", onClick: () => navigator.clipboard.writeText(`${hostUrl}/invite/${server.inviteUrls![0]}`) });
+    }
+    items.push({ label: "", onClick: () => {}, divider: true });
+    items.push({ label: "Leave Server", icon: "🚪", danger: true, onClick: () => handleLeaveServer(serverId) });
+    return items;
+  }
+
   return (
     <div className="server-list">
+      <div
+        className={"server uno" + (showDms && !currentServer ? " selected" : "")}
+        title="Direct Messages"
+        onClick={onDmClick}
+        style={{ cursor: "pointer" }}
+      >
+        <div style={{
+          width: 50, height: 50, borderRadius: "33%",
+          background: showDms && !currentServer ? "var(--accent-3)" : "var(--bg-2)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 22, transition: "border-radius 150ms",
+        }}>💬</div>
+      </div>
+
       <hr />
       {servers.map(s => (
         <div
           key={s.id}
           className={"server uno" + (currentServer && currentServer.id === s.id ? " selected" : "")}
+          onContextMenu={e => openCtx(e, s.id)}
         >
-          <img onClick={() => { loadServer(s, channelState, userState, messageState, token!); setCurrentServer(s); channelState.setCurrentChannel(null); }} className="server-icon" src={s.icon ? "https://" + s.icon : "https://cdn.discordapp.com/emojis/1327190606535069726.png"} alt={s.name || "server"} />
+          <img onClick={() => handleSelectServer(s)} className="server-icon" src={s.icon ? "https://" + s.icon : "https://cdn.discordapp.com/emojis/1327190606535069726.png"} alt={s.name || "server"} />
         </div>
       ))}
       <hr />
@@ -44,6 +106,9 @@ export default function ServerList() {
       </div>
       
       <CreateServerModal className="modal" open={modalOpen} onClose={() => setModalOpen(false)} />
+      {ctxMenu && (
+        <ContextMenu items={buildCtxItems(ctxMenu.serverId)} position={{ x: ctxMenu.x, y: ctxMenu.y }} onClose={() => setCtxMenu(null)} />
+      )}
     </div>
   );
 }

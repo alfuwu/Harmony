@@ -13,11 +13,12 @@ import { UserProvider, useUserState } from "./lib/state/Users";
 import { ServerProvider, useServerState } from "./lib/state/Servers";
 import { ChannelProvider, useChannelState } from "./lib/state/Channels";
 import { MessageProvider, useMessageState } from "./lib/state/Messages";
-import { initializeClient } from "./lib/client/init";
+import { initializeClient, syncSignalRRefs } from "./lib/client/init";
 import { PopoutProvider, /*usePopoutState*/ } from "./lib/state/Popouts";
 import { getAvatar } from "./lib/utils/UserUtils";
 //import UserPopout from "./components/layout/popouts/UserPopout";
 import UserSettingsModal from "./components/layout/modals/UserSettingsModal";
+import TypingIndicator from "./components/messages/TypingIndicator";
 
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
 export const hostUrl = "http://localhost:5000";
@@ -39,7 +40,12 @@ function AppInner() {
   const messageState = useMessageState();
   const userState = useUserState();
   //const { open, close } = usePopoutState();
+
   const [modalOpen, setModalOpen] = useState(false);
+  const [quotebookOpen, setQuotebookOpen] = useState(false);
+  const [showDms, setShowDms] = useState(false);
+
+  syncSignalRRefs(messageState, channelState, serverState, userState);
 
   useEffect(() => {
     const fetchMe = async () => {
@@ -96,6 +102,15 @@ function AppInner() {
     return null;
   
   const avatar = getAvatar(user);
+ 
+  const inDmView = showDms && !serverState.currentServer;
+ 
+  function handleDmClick() {
+    setShowDms(true);
+    serverState.setCurrentServer(null);
+    channelState.setCurrentChannel(null);
+  }
+
   
   return (
     <div className="ven-colors relative" ref={rootRef}>
@@ -105,8 +120,8 @@ function AppInner() {
         <div className="app">    
           <div className="valign-ungreedy">
             <div className="halign">
-              <ServerList />
-              <ChannelList />
+              <ServerList onDmClick={handleDmClick} showDms={showDms} />
+              {inDmView ? null : <ChannelList />}
             </div>
             <div className="user-panel">
               <img
@@ -143,6 +158,10 @@ function AppInner() {
                 <div className="valign ovy-auto justify-end">
                   <MessageList />
                 </div>
+                <TypingIndicator
+                  channelId={channelState.currentChannel?.id}
+                  currentUserId={user.id}
+                />
                 <div className="real-wrap">
                   <div className="msg-wrap">
                     <MessageInput />

@@ -83,8 +83,8 @@ export async function getReviews(user: User, options: RequestInit = {}): Promise
   });
 }
 
-export async function submitReview(user: User, content: string, options: RequestInit = {}): Promise<void> {
-  await api(`/users/${user.id}/reviews`, {
+export async function submitReview(user: User, content: string, options: RequestInit = {}): Promise<Review> {
+  return api(`/users/${user.id}/reviews`, {
     ...options,
     method: "POST",
     body: JSON.stringify({ content })

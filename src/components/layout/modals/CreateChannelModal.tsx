@@ -1,0 +1,110 @@
+import { useState } from "react";
+import { useAuthState } from "../../../lib/state/Auth";
+import { useChannelState } from "../../../lib/state/Channels";
+import { createChannel } from "../../../lib/api/channelApi";
+import { ChannelType } from "../../../lib/utils/types";
+import { connection, joinChannel } from "../../../lib/api/signalrClient";
+
+interface CreateChannelModalProps {
+  open: boolean;
+  serverId: number;
+  onClose: () => void;
+}
+
+const CHANNEL_TYPES = [
+  { value: ChannelType.Category, label: "📁 Category" },
+  { value: ChannelType.Text, label: "# Text" },
+  { value: ChannelType.Voice, label: "🔊 Voice" },
+  { value: ChannelType.Announcement, label: "📣 Announcement" },
+  { value: ChannelType.Rules, label: "📋 Rules" },
+  { value: ChannelType.Forum, label: "💬 Forum" },
+  { value: ChannelType.Canvas, label: "🖌️ Canvas" },
+  { value: ChannelType.Document, label: "📄 Document" },
+];
+
+export default function CreateChannelModal({ open, serverId, onClose }: CreateChannelModalProps) {
+  const { token } = useAuthState();
+  const { addChannel, setCurrentChannel } = useChannelState();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [type, setType] = useState<ChannelType>(ChannelType.Text);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleCreate() {
+    if (!name.trim()) { setError("Name is required"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const channel = await createChannel(
+        serverId, name.trim(), type,
+        description.trim() || undefined,
+        undefined,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      addChannel(channel);
+      joinChannel(channel.id);
+      connection?.invoke("JoinChannel", channel.id).catch(() => {});
+      setCurrentChannel(channel);
+      setName(""); setDescription(""); setType(ChannelType.Text);
+      onClose();
+    } catch (e: any) {
+      setError(e.message ?? "Failed to create channel");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="modal-backdrop open" onClick={onClose}>
+      <div className="modal-container" onClick={e => e.stopPropagation()} style={{ width: 400 }}>
+        <h2 style={{ margin: 0 }}>Create Channel</h2>
+
+        <div className="form-group">
+          <label>Channel Type</label>
+          <select
+            value={type}
+            onChange={e => setType(Number(e.target.value) as ChannelType)}
+            style={{ background: "var(--bg-1)", color: "var(--text-3)", border: "1px solid var(--button-border)", padding: "8px", borderRadius: 6 }}
+          >
+            {CHANNEL_TYPES.map(ct => (
+              <option key={ct.value} value={ct.value}>{ct.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label>Name</label>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="channel-name"
+            onKeyDown={e => e.key === "Enter" && handleCreate()}
+            autoFocus
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Description (optional)</label>
+          <textarea
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="What is this channel about?"
+            style={{ resize: "vertical", minHeight: 60, background: "var(--bg-1)", color: "var(--text-3)", border: "1px solid var(--button-border)", borderRadius: 6, padding: "8px", fontFamily: "inherit", fontSize: "1em" }}
+          />
+        </div>
+
+        {error && <div className="error-msg">{error}</div>}
+
+        <div className="modal-buttons">
+          <button onClick={onClose}>Cancel</button>
+          <button className="create-btn" onClick={handleCreate} disabled={loading}>
+            {loading ? "Creating…" : "Create Channel"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
