@@ -19,11 +19,14 @@ import EmojiPopout from "./EmojiPopout";
 import { getEmojiDataFromNative } from "emoji-mart";
 import { parseMarkdown } from "../../../lib/utils/Markdown";
 import {
-  getReviews,
-  submitReview,
-  updateReview,
-  deleteReview,
-} from "../../../lib/api/userApi";
+  getUserBadges,
+  Badge,
+  BadgeLabels,
+  BadgeIcons,
+} from "../../../lib/api/socialApi";
+import { deleteReview, getReviews, submitReview, updateReview } from "../../../lib/api/userApi";
+import MessageInput from "../../messages/MessageInput";
+import { AuthState } from "../../../lib/state/Auth";
 
 interface UserPopoutProps {
   user: User;
@@ -41,10 +44,8 @@ interface UserPopoutProps {
   position: { top: number; left?: number; right?: number };
 }
 
-// ─── module-level reviews cache ─────────────────────────────────────────────
 const reviewsCache = new Map<number, Review[]>();
 
-// ─── helpers ────────────────────────────────────────────────────────────────
 const STATUS_META: Record<OnlineStatus, { label: string; color: string; dot: string }> = {
   [OnlineStatus.Online]:   { label: "Online",         color: "var(--online)",  dot: "●" },
   [OnlineStatus.Idle]:     { label: "Idle",           color: "var(--idle)",    dot: "◐" },
@@ -63,16 +64,14 @@ function intToHex(n: number) {
   return `#${(n >>> 0).toString(16).padStart(6, "0")}`;
 }
 
-function parseFlags(flags: number): string[] {
-  const labels: Record<number, string> = {
-    
-  };
-  return Object.entries(labels)
-    .filter(([bit]) => flags & Number(bit))
-    .map(([, label]) => label);
+function xpProgress(totalXp: number, level: number): [number, number, number] {
+  let spent = 0;
+  for (let i = 1; i <= level; i++) spent += Math.round(100 * Math.pow(i, 1.5));
+  const inLevel = Math.max(0, totalXp - spent);
+  const needed  = Math.max(1, Math.round(100 * Math.pow(level + 1, 1.5)));
+  return [inLevel, needed, Math.min(1, inLevel / needed)];
 }
 
-// ─── sub-components ──────────────────────────────────────────────────────────
 function StatusDot({ status, size = 12 }: { status?: OnlineStatus; size?: number }) {
   const s = status ?? OnlineStatus.Offline;
   const { color, dot } = STATUS_META[s];
@@ -97,27 +96,6 @@ function StatusDot({ status, size = 12 }: { status?: OnlineStatus; size?: number
   );
 }
 
-function Badge({ label }: { label: string }) {
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "1px 7px",
-        borderRadius: 4,
-        fontSize: 11,
-        fontWeight: 600,
-        background: "color-mix(in hsl, var(--accent-2), transparent 75%)",
-        color: "var(--accent-1)",
-        border: "1px solid color-mix(in hsl, var(--accent-2), transparent 50%)",
-        letterSpacing: "0.04em",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -136,32 +114,91 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function Divider() {
+  return <div style={{ height: 1, background: "var(--border)", margin: "10px 0" }} />;
+}
+
+function XpBar({ label, level, totalXp, accentVar = "var(--accent-1)" }: {
+  label?: string;
+  level: number;
+  totalXp: number;
+  accentVar?: string;
+}) {
+  const [, needed, frac] = xpProgress(totalXp, level);
+  const [xpInLevel] = xpProgress(totalXp, level);
   return (
-    <div
-      style={{
-        height: 1,
-        background: "var(--border)",
-        margin: "10px 0",
-      }}
-    />
+    <div>
+      {label && <SectionLabel>{label}</SectionLabel>}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+        <span style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: accentVar,
+          background: `color-mix(in hsl, ${accentVar}, transparent 82%)`,
+          border: `1px solid color-mix(in hsl, ${accentVar}, transparent 55%)`,
+          borderRadius: 5,
+          padding: "1px 7px",
+          flexShrink: 0,
+        }}>
+          Lvl {level}
+        </span>
+        <div style={{
+          flex: 1,
+          height: 5,
+          background: "var(--bg-1)",
+          borderRadius: 99,
+          overflow: "hidden",
+          border: "1px solid var(--border)",
+        }}>
+          <div style={{
+            width: `${frac * 100}%`,
+            height: "100%",
+            background: accentVar,
+            borderRadius: 99,
+            transition: "width 400ms ease",
+          }} />
+        </div>
+        <span style={{ fontSize: 10, color: "var(--text-5)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+          {xpInLevel}/{needed}
+        </span>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-5)" }}>
+        {totalXp.toLocaleString()} XP total
+      </div>
+    </div>
   );
 }
 
 interface ReviewsModalProps {
   user: User;
   currentUser: User | null;
+  serverState: ServerState;
+  channelState: ChannelState;
+  messageState: MessageState;
   userState: UserState;
+  authState: { token: string | null, userSettings: UserSettings | null, user: User | null };
+  markdownData: {};
   opts: RequestInit;
   onClose: () => void;
 }
 
-function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsModalProps) {
-  const [reviews, setReviews]     = useState<Review[]>(reviewsCache.get(user.id) ?? []);
-  const [loading, setLoading]     = useState(!reviewsCache.has(user.id));
-  const [error, setError]         = useState<string | null>(null);
-  const [draft, setDraft]         = useState("");
+function ReviewsModal({
+  user,
+  currentUser,
+  serverState,
+  channelState,
+  messageState,
+  userState,
+  authState,
+  markdownData,
+  opts,
+  onClose
+}: ReviewsModalProps) {
+  const [reviews, setReviews] = useState<Review[]>(reviewsCache.get(user.id) ?? []);
+  const [loading, setLoading] = useState(!reviewsCache.has(user.id));
+  const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null | undefined>("");
   const [submitting, setSubmitting] = useState(false);
-  const { getUser, getMember } = userState;
+  const { getUser } = userState;
 
   const myReview = reviews.find(r => r.authorId === currentUser?.id);
 
@@ -185,16 +222,16 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
       .catch(() => {
         if (!cancelled)
           setError("Failed to load reviews.");
-      })
+        })
       .finally(() => {
         if (!cancelled)
           setLoading(false);
-      });
+        });
     return () => { cancelled = true; };
   }, [user.id]);
 
   const handleSubmit = useCallback(async () => {
-    if (!draft.trim() || submitting)
+    if (!draft || !draft.trim() || submitting)
       return;
     setSubmitting(true);
     setError(null);
@@ -203,11 +240,11 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
         await updateReview(user, draft.trim(), opts);
       else
         await submitReview(user, draft.trim(), opts);
-
       reviewsCache.delete(user.id);
       const fresh = await getReviews(user, opts);
       reviewsCache.set(user.id, fresh);
       setReviews(fresh);
+      setDraft("");
     } catch {
       setError("Failed to submit review.");
     } finally {
@@ -235,23 +272,22 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
   }, [submitting, user]);
 
   return (
-    <>
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1100,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
       <div
-        onClick={onClose}
+        onClick={e => e.stopPropagation()}
         style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 1100,
-          background: "rgba(0,0,0,0.55)",
-        }}
-      />
-
-      <div
-        style={{
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
+          position: "relative",
           zIndex: 1101,
           width: 400,
           maxWidth: "calc(100vw - 32px)",
@@ -266,20 +302,16 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
           overflow: "hidden",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "14px 16px 10px",
-            borderBottom: "1px solid var(--border)",
-            flexShrink: 0,
-          }}
-        >
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 16px 10px",
+          borderBottom: "1px solid var(--border)",
+          flexShrink: 0,
+        }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)" }}>
-              Reviews
-            </div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)" }}>Reviews</div>
             <div style={{ fontSize: 12, color: "var(--text-5)", marginTop: 1 }}>
               {getDisplayName(user)} · {reviews.length} review{reviews.length !== 1 ? "s" : ""}
             </div>
@@ -287,45 +319,33 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
           <button
             onClick={onClose}
             style={{
-              width: 24, height: 24, padding: 0,
-              borderRadius: 5, border: "none",
-              background: "rgba(255,255,255,0.07)",
-              color: "var(--text-4)", fontSize: 13,
-              cursor: "pointer", display: "flex",
-              alignItems: "center", justifyContent: "center",
+              width: 24, height: 24, padding: 0, borderRadius: 5, border: "none",
+              background: "rgba(255,255,255,0.07)", color: "var(--text-4)",
+              fontSize: 13, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
               flexShrink: 0,
             }}
-          >
-            ✕
-          </button>
+          >✕</button>
         </div>
 
         <div
           className="ovy-auto"
-          style={{
-            flex: 1,
-            padding: "10px 14px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-            minHeight: 0,
-          }}
+          style={{ flex: 1, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}
         >
           {loading && (
             <div style={{ color: "var(--text-5)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>
-              Loading reviews…
+              Loading reviews...
             </div>
           )}
-
           {!loading && reviews.length === 0 && (
             <div style={{ color: "var(--text-5)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>
               No reviews yet. Be the first!
             </div>
           )}
-
           {reviews.map(review => {
             const isMine = review.authorId === currentUser?.id;
-            const reviewUser = getUser(review.authorId) ?? null;
+            const rUser = getUser(review.authorId) ?? null;
+            const name = getDisplayName(rUser);
             return (
               <div
                 key={review.authorId ?? review.content}
@@ -343,22 +363,17 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
                 }}
               >
                 <img
-                  src={getAvatar(reviewUser)}
-                  alt={getDisplayName(reviewUser)}
-                  style={{
-                    width: 32, height: 32, borderRadius: "50%",
-                    objectFit: "cover", flexShrink: 0, marginTop: 1,
-                  }}
+                  src={getAvatar(rUser)}
+                  alt={name}
+                  style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0, marginTop: 1 }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-2)" }}>
-                      {getDisplayName(reviewUser)}
+                      {name}
                     </span>
                     {isMine && (
-                      <span style={{ fontSize: 10, color: "var(--accent-1)", fontWeight: 600 }}>
-                        YOU
-                      </span>
+                      <span style={{ fontSize: 10, color: "var(--accent-1)", fontWeight: 600 }}>YOU</span>
                     )}
                     {review.createdAt && (
                       <span style={{ fontSize: 11, color: "var(--text-5)", marginLeft: "auto", flexShrink: 0 }}>
@@ -367,7 +382,7 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
                     )}
                   </div>
                   <div style={{ fontSize: 13, color: "var(--text-3)", lineHeight: 1.45, wordBreak: "break-word" }}>
-                    {review.content}
+                    {parseMarkdown(review.content, markdownData)}
                   </div>
                 </div>
               </div>
@@ -375,41 +390,36 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
           })}
         </div>
 
-        {currentUser && currentUser.id !== user.id && (
-          <div
-            style={{
-              padding: "10px 14px 14px",
-              borderTop: "1px solid var(--border)",
-              flexShrink: 0,
-              display: "flex",
-              flexDirection: "column",
-              gap: 7,
-            }}
-          >
+        {currentUser && (
+          <div style={{
+            padding: "10px 14px 14px",
+            borderTop: "1px solid var(--border)",
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 7,
+          }}>
             <SectionLabel>{myReview ? "Edit your review" : "Write a review"}</SectionLabel>
-            <textarea
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              placeholder={`Say something about ${getDisplayName(user)}…`}
-              rows={3}
-              style={{
-                resize: "none",
-                width: "100%",
-                padding: "7px 9px",
-                borderRadius: 7,
-                background: "var(--bg-1)",
-                border: "1px solid var(--border)",
-                color: "var(--text-2)",
-                fontSize: 13,
-                lineHeight: 1.45,
-                outline: "none",
-                boxSizing: "border-box",
-                fontFamily: "inherit",
-              }}
-            />
-            {error && (
-              <div style={{ fontSize: 12, color: "var(--red-2)" }}>{error}</div>
-            )}
+            <div style={{
+              resize: "none", width: "100%", padding: "7px 9px", borderRadius: 7,
+              background: "var(--bg-1)", border: "1px solid var(--border)",
+              color: "var(--text-2)", fontSize: 13, lineHeight: 1.45, outline: "none",
+              boxSizing: "border-box", fontFamily: "inherit",
+            }}>
+              <MessageInput
+                isChannel={false}
+                initialText={draft}
+                placeholderText={`Say something about ${getDisplayName(user)}...`}
+                setText={setDraft}
+                authState={authState as AuthState}
+                serverState={serverState}
+                channelState={channelState}
+                messageState={messageState}
+                userState={userState}
+                onEnter={() => handleSubmit()}
+              />
+            </div>
+            {error && <div style={{ fontSize: 12, color: "var(--red-2)" }}>{error}</div>}
             <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
               {myReview && (
                 <button
@@ -428,13 +438,13 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
               )}
               <button
                 onClick={handleSubmit}
-                disabled={!draft.trim() || submitting}
+                disabled={!draft || !draft.trim() || submitting}
                 style={{
                   padding: "5px 16px", borderRadius: 6, border: "none",
-                  background: "var(--accent-1)",
-                  color: "#fff", fontSize: 12, fontWeight: 600,
-                  cursor: (!draft.trim() || submitting) ? "not-allowed" : "pointer",
-                  opacity: (!draft.trim() || submitting) ? 0.5 : 1,
+                  background: "var(--accent-1)", color: "#fff",
+                  fontSize: 12, fontWeight: 600,
+                  cursor: (!draft || !draft.trim() || submitting) ? "not-allowed" : "pointer",
+                  opacity: (!draft || !draft.trim() || submitting) ? 0.5 : 1,
                 }}
               >
                 {submitting ? "Saving..." : myReview ? "Update" : "Submit"}
@@ -443,46 +453,58 @@ function ReviewsModal({ user, currentUser, userState, opts, onClose }: ReviewsMo
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
 interface ReviewsButtonProps {
   user: User;
   currentUser: User | null;
+  serverState: ServerState;
+  channelState: ChannelState;
+  messageState: MessageState;
   userState: UserState;
   token: string | null;
+  userSettings: UserSettings | null;
+  markdownData: {};
   open: (popout: Popout) => void;
   close: (id: string) => void;
 }
 
-function ReviewsButton({ user, currentUser, userState, token, open, close }: ReviewsButtonProps) {
+function ReviewsButton({
+  user,
+  currentUser,
+  serverState,
+  channelState,
+  messageState,
+  userState,
+  token,
+  userSettings,
+  markdownData,
+  open,
+  close
+}: ReviewsButtonProps) {
+  const opts = { headers: { Authorization: `Bearer ${token}` } };
   const [previews, setPreviews] = useState<Review[]>(
     reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.slice(0, 4) : [],
   );
   const [count, setCount] = useState(
     reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.length : 0,
   );
-  const { getUser, getMember } = userState;
-
-  const opts = {
-    headers: { Authorization: `Bearer ${token}` },
-  }
+  const { getUser } = userState;
 
   useEffect(() => {
-    if (reviewsCache.has(user.id))
-      return;
+    if (reviewsCache.has(user.id)) return;
     getReviews(user, opts)
       .then(data => {
         reviewsCache.set(user.id, data);
-        // oldest = earliest createdAt
         const sorted = [...data].sort(
           (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
         );
         setPreviews(sorted.slice(0, 4));
         setCount(data.length);
       })
-      .catch(() => { /* silent – button still works */ });
+      .catch(() => {});
   }, [user.id]);
 
   const sortedPreviews = [...previews].sort(
@@ -490,78 +512,74 @@ function ReviewsButton({ user, currentUser, userState, token, open, close }: Rev
   );
 
   return (
-    <>
-      <button
-        onClick={() => open({
-          id: "user-reviews",
-          element: <ReviewsModal
-            user={user}
-            currentUser={currentUser}
-            userState={userState}
-            opts={opts}
-            onClose={() => close("user-reviews")}
-          />,
-          options: {}
-        })}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          width: "100%",
-          padding: "7px 10px",
-          borderRadius: 8,
-          border: "1px solid var(--border)",
-          background: "color-mix(in hsl, var(--bg-4), transparent 50%)",
-          color: "var(--text-3)",
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: "pointer",
-          gap: 8,
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span>Reviews</span>
-          {count > 0 && (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                background: "color-mix(in hsl, var(--accent-2), transparent 70%)",
-                color: "var(--accent-1)",
-                borderRadius: 10,
-                padding: "1px 6px",
-              }}
-            >
-              {count}
-            </span>
-          )}
-        </span>
-
-        {sortedPreviews.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", flexDirection: "row-reverse" }}>
-            {sortedPreviews.slice().reverse().map((r, i) => {
-              const rUser = getUser(r.authorId) ?? null;
-              
-              return <img
+    <button
+      onClick={() => open({
+        id: "user-reviews",
+        element: <ReviewsModal
+          user={user}
+          currentUser={currentUser}
+          serverState={serverState}
+          channelState={channelState}
+          messageState={messageState}
+          userState={userState}
+          authState={{ token, userSettings, user: currentUser }}
+          markdownData={markdownData}
+          opts={opts}
+          onClose={() => close("user-reviews")}
+        />,
+        options: {},
+        closeWhenClickOutside: false,
+      })}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        width: "100%",
+        padding: "7px 10px",
+        borderRadius: 8,
+        border: "1px solid var(--border)",
+        background: "color-mix(in hsl, var(--bg-4), transparent 50%)",
+        color: "var(--text-3)",
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: "pointer",
+        gap: 8,
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span>Reviews</span>
+        {count > 0 && (
+          <span style={{
+            fontSize: 10, fontWeight: 700,
+            background: "color-mix(in hsl, var(--accent-2), transparent 70%)",
+            color: "var(--accent-1)", borderRadius: 10, padding: "1px 6px",
+          }}>
+            {count}
+          </span>
+        )}
+      </span>
+      {sortedPreviews.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", flexDirection: "row-reverse" }}>
+          {sortedPreviews.slice().reverse().map((r, i) => {
+            const rUser = getUser(r.authorId) ?? null;
+            return (
+              <img
                 key={r.authorId ?? i}
                 src={getAvatar(rUser)}
                 alt={getDisplayName(rUser)}
                 title={getDisplayName(rUser)}
                 style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: "50%",
-                  objectFit: "cover",
+                  width: 20, height: 20, borderRadius: "50%", objectFit: "cover",
                   border: "2px solid var(--bg-3)",
                   marginLeft: i === sortedPreviews.length - 1 ? 0 : -6,
                   flexShrink: 0,
                 }}
               />
-            })}
-          </div>
-        )}
-      </button>
-    </>
+            );
+          })}
+        </div>
+      )}
+    </button>
   );
 }
 
@@ -580,16 +598,17 @@ export default function UserPopout({
   token,
   position,
 }: UserPopoutProps) {
-  const name      = getDisplayName(user, member);
-  const avatar    = getAvatar(user, member);
+  const name = getDisplayName(user, member);
+  const avatar = getAvatar(user, member);
   const roleColor = serverState ? getRoleColor(serverState, user, member, true) : undefined;
   const resolvedBannerUrl = getBanner(user, member);
-  const resolvedBio       = getBio(user, member);
-  const resolvedPronouns  = getPronouns(user, member);
-  const resolvedNameFont  = member?.nameFont ?? user.nameFont;
+  const resolvedBio = getBio(user, member);
+  const resolvedPronouns = getPronouns(user, member);
+  const resolvedNameFont = member?.nameFont ?? user.nameFont;
 
-  const ref  = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [badges, setBadges] = useState<Badge[]>([]);
 
   useLayoutEffect(() => {
     if (ref.current) {
@@ -598,37 +617,62 @@ export default function UserPopout({
     }
   }, []);
 
+  useEffect(() => {
+    if (!token)
+      return;
+    getUserBadges(user.id, { headers: { Authorization: `Bearer ${token}` } })
+      .then(b => setBadges(b.filter(x => x.isVisible).sort((a, b2) => a.displayOrder - b2.displayOrder)))
+      .catch(() => {});
+  }, [user.id, token]);
+
   const clampedLeft  = position.left  != null
     ? Math.max(0, Math.min(position.left,  window.innerWidth  - size.width))
     : undefined;
   const clampedRight = position.right != null
     ? Math.max(0, Math.min(position.right, window.innerWidth  + size.width))
     : undefined;
-  const clampedTop   = Math.max(0, Math.min(position.top, window.innerHeight - size.height));
+  const clampedTop = Math.max(0, Math.min(position.top, window.innerHeight - size.height - 50));
 
-  const bannerBg    = resolvedBannerUrl ? `url(${resolvedBannerUrl})` : undefined;
+  const bannerBg = resolvedBannerUrl ? `url(${resolvedBannerUrl})` : undefined;
   const bannerColor = intToHex(user.bannerColor);
-  const status      = user.onlineStatus ?? OnlineStatus.Offline;
-  const statusMeta  = STATUS_META[status];
-  const flags       = parseFlags(user.flags);
+  const status = user.onlineStatus ?? OnlineStatus.Offline;
+  const statusMeta = STATUS_META[status];
+
+  const globalLevel = user.level ?? 0;
+  const globalXp = user.totalXp ?? 0;
+  const memberLevel = member?.level ?? 0;
+  const memberXp = member?.totalXp ?? 0;
+  const hasMemberLevel = !!member && (memberXp > 0 || memberLevel > 0);
+  const showBothLevels = hasMemberLevel;
+
+  let tzDisplay: string | undefined;
+  if (user.timeZone) {
+    try {
+      const tz = typeof user.timeZone === "string" ? user.timeZone : (user.timeZone as any)?.id;
+      if (tz) {
+        const time = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz,
+          hour: "numeric",
+          minute: "2-digit",
+          timeZoneName: "short",
+        }).format(new Date());
+        tzDisplay = time;
+      }
+    } catch { /* invalid tz */ }
+  }
 
   function openUserPopout(target: Element, u: User, m: Member | undefined) {
     const rect = target.getBoundingClientRect();
-    const id   = `user-profile-${rect.bottom}-${rect.left}`;
+    const id = `user-profile-${rect.bottom}-${rect.left}`;
     open({
       id,
       element: (
         <UserPopout
-          user={u}
-          member={m}
-          serverState={serverState}
-          channelState={channelState}
-          messageState={messageState}
-          userState={userState}
-          userSettings={userSettings}
-          currentUser={currentUser}
-          open={open}
-          close={close}
+          user={u} member={m}
+          serverState={serverState} channelState={channelState}
+          messageState={messageState} userState={userState}
+          userSettings={userSettings} currentUser={currentUser}
+          open={open} close={close}
           onClose={() => close(id)}
           token={token}
           position={{ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX }}
@@ -639,10 +683,7 @@ export default function UserPopout({
   }
 
   const markdownData = {
-    serverState,
-    channelState,
-    userState,
-    userSettings,
+    serverState, channelState, userState, userSettings,
     onMentionClick: (u: User, m: Member, event: React.MouseEvent) => {
       event.stopPropagation();
       event.preventDefault();
@@ -674,14 +715,14 @@ export default function UserPopout({
     onEmojiClick: async (emoji: string, event: React.MouseEvent) => {
       event.stopPropagation();
       event.preventDefault();
-      const rect     = event.currentTarget.getBoundingClientRect();
+      const rect = event.currentTarget.getBoundingClientRect();
       const emojiInfo = await getEmojiDataFromNative(emoji);
       open({
         id: "emoji",
         element: (
           <EmojiPopout
             emoji={emoji}
-            emojiName={emojiInfo.id}
+            emojiName={emojiInfo?.id ?? emoji}
             userSettings={userSettings}
             position={{ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX }}
           />
@@ -698,7 +739,7 @@ export default function UserPopout({
         style={{
           position: "fixed",
           top: clampedTop,
-          left: clampedLeft !== undefined ? clampedLeft : clampedRight! - size.width,
+          left: clampedLeft !== undefined ? clampedLeft : (clampedRight ?? 0) - size.width,
           zIndex: 1000,
           width: 280,
           borderRadius: 12,
@@ -714,9 +755,9 @@ export default function UserPopout({
         <div
           style={{
             height: 72,
-            backgroundImage: bannerBg 
-                  ? bannerBg 
-                  : `linear-gradient(135deg, ${bannerColor}, color-mix(in hsl, ${bannerColor}, black 30%))`,
+            backgroundImage: bannerBg
+              ? bannerBg
+              : `linear-gradient(135deg, ${bannerColor}, color-mix(in hsl, ${bannerColor}, black 30%))`,
             backgroundSize: "cover",
             backgroundPosition: "center",
             position: "relative",
@@ -727,20 +768,14 @@ export default function UserPopout({
             onClick={onClose}
             className="close-btn"
             style={{
-              position: "absolute",
-              top: 6, right: 6,
-              width: 22, height: 22,
-              padding: 0, borderRadius: 4,
-              background: "rgba(0,0,0,0.45)",
-              border: "none", color: "#fff",
-              fontSize: 13, lineHeight: 1,
+              position: "absolute", top: 6, right: 6,
+              width: 22, height: 22, padding: 0, borderRadius: 4,
+              background: "rgba(0,0,0,0.45)", border: "none", color: "#fff",
+              fontSize: 13, lineHeight: 1, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "pointer",
             }}
             title="Close"
-          >
-            ✕
-          </button>
+          >✕</button>
         </div>
 
         <div style={{ padding: "0 12px", position: "relative", marginBottom: 4 }}>
@@ -766,14 +801,25 @@ export default function UserPopout({
             </div>
           </div>
 
-          <div
-            style={{
-              display: "flex", flexWrap: "wrap", gap: 4,
-              justifyContent: "flex-end",
-              paddingTop: 6, minHeight: 28,
-            }}
-          >
-            {flags.map(f => <Badge key={f} label={f} />)}
+          <div style={{
+            display: "flex", flexWrap: "wrap", gap: 3,
+            justifyContent: "flex-end",
+            paddingTop: 6, minHeight: 28,
+          }}>
+            {badges.map(b => (
+              <span
+                key={b.type}
+                title={BadgeLabels[b.type] ?? `Badge ${b.type}`}
+                style={{
+                  fontSize: 15,
+                  lineHeight: 1,
+                  cursor: "default",
+                  filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))",
+                }}
+              >
+                {BadgeIcons[b.type] ?? "🏅"}
+              </span>
+            ))}
           </div>
         </div>
 
@@ -802,12 +848,10 @@ export default function UserPopout({
             >
               {name}
             </div>
-            <div
-              style={{
-                fontSize: 13, color: "var(--text-5)", fontWeight: 500,
-                display: "flex", alignItems: "center", gap: 6, marginTop: 2,
-              }}
-            >
+            <div style={{
+              fontSize: 13, color: "var(--text-5)", fontWeight: 500,
+              display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap",
+            }}>
               <span>@{user.username}</span>
               {resolvedPronouns && (
                 <>
@@ -816,14 +860,36 @@ export default function UserPopout({
                 </>
               )}
             </div>
+
+            {user.title && (
+              <div style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                marginTop: 5,
+                padding: "2px 8px",
+                borderRadius: 4,
+                fontSize: 11,
+                fontWeight: 600,
+                background: user.titleIsSystem
+                  ? "color-mix(in hsl, var(--accent-2), transparent 75%)"
+                  : "color-mix(in hsl, var(--yellow-2), transparent 78%)",
+                color: user.titleIsSystem ? "var(--accent-1)" : "var(--yellow-1)",
+                border: `1px solid ${user.titleIsSystem
+                  ? "color-mix(in hsl, var(--accent-2), transparent 50%)"
+                  : "color-mix(in hsl, var(--yellow-2), transparent 50%)"}`,
+                letterSpacing: "0.04em",
+              }}>
+                {user.titleIsSystem ? "⚡ " : "🏷 "}{user.title}
+              </div>
+            )}
           </div>
 
-          <div
-            style={{
-              display: "flex", alignItems: "center", gap: 5,
-              marginBottom: 8, marginTop: 2,
-            }}
-          >
+          {/* Status line */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 5,
+            marginBottom: 8, marginTop: 6, flexWrap: "wrap",
+          }}>
             <StatusDot status={status} size={10} />
             <span style={{ fontSize: 12, color: statusMeta.color, fontWeight: 600 }}>
               {statusMeta.label}
@@ -847,27 +913,23 @@ export default function UserPopout({
           {resolvedBio && (
             <div style={{ marginBottom: 10 }}>
               <SectionLabel>About me</SectionLabel>
-              <div
-                style={{
-                  fontSize: 13, color: "var(--text-3)",
-                  lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
-                  background: "color-mix(in hsl, var(--bg-4), transparent 40%)",
-                  borderRadius: 6, padding: "6px 8px",
-                  border: "1px solid var(--border-light)",
-                }}
-              >
+              <div style={{
+                fontSize: 13, color: "var(--text-3)",
+                lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                background: "color-mix(in hsl, var(--bg-4), transparent 40%)",
+                borderRadius: 6, padding: "6px 8px",
+                border: "1px solid var(--border-light)",
+              }}>
                 {parseMarkdown(resolvedBio, markdownData)}
               </div>
             </div>
           )}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: member ? "1fr 1fr" : "1fr",
-              gap: 8, marginBottom: 8,
-            }}
-          >
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: member ? "1fr 1fr" : "1fr",
+            gap: 8, marginBottom: 8,
+          }}>
             <div>
               <SectionLabel>Member since</SectionLabel>
               <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
@@ -884,11 +946,65 @@ export default function UserPopout({
             )}
           </div>
 
+          {tzDisplay && (
+            <>
+              <Divider />
+              <div style={{ marginBottom: 8 }}>
+                <SectionLabel>Local time</SectionLabel>
+                <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
+                  🕐 {tzDisplay}
+                </div>
+              </div>
+            </>
+          )}
+
           <Divider />
-          <div style={{ marginBottom: 8 }}>
-            <ReviewsButton user={user} currentUser={currentUser} userState={userState} open={open} close={close} token={token} />
+
+          <div style={{ marginBottom: 10 }}>
+            {showBothLevels ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <XpBar
+                  label="Global level"
+                  level={globalLevel}
+                  totalXp={globalXp}
+                  accentVar="var(--accent-1)"
+                />
+                <XpBar
+                  label="Server level"
+                  level={memberLevel}
+                  totalXp={memberXp}
+                  accentVar="var(--blue-2)"
+                />
+              </div>
+            ) : (
+              <XpBar
+                label={member ? "Server level" : "Level"}
+                level={hasMemberLevel ? memberLevel : globalLevel}
+                totalXp={hasMemberLevel ? memberXp : globalXp}
+                accentVar="var(--accent-1)"
+              />
+            )}
           </div>
 
+          <Divider />
+
+          <div style={{ marginBottom: 8 }}>
+            <ReviewsButton
+              user={user}
+              currentUser={currentUser}
+              serverState={serverState}
+              channelState={channelState}
+              messageState={messageState}
+              userState={userState}
+              token={token}
+              userSettings={userSettings}
+              markdownData={markdownData}
+              open={open}
+              close={close}
+            />
+          </div>
+
+          {/* Roles */}
           {member && member.roles.length > 0 && (
             <>
               <Divider />
@@ -910,12 +1026,10 @@ export default function UserPopout({
                           color,
                         }}
                       >
-                        <span
-                          style={{
-                            width: 8, height: 8, borderRadius: "50%",
-                            background: color, flexShrink: 0, display: "inline-block",
-                          }}
-                        />
+                        <span style={{
+                          width: 8, height: 8, borderRadius: "50%",
+                          background: color, flexShrink: 0, display: "inline-block",
+                        }} />
                         {role?.name ?? `Role ${roleId}`}
                       </span>
                     );
@@ -925,6 +1039,7 @@ export default function UserPopout({
             </>
           )}
 
+          {/* DM accent swatches */}
           {(user.dmColor || (user.dmColors && user.dmColors.length > 0)) && (
             <>
               <Divider />
@@ -962,6 +1077,7 @@ export default function UserPopout({
             </>
           )}
 
+          {/* Last seen (offline users, or users who share while offline) */}
           {(status === OnlineStatus.Offline || user.showStatusWhileOffline) && user.lastSeen && (
             <>
               <Divider />

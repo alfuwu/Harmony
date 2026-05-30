@@ -943,13 +943,13 @@ textarea,
 .message:has(.group-header) {
   margin-top: 5px;
 }
-.message:hover {
+.message.hover {
   background-color: color-mix(in hsl, black, transparent 90%) !important;
 }
 .message.mentioned {
   background: var(--mention);
 }
-.message.mentioned:hover {
+.message.mentioned.hover {
   background: var(--mention-hover) !important;
 }
 .message.mentioned::before {

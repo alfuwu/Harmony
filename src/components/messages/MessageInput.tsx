@@ -1,16 +1,16 @@
-import { useState, useMemo, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
+import { useState, useMemo, useEffect, useRef, forwardRef, useImperativeHandle, CSSProperties } from "react";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { createEditor, Node, Editor, Transforms, Range, Text } from "slate";
 import { withHistory } from "slate-history";
 import ReactDOM from "react-dom";
-import { useChannelState } from "../../lib/state/Channels";
-import { useMessageState } from "../../lib/state/Messages";
-import { useAuthState } from "../../lib/state/Auth";
-import { useUserState } from "../../lib/state/Users";
+import { ChannelState, useChannelState } from "../../lib/state/Channels";
+import { MessageState, useMessageState } from "../../lib/state/Messages";
+import { AuthState, useAuthState } from "../../lib/state/Auth";
+import { UserState, useUserState } from "../../lib/state/Users";
 import { LEAF_RULES, renderEmoji, tokenizeMarkdown } from "../../lib/utils/Markdown";
 import { AbstractChannel, Channel, Role, Server, User } from "../../lib/utils/types";
 import { getAvatar, getDisplayName, getRoleColor } from "../../lib/utils/UserUtils";
-import { useServerState } from "../../lib/state/Servers";
+import { ServerState, useServerState } from "../../lib/state/Servers";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage } from "../../lib/api/messageApi";
 import { rootRef } from "../../App";
@@ -113,27 +113,37 @@ const MessageInput = forwardRef(function MessageInput({
   setText = undefined,
   onEnter = undefined,
   giveNull = false,
+  style = undefined,
+  authState = undefined,
+  channelState = undefined,
+  messageState = undefined,
+  userState = undefined,
+  serverState = undefined
 }: {
   isChannel?: boolean,
   placeholderText?: string,
   initialText?: string | null | undefined,
   setText?: React.Dispatch<React.SetStateAction<string | null | undefined>>,
   onEnter?: (s: string) => void,
-  giveNull?: boolean
+  giveNull?: boolean,
+  style?: CSSProperties,
+  authState?: AuthState,
+  channelState?: ChannelState,
+  messageState?: MessageState,
+  userState?: UserState,
+  serverState?: ServerState
 }, ref) {
   const editor = useMemo(
     () => withHistory(withMentions(withEmoji(withReact(createEditor())))),
     []
   );
 
-  const { token, userSettings } = useAuthState();
-  const { channels, currentChannel } = useChannelState();
-  const { user } = useAuthState();
-  const { addMessage } = useMessageState();
-  const { users } = useUserState();
-  const serverState = useServerState();
+  const { token, user, userSettings } = authState ?? useAuthState();
+  const { channels, currentChannel } = channelState ?? useChannelState();
+  const { addMessage } = messageState ?? useMessageState();
+  const { users, getMember } = userState ?? useUserState();
+  serverState ??= useServerState();
   const { servers, currentServer } = serverState;
-  const { getMember } = useUserState();
 
   const editableRef = useRef<HTMLDivElement | null>(null);
 
@@ -519,6 +529,7 @@ const MessageInput = forwardRef(function MessageInput({
         decorate={decorate}
         renderLeaf={Leaf}
         renderElement={renderElement}
+        style={style}
         onKeyDown={e => {
           const t = target;
           const results = mentionResults();

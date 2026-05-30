@@ -55,7 +55,6 @@ export default function MessageList() {
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }, [currentChan, messageState.messages]);
 
-  // Scroll management
   const handleScroll = () => {
     if (!container.current)
       return;
@@ -329,7 +328,7 @@ export default function MessageList() {
           return (
             <div
               key={msg.id + msg.timestamp}
-              className={"message" + (isMentioned ? " mentioned" : "") + (msg.isPinned ? " pinned" : "")}
+              className={"message" + (isMentioned ? " mentioned" : "") + (isHovered ? " hover" : "")}
               onMouseEnter={() => setMessageHover(String(msg.id))}
               onMouseLeave={() => setMessageHover(null)}
               onContextMenu={e => openCtxMenu(e, msg)}
@@ -393,7 +392,6 @@ export default function MessageList() {
                         initialText={editContent}
                         setText={setEditContent}
                         onEnter={() => handleSaveEdit(msg)}
-                        giveNull={false}
                         ref={inputRef}
                       />
                     </div>
@@ -415,7 +413,7 @@ export default function MessageList() {
                   </div>
                 ) : (
                   <span className={"content" + (msg.sending ? " sending" : "")}>
-                      {parseMarkdown(msg.content, markdownData)}
+                    {parseMarkdown(msg.content, markdownData)}
                   </span>
                 )}
 
@@ -458,7 +456,6 @@ export default function MessageList() {
                 )}
               </div>
 
-              {/* Quick action toolbar on hover */}
               {isHovered && !isEditing && (
                 <div className="message-actions">
                   <button
