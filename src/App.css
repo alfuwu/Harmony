@@ -275,6 +275,51 @@ button:active {
   background-color: var(--active-2);
 }
 
+select,
+.settings-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bg-2);
+  color: var(--text-3);
+  border: 1px solid var(--button-border);
+  border-radius: 6px;
+  padding: 6px 32px 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  /* chevron arrow via SVG data URI */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 0.2s, background-color 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+ 
+select:hover,
+.settings-select:hover {
+  border-color: var(--hover-raw);
+}
+ 
+select:focus,
+.settings-select:focus {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px color-mix(in hsl, var(--accent-2), transparent 70%);
+}
+ 
+select option {
+  background-color: var(--bg-2);
+  color: var(--text-3);
+  padding: 6px 10px;
+}
+ 
+/* visual-sel button resets */
+.visual-sel-trigger {
+  appearance: none;
+  font-family: inherit;
+}
+
 input,
 button,
 textarea,
@@ -756,8 +801,17 @@ textarea,
   flex-grow: 1;
 }
 .message-list {
-  padding: 6px 0 30px 6px;
+  padding: 6px 0 0 6px;
   max-height: 100%;
+}
+.message-list::-webkit-scrollbar {
+  display: none;
+}
+.message:last-of-type {
+  margin-bottom: 36px;
+}
+.message-list.typing > .message:last-of-type {
+  margin-bottom: 12px;
 }
 
 .channel {
@@ -965,9 +1019,34 @@ textarea,
 .message-actions {
   position: absolute;
   right: 10px;
-  top: 50%;
+  top: 10px;
   transform: translateY(-50%);
   background-color: var(--bg-2);
+}
+.message-actions > button {
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  color: var(--text-4);
+}
+
+em-emoji-picker {
+  --background-rgb: 35, 39, 42;
+  --border-radius: 12px;
+
+  --category-icon-active-color: var(--accent-1);
+
+  --color-border-over: transparent;
+
+  --rgb-accent: 88, 101, 242;
+
+  --font-family: Inter, sans-serif;
+
+  --shadow:
+    0 8px 28px rgba(0,0,0,.45),
+    0 2px 8px rgba(0,0,0,.25);
 }
 
 .content-container {
@@ -1403,10 +1482,19 @@ code {
   width: 100%;
 }
 
-.emoji-text, .emoji-big {
+.emoji-reaction, .emoji-text, .emoji-big {
   display: inline-block;
   object-fit: contain;
   vertical-align: bottom;
+}
+.emoji-reaction {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.emoji-reaction-system {
+  font-size: 1.125rem;
+  line-height: 1.125rem;
+  margin-top: 2px;
 }
 .emoji-text {
   width: 1.375rem;
@@ -1417,8 +1505,8 @@ code {
   height: 3rem;
 }
 .emoji-big-system {
-  font-size: 3rem;
-  line-height: 3rem;
+  font-size: 2.75rem;
+  line-height: 2.75rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1496,4 +1584,177 @@ code {
 .server-list {
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+body {
+  font-size: calc(var(--settings-text-scale, 1) * 1rem);
+}
+ 
+/* ── Saturation ─────────────────────────────────────────────────────────── */
+body {
+  filter: saturate(var(--settings-saturation, 1));
+}
+ 
+/* ── Reduce motion ──────────────────────────────────────────────────────── */
+body.reduce-motion *,
+body.reduce-motion *::before,
+body.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+ 
+/* ── High contrast ──────────────────────────────────────────────────────── */
+body.high-contrast {
+  --text-3: hsl(0, 0%, 100%);
+  --text-4: hsl(0, 0%, 85%);
+  --text-5: hsl(0, 0%, 65%);
+  --border: rgba(255,255,255,0.3);
+  --border-light: rgba(255,255,255,0.15);
+}
+body.high-contrast .mention {
+  outline: 1px solid currentColor;
+}
+body.high-contrast code {
+  border: 1px solid rgba(255,255,255,0.4);
+}
+ 
+/* ── Dyslexia font ──────────────────────────────────────────────────────── */
+@font-face {
+  font-family: "OpenDyslexic";
+  src: url("https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/fonts/OpenDyslexic-Regular.woff2") format("woff2"),
+       url("https://cdn.jsdelivr.net/npm/open-dyslexic@1.0.3/fonts/OpenDyslexic-Regular.woff") format("woff");
+}
+body.dyslexia-font,
+body.dyslexia-font input,
+body.dyslexia-font textarea,
+body.dyslexia-font .msg-input,
+body.dyslexia-font .content {
+  font-family: "OpenDyslexic", Inter, Avenir, Helvetica, Arial, sans-serif !important;
+}
+ 
+/* ── Always underline links ─────────────────────────────────────────────── */
+body.always-underline-links a {
+  text-decoration: underline !important;
+}
+ 
+/* ── Light theme ────────────────────────────────────────────────────────── */
+body.theme-light .ven-colors {
+  --text-3: #3c3836;
+  --text-4: #665c54;
+  --text-5: #928374;
+  --bg-1: #f2e5bc;
+  --bg-2: #ebdbb2;
+  --bg-3: #e0d0a0;
+  --bg-4: #fbf1c7;
+  --hover: hsla(40, 40%, 50%, 0.12);
+  --hover-raw: hsla(40, 40%, 50%);
+  --active: hsla(40, 40%, 50%, 0.22);
+  --active-2: hsla(40, 40%, 50%, 0.32);
+  --button-border: rgba(0,0,0,0.15);
+}
+body.theme-light :root {
+  caret-color: #3c3836;
+}
+ 
+/* ── Hide reactions ─────────────────────────────────────────────────────── */
+body.hide-reactions .message > .content-container > div[style*="flexWrap"],
+body.hide-reactions .reactions-row {
+  display: none !important;
+}
+ 
+/* ── Hide reaction counts ───────────────────────────────────────────────── */
+body.hide-reaction-count .reaction-count {
+  display: none !important;
+}
+ 
+/* ── No mention highlight ───────────────────────────────────────────────── */
+body.no-mention-highlight .message.mentioned {
+  background: transparent !important;
+}
+body.no-mention-highlight .message.mentioned::before {
+  display: none !important;
+}
+ 
+/* ── Avatar shapes by data attribute ────────────────────────────────────── */
+body[data-avatar-shape="circle"] .avatar     { border-radius: 50%; }
+body[data-avatar-shape="rounded"] .avatar    { border-radius: 25%; }
+body[data-avatar-shape="square"] .avatar     { border-radius: 4px; }
+ 
+body[data-server-icon-shape="circle"] .server-icon   { border-radius: 50%; }
+body[data-server-icon-shape="rounded"] .server-icon  { border-radius: 33%; }
+body[data-server-icon-shape="square"] .server-icon   { border-radius: 4px; }
+ 
+/* ── Compact message layout ─────────────────────────────────────────────── */
+.message-list.compact-messages {
+  padding: 4px 0 20px 8px;
+}
+.message-list.compact-messages .message {
+  padding: 1px 15px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
+  border-radius: 0;
+}
+.message-list.compact-messages .message:has(.compact-header) {
+  margin-top: 8px;
+}
+.compact-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 1px;
+}
+.compact-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.compact-author {
+  font-size: 13px;
+  font-weight: 600;
+}
+.compact-content-container {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding-left: 24px;
+}
+.compact-ts {
+  font-size: 10px;
+  color: var(--text-5);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  min-width: 42px;
+}
+.message-list.compact-messages .content {
+  font-size: 13px;
+  line-height: 1.3;
+}
+.message-list.compact-messages .edited-mark {
+  font-size: 10px;
+}
+.message-list.compact-messages .group-header {
+  display: none;
+}
+/* In compact mode, timestamp column is to the left of content */
+.message-list.compact-messages .content-container {
+  margin-left: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.message-list.compact-messages .content-container > .timestamp {
+  position: static;
+  display: inline !important;
+  min-width: 42px;
+  font-size: 10px;
 }

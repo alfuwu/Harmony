@@ -11,10 +11,12 @@ export default function TypingIndicator({ channelId, currentUserId }: TypingIndi
   const { getTyping } = useChannelState();
   const { get } = useUserState();
 
-  if (!channelId) return null;
+  if (!channelId)
+    return null;
 
   const typingIds = (getTyping(channelId) ?? []).filter(id => id !== currentUserId);
-  if (typingIds.length === 0) return null;
+  if (typingIds.length === 0)
+    return null;
 
   const names = typingIds
     .slice(0, 3)
@@ -24,10 +26,10 @@ export default function TypingIndicator({ channelId, currentUserId }: TypingIndi
     });
 
   let text: string;
-  if (typingIds.length === 1) text = `${names[0]} is typing…`;
-  else if (typingIds.length === 2) text = `${names[0]} and ${names[1]} are typing…`;
-  else if (typingIds.length === 3) text = `${names[0]}, ${names[1]}, and ${names[2]} are typing…`;
-  else text = `${typingIds.length} people are typing…`;
+  if (typingIds.length === 1) text = `${names[0]} is typing...`;
+  else if (typingIds.length === 2) text = `${names[0]} and ${names[1]} are typing...`;
+  else if (typingIds.length === 3) text = `${names[0]}, ${names[1]}, and ${names[2]} are typing...`;
+  else text = `${typingIds.length.toLocaleString('en-US')} people are typing...`;
 
   return (
     <div className="typing-indicator uno">

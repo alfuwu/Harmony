@@ -25,7 +25,7 @@ import {
   BadgeIcons,
 } from "../../../lib/api/socialApi";
 import { deleteReview, getReviews, submitReview, updateReview } from "../../../lib/api/userApi";
-import MessageInput from "../../messages/MessageInput";
+import MessageInput, { MessageInputHandle } from "../../messages/MessageInput";
 import { AuthState } from "../../../lib/state/Auth";
 
 interface UserPopoutProps {
@@ -199,7 +199,8 @@ function ReviewsModal({
   const [draft, setDraft] = useState<string | null | undefined>("");
   const [submitting, setSubmitting] = useState(false);
   const { getUser } = userState;
-
+  
+  const inputRef = useRef<MessageInputHandle>(null);
   const myReview = reviews.find(r => r.authorId === currentUser?.id);
 
   useEffect(() => {
@@ -245,6 +246,7 @@ function ReviewsModal({
       reviewsCache.set(user.id, fresh);
       setReviews(fresh);
       setDraft("");
+      inputRef.current?.setText("");
     } catch {
       setError("Failed to submit review.");
     } finally {
@@ -417,6 +419,7 @@ function ReviewsModal({
                 messageState={messageState}
                 userState={userState}
                 onEnter={() => handleSubmit()}
+                ref={inputRef}
               />
             </div>
             {error && <div style={{ fontSize: 12, color: "var(--red-2)" }}>{error}</div>}

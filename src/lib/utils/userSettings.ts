@@ -156,15 +156,7 @@ export interface UserSettings {
     sendMessagesWithCtrlEnter: boolean;
 
     // privacy & safety
-    whoCanSendFriendRequests: FriendRequestContext;
-    whoCanSendDms: UserContext;
-    whoCanSeeEmail: UserContext;
-    whoCanSeePhoneNumber: UserContext;
-    whoCanSeeBio: UserContext;
-    whoCanSeePronouns: UserContext;
-    whoCanSeeAvatar: UserContext;
-    whoCanSeeStatus: UserContext;
-    whoCanSeePasswordHash: UserContext;
+    showReadReceipts: boolean;
 
     // dev options
     developerMode: boolean;

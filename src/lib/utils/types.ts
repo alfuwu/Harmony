@@ -1,3 +1,5 @@
+import { FriendRequestContext, UserContext } from "./userSettings";
+
 /// messages
 export interface Message {
   id: number;
@@ -48,6 +50,19 @@ export interface User {
   titleGrantedAt?: string | null;
   totalXp?: number | null;
   level?: number | null;
+
+  // only populated for the self
+  whoCanSendFriendRequests?: FriendRequestContext | null;
+  whoCanSendDms?: UserContext | null;
+  whoCanAddToGcs?: UserContext | null;
+  whoCanSeeEmail?: UserContext | null;
+  whoCanSeePhoneNumber?: UserContext | null;
+  whoCanSeeBio?: UserContext | null;
+  whoCanSeePronouns?: UserContext | null;
+  whoCanSeeAvatar?: UserContext | null;
+  whoCanSeeBanner?: UserContext | null;
+  whoCanSeeStatus?: UserContext | null;
+  whoCanSeePasswordHash?: UserContext | null;
 }
 
 export enum OnlineStatus {

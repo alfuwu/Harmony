@@ -1,32 +1,495 @@
-// @ts-expect-error
-import { Theme, AppIcon, IconDisplayType, UserIconDisplayType, NameHoverBehavior, NameFontDisplayType, RoleColor, AnimateContext, VoiceInputMode, SpoilerContext, FriendRequestContext, UserContext, UserSettings } from "../../../lib/utils/userSettings";
+import { useState, useRef, useEffect } from "react";
 import { useAuthState } from "../../../lib/state/Auth";
-import { updateMe, updateProfile, updateSettings, changeAvatar, changeBanner, deleteAvatar, deleteBanner, deleteFont, changeFont } from "../../../lib/api/userApi";
-import { useEffect, useRef, useState } from "react";
-import Search from "../../svgs/settings/Search";
-import { getAvatar, getBanner, getDisplayName } from "../../../lib/utils/UserUtils";
-import { Server } from "../../../lib/utils/types";
 import { useUserState } from "../../../lib/state/Users";
-import CroppingModal from "./CroppingModal";
-import MessageInput from "../../messages/MessageInput";
 import { useMessageState } from "../../../lib/state/Messages";
 import { useServerState } from "../../../lib/state/Servers";
+import {
+  updateMe, updateProfile, updateSettings, updatePrivacy,
+  changeAvatar, changeBanner, changeFont,
+  deleteAvatar, deleteBanner, deleteFont,
+} from "../../../lib/api/userApi";
+import { getAvatar, getBanner, getDisplayName } from "../../../lib/utils/UserUtils";
+import Search from "../../svgs/settings/Search";
+import CroppingModal from "./CroppingModal";
+import MessageInput, { MessageInputHandle } from "../../messages/MessageInput";
 
-export default function UserSettingsModal({ open, onClose }: any) {
+import {
+  Theme, AppIcon, IconDisplayType, UserIconDisplayType, NameHoverBehavior,
+  NameFontDisplayType, RoleColor, AnimateContext, VoiceInputMode, SpoilerContext,
+  FriendRequestContext, UserContext, EmojiStyle,
+} from "../../../lib/utils/userSettings";
+import type { UserSettings } from "../../../lib/utils/userSettings";
+import { User } from "../../../lib/utils/types";
+
+function intToHex(n: number): string {
+  return "#" + Math.max(0, n >>> 0).toString(16).padStart(6, "0");
+}
+function hexToInt(hex: string): number {
+  return parseInt(hex.replace("#", ""), 16) || 0;
+}
+
+function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={value}
+      onClick={() => onChange(!value)}
+      style={{
+        width: 42, height: 24, borderRadius: 12, border: "none", padding: 0,
+        background: value ? "var(--accent-3)" : "var(--bg-2)",
+        position: "relative", cursor: "pointer", flexShrink: 0,
+        transition: "background 200ms",
+        boxShadow: "inset 0 0 0 1px var(--button-border)",
+      }}
+    >
+      <span style={{
+        position: "absolute", top: 4, left: value ? 22 : 4,
+        width: 16, height: 16, borderRadius: "50%",
+        background: value ? "#fff" : "var(--text-5)",
+        transition: "left 180ms ease, background 180ms",
+        display: "block",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+      }} />
+    </button>
+  );
+}
+
+type Opt = { value: number; label: string };
+
+function Sel({ value, onChange, options }: { value: number; onChange: (v: number) => void; options: Opt[] }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(Number(e.target.value))}
+      style={{
+        background: "var(--bg-2)", color: "var(--text-3)",
+        border: "1px solid var(--button-border)", padding: "5px 8px",
+        borderRadius: 6, fontSize: 13, cursor: "pointer",
+        minWidth: 170, boxShadow: "none",
+      }}
+    >
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+// ─── Visual select ───────────────────────────────────────────────────────────
+// A select where each option has a small graphic preview rendered inline.
+interface VisualOpt {
+  value: number;
+  label: string;
+  preview: React.ReactNode;
+}
+
+function VisualSel({ value, onChange, options }: {
+  value: number;
+  onChange: (v: number) => void;
+  options: VisualOpt[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = options.find(o => o.value === value) ?? options[0];
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  return (
+    <div ref={ref} style={{ position: "relative", userSelect: "none" }}>
+      <button
+        className="visual-sel-trigger"
+        onClick={() => setOpen(v => !v)}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "5px 10px", borderRadius: 6, cursor: "pointer",
+          background: "var(--bg-2)", border: "1px solid var(--button-border)",
+          color: "var(--text-3)", fontSize: 13, minWidth: 190,
+          boxShadow: "none",
+        }}
+      >
+        <span style={{ flex: 1, textAlign: "left" }}>{current.label}</span>
+        <span style={{ color: "var(--text-5)", fontSize: 10 }}>▾</span>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", right: 0, top: "calc(100% + 4px)",
+          background: "var(--bg-2)", border: "1px solid var(--border)",
+          borderRadius: 8, zIndex: 300, minWidth: 240, overflow: "hidden",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+        }}>
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              style={{
+                display: "flex", flexDirection: "column", gap: 6,
+                width: "100%", padding: "10px 12px", cursor: "pointer",
+                background: opt.value === value ? "var(--active)" : "none",
+                border: "none", textAlign: "left", color: "var(--text-3)",
+                fontSize: 13, boxShadow: "none",
+                borderBottom: "1px solid var(--border-light)",
+              }}
+            >
+              <span style={{ fontWeight: opt.value === value ? 600 : 400 }}>{opt.label}</span>
+              <div style={{ borderRadius: 6, overflow: "hidden", pointerEvents: "none" }}>
+                {opt.preview}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Slider({
+  value, onChange, min, max, step, format,
+}: {
+  value: number; onChange: (v: number) => void;
+  min: number; max: number; step: number;
+  format?: (v: number) => string;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 220 }}>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        style={{ flex: 1 }}
+      />
+      <span style={{
+        minWidth: 44, textAlign: "right", fontSize: 13,
+        color: "var(--text-4)", fontVariantNumeric: "tabular-nums",
+      }}>
+        {format ? format(value) : value}
+      </span>
+    </div>
+  );
+}
+
+function Row({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      padding: "11px 0", borderBottom: "1px solid var(--border-light)",
+      gap: 16, minHeight: 46,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 500 }}>{label}</div>
+        {desc && (
+          <div style={{ fontSize: 12, color: "var(--text-5)", marginTop: 3, lineHeight: 1.4 }}>{desc}</div>
+        )}
+      </div>
+      <div style={{ flexShrink: 0 }}>{children}</div>
+    </div>
+  );
+}
+
+function Group({ title, children }: { title?: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      {title && (
+        <div style={{
+          fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+          letterSpacing: "0.08em", color: "var(--text-5)",
+          paddingBottom: 8, marginBottom: 2,
+          borderBottom: "1px solid var(--border)",
+        }}>
+          {title}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function InfoBanner({ children, variant = "warn" }: { children: React.ReactNode; variant?: "warn" | "info" }) {
+  const colors = variant === "warn"
+    ? { bg: "color-mix(in hsl, var(--yellow-2), transparent 82%)", border: "color-mix(in hsl, var(--yellow-2), transparent 55%)", text: "var(--yellow-1)" }
+    : { bg: "color-mix(in hsl, var(--blue-2), transparent 82%)", border: "color-mix(in hsl, var(--blue-2), transparent 55%)", text: "var(--blue-1)" };
+  return (
+    <div style={{
+      background: colors.bg, border: `1px solid ${colors.border}`,
+      borderRadius: 8, padding: "10px 14px", marginBottom: 20,
+      fontSize: 13, color: colors.text, lineHeight: 1.5,
+    }}>
+      {children}
+    </div>
+  );
+}
+// ─── Visual option previews ───────────────────────────────────────────────────
+
+// Compact mode preview
+function CompactPreview({ compact }: { compact: boolean }) {
+  const msgs = [
+    { name: "Alice", color: "#d3869b", text: "Hey, what's up?" },
+    { name: "Bob",   color: "#7caea3", text: "Not much, just working on the new feature" },
+    { name: "Alice", color: "#d3869b", text: "Nice! How's it going?" },
+  ];
+  return (
+    <div style={{
+      background: "var(--bg-4)", borderRadius: 6, padding: "8px 10px",
+      fontSize: 11, lineHeight: compact ? 1.3 : 1.6,
+      display: "flex", flexDirection: "column", gap: compact ? 1 : 6,
+    }}>
+      {msgs.map((m, i) => (
+        <div key={i} style={{ display: "flex", gap: compact ? 6 : 8, alignItems: compact ? "baseline" : "flex-start" }}>
+          {!compact && (
+            <div style={{
+              width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+              background: m.color, marginTop: 1,
+            }} />
+          )}
+          <span style={{ color: m.color, fontWeight: 600, fontSize: compact ? 10 : 11, flexShrink: 0 }}>
+            {compact ? m.name.slice(0, 3) : m.name}
+          </span>
+          {compact && <span style={{ color: "var(--text-5)", fontSize: 9 }}>12:00</span>}
+          <span style={{ color: "var(--text-4)", fontSize: compact ? 10 : 11 }}>{m.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Avatar shape preview
+function AvatarShapePreview({ shape }: { shape: "circle" | "rounded" | "square" }) {
+  const r = shape === "circle" ? "50%" : shape === "rounded" ? "25%" : "4px";
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0" }}>
+      {["#d3869b","#7caea3","#a8b665"].map((c, i) => (
+        <div key={i} style={{
+          width: 28, height: 28, borderRadius: r,
+          background: c, flexShrink: 0,
+        }} />
+      ))}
+      <span style={{ fontSize: 11, color: "var(--text-5)" }}>{shape}</span>
+    </div>
+  );
+}
+
+// Role color preview
+function RoleColorPreview({ mode }: { mode: number }) {
+  const roles = [
+    { color: "#d3869b", name: "Admin" },
+    { color: "#7caea3", name: "Mod" },
+  ];
+  // RoleColor: ShowInNames=0, RoleDot=1, ShowAsDotAndInNames=2, DontShow=3
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "4px 0" }}>
+      {roles.map((r, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {(mode === 1 || mode === 2) && (
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.color, flexShrink: 0, display: "inline-block" }} />
+          )}
+          <span style={{
+            fontSize: 11, fontWeight: 600,
+            color: (mode === 0 || mode === 2) ? r.color : "var(--text-4)",
+          }}>
+            {r.name}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Spoiler preview
+function SpoilerPreview({ reveal }: { reveal: number }) {
+  // SpoilerContext: Always=0, OnClick=1, OnHover=2, OnModeratedServers=3
+  const shown = reveal === 0;
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "4px 0" }}>
+      <span style={{ fontSize: 11, color: "var(--text-4)" }}>This message contains a </span>
+      <span style={{
+        fontSize: 11, padding: "1px 4px", borderRadius: 3,
+        background: shown ? "transparent" : "var(--bg-1)",
+        color: shown ? "var(--text-3)" : "transparent",
+        border: shown ? "none" : "1px solid var(--border)",
+        cursor: "pointer",
+      }}>spoiler</span>
+    </div>
+  );
+}
+
+// Theme preview
+function ThemePreview({ theme }: { theme: number }) {
+  // Theme: Light=0, Dark=1, System=2
+  const dark = theme !== 0;
+  return (
+    <div style={{
+      background: dark ? "#282828" : "#f5f0e8",
+      borderRadius: 6, padding: "6px 10px", fontSize: 11,
+      display: "flex", flexDirection: "column", gap: 4,
+    }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: dark ? "#3c3836" : "#d4be98", flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ background: dark ? "#504945" : "#d4c5a0", height: 8, borderRadius: 4, width: "60%", marginBottom: 4 }} />
+          <div style={{ background: dark ? "#3c3836" : "#ddd0b0", height: 7, borderRadius: 4, width: "85%" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Emoji style preview
+function EmojiStylePreview({ system }: { system: boolean }) {
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0" }}>
+      <span style={{ fontSize: system ? 18 : 14 }}>
+        {system ? "😀🎉🔥" : ""}
+      </span>
+      {!system && (
+        <span style={{ fontSize: 11, color: "var(--text-5)" }}>
+          Twemoji cross-platform rendering
+        </span>
+      )}
+      <span style={{ fontSize: 11, color: "var(--text-4)" }}>
+        {system ? "System native emoji" : ""}
+      </span>
+    </div>
+  );
+}
+
+const THEME_VISUAL: VisualOpt[] = [
+  { value: 1, label: "Dark", preview: <ThemePreview theme={1} /> },
+  { value: 0, label: "Light", preview: <ThemePreview theme={0} /> },
+  { value: 2, label: "Follow System", preview: <div style={{ display:"flex", gap:4 }}><ThemePreview theme={0} /><ThemePreview theme={1} /></div> },
+];
+const COMPACT_VISUAL: VisualOpt[] = [
+  { value: 0, label: "Cozy (default)", preview: <CompactPreview compact={false} /> },
+  { value: 1, label: "Compact", preview: <CompactPreview compact={true} /> },
+];
+const AVATAR_SHAPE_VISUAL: VisualOpt[] = [
+  { value: 0, label: "Circle", preview: <AvatarShapePreview shape="circle" /> },
+  { value: 1, label: "Rounded Square", preview: <AvatarShapePreview shape="rounded" /> },
+  { value: 2, label: "Square", preview: <AvatarShapePreview shape="square" /> },
+];
+const USER_AVATAR_SHAPE_VISUAL: VisualOpt[] = [
+  { value: 0, label: "Circle", preview: <AvatarShapePreview shape="circle" /> },
+  { value: 1, label: "Rounded Square", preview: <AvatarShapePreview shape="rounded" /> },
+  { value: 2, label: "Square", preview: <AvatarShapePreview shape="square" /> },
+  { value: 3, label: "User Preference", preview: <div style={{fontSize:11,color:"var(--text-5)",padding:"4px 0"}}>Respects each user's chosen shape</div> },
+];
+const ROLE_COLOR_VISUAL: VisualOpt[] = [
+  { value: 0, label: "Color Names", preview: <RoleColorPreview mode={0} /> },
+  { value: 1, label: "Role Dot", preview: <RoleColorPreview mode={1} /> },
+  { value: 2, label: "Dot and Name Color", preview: <RoleColorPreview mode={2} /> },
+  { value: 3, label: "Don't Show", preview: <RoleColorPreview mode={3} /> },
+];
+const SPOILER_VISUAL: VisualOpt[] = [
+  { value: 0, label: "Always", preview: <SpoilerPreview reveal={0} /> },
+  { value: 1, label: "On Click", preview: <SpoilerPreview reveal={1} /> },
+  { value: 2, label: "On Hover", preview: <SpoilerPreview reveal={2} /> },
+  { value: 3, label: "On Moderated Servers Only", preview: <SpoilerPreview reveal={3} /> },
+];
+const EMOJI_STYLE_VISUAL: VisualOpt[] = [
+  { value: 0, label: "Twemoji (Cross-platform)", preview: <EmojiStylePreview system={false} /> },
+  { value: 1, label: "System", preview: <EmojiStylePreview system={true} /> },
+];
+
+const APP_ICON_OPTS: Opt[] = [
+  { value: 0, label: "Default" },
+  { value: 1, label: "Classic" },
+  { value: 2, label: "Modern" },
+  { value: 3, label: "Minimal" },
+];
+const ICON_OPTS: Opt[] = [
+  { value: 0, label: "Circle" },
+  { value: 1, label: "Rounded" },
+  { value: 2, label: "Square" },
+];
+const NAME_HOVER_OPTS: Opt[] = [
+  { value: 0, label: "Nothing" },
+  { value: 1, label: "Show Handle (@username)" },
+];
+const FONT_DISPLAY_OPTS: Opt[] = [
+  { value: 0, label: "Everyone" },
+  { value: 1, label: "Friends" },
+  { value: 2, label: "Friends of Friends" },
+  { value: 3, label: "No One" },
+];
+const ANIMATE_OPTS: Opt[] = [
+  { value: 0, label: "Always" },
+  { value: 1, label: "When App is Focused" },
+  { value: 2, label: "On Hover" },
+  { value: 3, label: "On Click" },
+  { value: 4, label: "Never" },
+];
+const VOICE_OPTS: Opt[] = [
+  { value: 0, label: "Voice Activity" },
+  { value: 1, label: "Push to Talk" },
+];
+const FRIEND_REQ_OPTS: Opt[] = [
+  { value: 0, label: "Everyone" },
+  { value: 1, label: "Friends of Friends" },
+  { value: 2, label: "Mutuals and Friends of Friends" },
+  { value: 3, label: "Mutual Servers Only" },
+  { value: 4, label: "No One" },
+];
+const USER_CTX_OPTS: Opt[] = [
+  { value: 0, label: "Everyone" },
+  { value: 1, label: "Friends of Friends" },
+  { value: 2, label: "Friends Only" },
+  { value: 3, label: "Mutuals and Friends of Friends" },
+  { value: 4, label: "Mutual Servers and Friends" },
+  { value: 5, label: "Mutual Servers Only" },
+  { value: 6, label: "No One" },
+];
+
+interface PrivacyState {
+  whoCanSendFriendRequests: number;
+  whoCanSendDms: number;
+  whoCanAddToGcs: number;
+  whoCanSeeBio: number;
+  whoCanSeePronouns: number;
+  whoCanSeeAvatar: number;
+  whoCanSeeBanner: number;
+  whoCanSeeStatus: number;
+  whoCanSeeEmail: number;
+  whoCanSeePhoneNumber: number;
+}
+
+function privacyFromUser(user: User | null): PrivacyState {
+  return {
+    whoCanSendFriendRequests: user?.whoCanSendFriendRequests ?? 0,
+    whoCanSendDms: user?.whoCanSendDms ?? 4,
+    whoCanAddToGcs: user?.whoCanAddToGcs ?? 4,
+    whoCanSeeBio: user?.whoCanSeeBio ?? 0,
+    whoCanSeePronouns: user?.whoCanSeePronouns ?? 0,
+    whoCanSeeAvatar: user?.whoCanSeeAvatar ?? 0,
+    whoCanSeeBanner: user?.whoCanSeeBanner ?? 0,
+    whoCanSeeStatus: user?.whoCanSeeStatus ?? 0,
+    whoCanSeeEmail: user?.whoCanSeeEmail ?? 6,
+    whoCanSeePhoneNumber: user?.whoCanSeePhoneNumber ?? 6,
+  };
+}
+
+export default function UserSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { token, user, setUser, userSettings, setUserSettings } = useAuthState();
   const { addUser, setMembers } = useUserState();
   const { setMessages } = useMessageState();
   const { setServers } = useServerState();
+
   const [currentTab, setCurrentTab] = useState("My Account");
+
+  const [displayName, setDisplayName] = useState<string | null | undefined>(user?.displayName);
+  const [pronouns, setPronouns] = useState<string | null | undefined>(user?.pronouns);
+  const [bio, setBio] = useState<string | null | undefined>(user?.bio);
+  const [bannerColorHex, setBannerColorHex] = useState(intToHex(user?.bannerColor ?? 0));
+
+  const [accountUsername, setAccountUsername] = useState(user?.username ?? "");
+  const [accountEmail, setAccountEmail] = useState(user?.email ?? "");
+  const [accountPhone, setAccountPhone] = useState(user?.phoneNumber ?? "");
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
   const [emailRevealed, setEmailRevealed] = useState(false);
   const [phoneRevealed, setPhoneRevealed] = useState(false);
-  const [isMainProfile, setIsMainProfile] = useState(true);
-  
-  const [name, setName] = useState(user?.displayName);
-  const [pronouns, setPronouns] = useState(user?.pronouns);
-  const [bio, setBio] = useState(user?.bio);
-
-  const inputRef = useRef(null);
+  const [editEmail, setEditEmail] = useState(false);
+  const [editPhone, setEditPhone] = useState(false);
 
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
@@ -37,494 +500,828 @@ export default function UserSettingsModal({ open, onClose }: any) {
   const [showAviCropper, setShowAviCropper] = useState(false);
   const [showBaniCropper, setShowBaniCropper] = useState(false);
 
-  const initialRef = useRef({
-    name: user?.displayName,
-    pronouns: user?.pronouns,
-    bio: user?.bio,
-    nameFont: user?.nameFont,
-    settings: userSettings
-  });
+  const [privacy, setPrivacy] = useState<PrivacyState>(() => privacyFromUser(user));
 
-  // track if anything differs
-  const [hasUnsaved, setHasUnsaved] = useState(false);
-
-  // compare helper
-  function computeDirty() {
-    // currently, the user settings object gets populated AFTER this modal gets added to the app, so..
-    //const settingsChanged = JSON.stringify(userSettings) !== JSON.stringify(initialRef.current.settings);
-    return name !== initialRef.current.name ||
-      pronouns !== initialRef.current.pronouns ||
-      bio !== initialRef.current.bio ||
-      fAviFile !== null ||
-      fBaniFile !== null ||
-      fontFile !== null && (typeof fontFile !== "string" || fontFile !== initialRef.current.nameFont);
+  function pwr(key: keyof PrivacyState, value: number) {
+    setPrivacy(prev => ({ ...prev, [key]: value }));
   }
 
-  // recompute whenever dependent values change
+  const bioRef = useRef<MessageInputHandle>(null);
+
+  const initialRef = useRef({
+    displayName: user?.displayName,
+    pronouns: user?.pronouns,
+    bio: user?.bio,
+    bannerColor: user?.bannerColor ?? 0,
+    username: user?.username ?? "",
+    email: user?.email ?? "",
+    phone: user?.phoneNumber ?? "",
+    nameFont: user?.nameFont,
+    settings: userSettings ? JSON.stringify(userSettings) : null,
+    privacy: JSON.stringify(privacyFromUser(user))
+  });
+
+  const [hasUnsaved, setHasUnsaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  function dirtyCategories() {
+    const settingsDirty =
+      !!userSettings && JSON.stringify(userSettings) !== initialRef.current.settings;
+    const privacyDirty =
+      JSON.stringify(privacy) !== initialRef.current.privacy;
+    const profileDirty =
+      displayName !== initialRef.current.displayName ||
+      pronouns !== initialRef.current.pronouns ||
+      bio !== initialRef.current.bio ||
+      hexToInt(bannerColorHex) !== initialRef.current.bannerColor ||
+      fAviFile !== null || fBaniFile !== null ||
+      (fontFile !== null && !(typeof fontFile === "string" && fontFile === initialRef.current.nameFont));
+    const accountDirty =
+      accountUsername !== initialRef.current.username ||
+      accountEmail !== initialRef.current.email ||
+      accountPhone !== initialRef.current.phone ||
+      newPass.length > 0;
+    return { settingsDirty, privacyDirty, profileDirty, accountDirty };
+  }
+
   useEffect(() => {
-    setHasUnsaved(computeDirty());
-  }, [name, pronouns, bio, fAviFile, fBaniFile, fontFile, userSettings]);
+    const dc = dirtyCategories();
+    setHasUnsaved(dc.settingsDirty || dc.privacyDirty || dc.profileDirty || dc.accountDirty);
+  }, [
+    userSettings, privacy, displayName, pronouns, status, bio, bannerColorHex,
+    fAviFile, fBaniFile, fontFile, accountUsername, accountEmail, accountPhone, newPass,
+  ]);
 
   useEffect(() => {
     if (fontFile && typeof fontFile !== "string") {
-      const blobUrl = URL.createObjectURL(fontFile);
-
+      const url = URL.createObjectURL(fontFile);
       const style = document.createElement("style");
-      style.textContent = `@font-face{font-family:"UploadedFont";src:url(${blobUrl});}`;
+      style.textContent = `@font-face{font-family:"UploadedFont";src:url(${url});}`;
       document.head.appendChild(style);
-
       return () => {
-        setTimeout(() => {
-          document.head.removeChild(style);
-          URL.revokeObjectURL(blobUrl);
-        }, 50); // do with small timeout to prevent font flashing
+        setTimeout(() => { document.head.removeChild(style); URL.revokeObjectURL(url); }, 50);
       };
     }
   }, [fontFile]);
 
-  const tabs = {
-    "USER SETTINGS": [
-      "My Account",
-      "Profiles",
-      "Privacy & Safety"
-    ],
-    "APP SETTINGS": [
-      "Appearance",
-      "Accessibility",
-      "Voice & Video",
-      "Chat",
-      "Notifications",
-      "Language",
-      "Advanced"
-    ]
+  // Read from userSettings with a fallback default
+  function rd(key: keyof UserSettings, def: unknown): unknown {
+    return userSettings?.[key] ?? def;
+  }
+  // Write to userSettings
+  function wr(key: keyof UserSettings, value: unknown) {
+    setUserSettings((prev: UserSettings | null) => prev ? { ...prev, [key]: value } : prev);
   }
 
-  function handleChange(key: string, value: any) {
-    setUserSettings({
-      ...userSettings!,
-      [key]: value
-    });
+  function pickAvatar(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return; e.target.value = "";
+    setAvatarFile(f);
+    const r = new FileReader();
+    r.onload = () => { setCroppingSrc(r.result as string); setShowAviCropper(true); };
+    r.readAsDataURL(f);
+  }
+  function pickBanner(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return; e.target.value = "";
+    setBannerFile(f);
+    const r = new FileReader();
+    r.onload = () => { setCroppingSrc(r.result as string); setShowBaniCropper(true); };
+    r.readAsDataURL(f);
+  }
+  function pickFont(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return; e.target.value = ""; setFontFile(f);
+  }
+  function onAviCrop(blob: Blob) {
+    setFAviFile(new File([blob], avatarFile?.name ?? "avatar.png", { type: blob.type }));
+    setShowAviCropper(false); setCroppingSrc(null); setAvatarFile(null);
+  }
+  function onBaniCrop(blob: Blob) {
+    setFBaniFile(new File([blob], bannerFile?.name ?? "banner.png", { type: blob.type }));
+    setShowBaniCropper(false); setCroppingSrc(null); setBannerFile(null);
   }
 
-  async function update() {
-    return updateSettings(
-      userSettings!,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+  async function rmAvatar() {
+    try {
+      const res = await deleteAvatar({ headers: { Authorization: `Bearer ${token}` } });
+      const u = { ...user!, avatar: res.avatar }; setUser(u); addUser(u);
+      setFAviFile(null);
+    } catch (e: unknown) { setSaveError((e as Error).message ?? "Failed"); }
+  }
+  async function rmBanner() {
+    try {
+      const res = await deleteBanner({ headers: { Authorization: `Bearer ${token}` } });
+      const u = { ...user!, banner: res.banner }; setUser(u); addUser(u);
+      setFBaniFile(null);
+    } catch (e: unknown) { setSaveError((e as Error).message ?? "Failed"); }
+  }
+  async function rmFont() {
+    try {
+      const res = await deleteFont({ headers: { Authorization: `Bearer ${token}` } });
+      const u = { ...user!, nameFont: res.nameFont }; setUser(u); addUser(u);
+      setFontFile(null);
+    } catch (e: unknown) { setSaveError((e as Error).message ?? "Failed"); }
   }
 
-  async function updateCore() {
-    return updateMe(
-      {},
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+  function handleRevert() {
+    setDisplayName(initialRef.current.displayName);
+    setPronouns(initialRef.current.pronouns);
+    setBio(initialRef.current.bio);
+    setBannerColorHex(intToHex(initialRef.current.bannerColor));
+    setAccountUsername(initialRef.current.username);
+    setAccountEmail(initialRef.current.email);
+    setAccountPhone(initialRef.current.phone);
+    setNewPass(""); setConfirmPass("");
+    setEditEmail(false); setEditPhone(false);
+    if (initialRef.current.settings)
+      setUserSettings(JSON.parse(initialRef.current.settings));
+    else if (userSettings)
+      initialRef.current.settings = JSON.stringify(userSettings);
+    setPrivacy(JSON.parse(initialRef.current.privacy));
+    setFAviFile(null); setFBaniFile(null); setFontFile(null);
+    setAvatarFile(null); setBannerFile(null);
+    bioRef.current?.setText(initialRef.current.bio);
+    setSaveError("");
   }
 
-  async function updateVanity(server: Server | undefined = undefined) {
-    const body = { displayName: name, pronouns, bio };
-    if (typeof fontFile === "string")
-      // @ts-expect-error
-      body.nameFont = fontFile;
-    return updateProfile(
-      body,
-      server,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+  async function handleSave() {
+    setSaveError("");
+    const opts = { headers: { Authorization: `Bearer ${token}` } };
+    const dc = dirtyCategories();
+    try {
+      let u = { ...user! };
+
+      // Account
+      if (dc.accountDirty) {
+        if (newPass && newPass !== confirmPass) { setSaveError("New passwords do not match."); return; }
+        if (newPass && newPass.length < 5) { setSaveError("Password must be at least 5 characters."); return; }
+        const dto: Record<string, string> = {};
+        if (accountUsername !== initialRef.current.username) dto.username = accountUsername;
+        if (accountEmail !== initialRef.current.email) dto.email = accountEmail;
+        if (accountPhone !== initialRef.current.phone) dto.phoneNumber = accountPhone;
+        if (newPass) dto.password = newPass;
+        if (Object.keys(dto).length > 0) await updateMe(dto, opts);
+        u = { ...u, username: accountUsername, email: accountEmail, phoneNumber: accountPhone };
+        setNewPass(""); setConfirmPass("");
+        setEditEmail(false); setEditPhone(false);
+      }
+
+      // Profile
+      if (dc.profileDirty) {
+        await updateProfile({
+          displayName: displayName ?? null,
+          pronouns: pronouns ?? null,
+          bio: bio ?? null,
+          bannerColor: hexToInt(bannerColorHex),
+        }, undefined, opts);
+        u = { ...u, displayName: displayName ?? null, pronouns: pronouns ?? null,
+          bio: bio ?? null, bannerColor: hexToInt(bannerColorHex) };
+      }
+
+      // File uploads
+      if (fAviFile) { const res = await changeAvatar(fAviFile, opts); u.avatar = res.avatar; setFAviFile(null); }
+      if (fBaniFile) { const res = await changeBanner(fBaniFile, opts); u.banner = res.banner; setFBaniFile(null); }
+      if (fontFile instanceof File) { const res = await changeFont(fontFile, opts); u.nameFont = res.nameFont; setFontFile(null); }
+
+      // Privacy (only changed fields)
+      if (dc.privacyDirty) {
+        const orig = JSON.parse(initialRef.current.privacy) as PrivacyState;
+        const patch: Partial<PrivacyState> = {};
+        (Object.keys(privacy) as (keyof PrivacyState)[]).forEach(k => {
+          if (privacy[k] !== orig[k]) (patch as any)[k] = privacy[k];
+        });
+        if (Object.keys(patch).length > 0) await updatePrivacy(patch, opts);
+        // Reflect in user object so other parts of app can use it
+        u = { ...u, ...privacy };
+      }
+
+      // UserSettings (only when changed)
+      if (dc.settingsDirty && userSettings) await updateSettings(userSettings, opts);
+
+      if (JSON.stringify(u) !== JSON.stringify(user)) { setUser(u); addUser(u); }
+
+      initialRef.current = {
+        displayName: u.displayName,
+        pronouns: u.pronouns,
+        bio: u.bio,
+        bannerColor: u.bannerColor ?? 0,
+        username: u.username ?? "",
+        email: u.email ?? "",
+        phone: u.phoneNumber ?? "",
+        nameFont: u.nameFont,
+        settings: userSettings ? JSON.stringify(userSettings) : null,
+        privacy: JSON.stringify(privacy)
+      };
+      setHasUnsaved(false);
+    } catch (err: unknown) {
+      setSaveError((err as Error).message ?? "Failed to save changes.");
+    }
   }
 
   async function logout() {
     onClose();
     setUser(null);
-    // reset cache
     setMessages([]);
     setMembers([]);
     setServers([]);
     localStorage.removeItem("token");
   }
 
-  function getSettingsIconUrl(tab: string) {
-    return tab.toLowerCase().replace(/\s/gm, "").replace(/&/gm, "and");
-  }
-
-  async function handleAvatarPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file)
-      return;
-    // reset value so that the same file can be picked again
-    e.target.value = "";
-
-    setAvatarFile(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setCroppingSrc(reader.result as string);
-      setShowAviCropper(true);
-    };
-    reader.readAsDataURL(file);
-  }
-
-  async function handleBannerPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file)
-      return;
-    e.target.value = "";
-
-    setBannerFile(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setCroppingSrc(reader.result as string);
-      setShowBaniCropper(true);
-    };
-    reader.readAsDataURL(file);
-  }
-
-  async function handleFontPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file)
-      return;
-    e.target.value = "";
-
-    setFontFile(file);
-  }
-
-  async function handleAviCropComplete(croppedBlob: Blob) {
-    const croppedFile = new File([croppedBlob], avatarFile?.name || "avatar.png", {
-      type: croppedBlob.type,
-    });
-
-    setShowAviCropper(false);
-    setCroppingSrc(null);
-    setAvatarFile(null);
-    setFAviFile(croppedFile);
-  }
-
-  async function handleBaniCropComplete(croppedBlob: Blob) {
-    const croppedFile = new File([croppedBlob], bannerFile?.name || "banner.png", {
-      type: croppedBlob.type,
-    });
-
-    setShowBaniCropper(false);
-    setCroppingSrc(null);
-    setBannerFile(null);
-    setFBaniFile(croppedFile);
-  }
-
-  async function handleRemoveAvatar() {
-    try {
-      const res = await deleteAvatar({
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const updated = { ...user!, avatar: res.avatar };
-      setUser(updated);
-      addUser(updated);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  async function handleRemoveBanner() {
-    try {
-      const res = await deleteBanner({
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const updated = { ...user!, banner: res.banner };
-      setUser(updated);
-      addUser(updated);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  async function handleRemoveFont() {
-    try {
-      const res = await deleteFont({
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const updated = { ...user!, nameFont: res.nameFont };
-      setUser(updated);
-      addUser(updated);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  function setTab(tab: string) {
+  function selectTab(tab: string) {
     if (hasUnsaved)
       return;
     setCurrentTab(tab);
+    setSaveError("");
+  }
+
+  function iconUrl(tab: string) {
+    return tab.toLowerCase().replace(/\s/gm, "").replace(/&/gm, "and");
+  }
+
+  function renderAccountTab() {
+    const avatar = getAvatar(user);
+    const banner = getBanner(user);
+    const displayName = getDisplayName(user);
+    if ((user?.username ?? "") != accountUsername || (user?.email ?? "") != accountEmail || (user?.phoneNumber ?? "") != accountPhone) {
+      setAccountUsername(user?.username ?? "");
+      setAccountEmail(user?.email ?? "");
+      setAccountPhone(user?.phoneNumber ?? "");
+      initialRef.current.settings = userSettings ? JSON.stringify(userSettings) : null;
+    }
+    return (
+      <div className="profile-display">
+        <div
+          className="banner"
+          style={{
+            // @ts-expect-error
+            "--banner-color": "#" + (user?.bannerColor?.toString(16)?.padStart(6, "0") ?? "000000"),
+            "--banner": banner ? `url(${banner})` : undefined
+          }}
+        />
+        <div className="profile-name uno">
+          <img
+            className="big-avatar uno"
+            src={avatar}
+            alt="avatar"
+          />
+          <div>
+            <div 
+              style={{
+                fontFamily: `"${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
+              }}
+            >
+              {displayName}
+            </div>
+            <div className="profile-id">ID: {user?.id}</div>
+          </div>
+          <button onClick={() => selectTab("Profiles")}>
+            Edit User Profile
+          </button>
+        </div>
+        <div className="profile-details uno">
+          <div className="profile-item">
+            <div>
+              <div>Display Name</div>
+              <div
+                style={{
+                  fontFamily: user?.displayName ? `"${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif` : undefined
+                }}
+              >
+                {user?.displayName ? user.displayName : "You haven't added a display name yet."}
+              </div>
+            </div>
+            <button onClick={() => selectTab("Profiles")}>Edit</button>
+          </div>
+          <div className="profile-item">
+            <div>
+              <div>Username</div>
+              <div>@{accountUsername}</div>
+            </div>
+            <button>Edit</button>
+          </div>
+          <div className="profile-item">
+            <div>
+              <div>Email</div>
+              <div>
+                {accountEmail ? emailRevealed ? accountEmail : "*".repeat(accountEmail.indexOf('@')) + accountEmail.substring(accountEmail.indexOf('@')) : "You haven't added an email yet."}
+                {accountEmail ? 
+                  <a className="ml" onClick={() => setEmailRevealed(!emailRevealed)}>{emailRevealed ? "Hide" : "Reveal"}</a> :
+                  null}
+              </div>
+            </div>
+            <button>{accountEmail ? "Edit" : "Add"}</button>
+          </div>
+          <div className="profile-item">
+            <div>
+              <div>Phone Number</div>
+              <div>
+                {accountPhone ? phoneRevealed ? accountPhone : "*".repeat(accountPhone.length) : "You haven't added a phone number yet."}
+                {accountPhone ?
+                  <a className="ml" onClick={() => setPhoneRevealed(!phoneRevealed)}>{phoneRevealed ? "Hide" : "Reveal"}</a> :
+                  null}
+              </div>
+            </div>
+            <button>{user?.phoneNumber ? "Edit" : "Add"}</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+    function renderProfilesTab() {
+    const avatar = getAvatar(user);
+    const banner = getBanner(user);
+    const previewAvatar = fAviFile ? URL.createObjectURL(fAviFile) : avatar;
+    const previewBanner = fBaniFile ? URL.createObjectURL(fBaniFile) : banner;
+ 
+    return (
+      <div className="profiles">
+        <div className="profiles-content halign">
+          <div className="profiles-item">
+            <Group title="Display">
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label>Display Name</label>
+                <input value={displayName ?? ""} placeholder={user?.username}
+                  onChange={e => setDisplayName(e.target.value || null)} maxLength={32} />
+                <div style={{ fontSize: 11, color: "var(--text-5)", marginTop: 3 }}>
+                  {(displayName ?? "").length}/32 — shown instead of your username
+                </div>
+              </div>
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label>Pronouns</label>
+                <input value={pronouns ?? ""} placeholder="they/them"
+                  onChange={e => setPronouns(e.target.value || null)} maxLength={40} />
+              </div>
+            </Group>
+ 
+            <Group title="Avatar">
+              <div style={{ display: "flex", gap: 8, paddingTop: 8, paddingBottom: 4 }}>
+                <button onClick={() => document.getElementById("avi-file-pick")?.click()}>
+                  {user?.avatar ? "Change Avatar" : "Set Avatar"}
+                  <input id="avi-file-pick" type="file" accept="image/*" style={{ display: "none" }} onChange={pickAvatar} />
+                </button>
+                <button style={{ color: "var(--red-2)" }} onClick={rmAvatar} disabled={!user?.avatar && !fAviFile}>Remove</button>
+              </div>
+            </Group>
+ 
+            <Group title="Banner">
+              <div style={{ display: "flex", gap: 8, paddingTop: 8, paddingBottom: 10 }}>
+                <button onClick={() => document.getElementById("ban-file-pick")?.click()}>
+                  {user?.banner ? "Change Banner" : "Set Banner"}
+                  <input id="ban-file-pick" type="file" accept="image/*" style={{ display: "none" }} onChange={pickBanner} />
+                </button>
+                <button style={{ color: "var(--red-2)" }} onClick={rmBanner} disabled={!user?.banner && !fBaniFile}>Remove</button>
+              </div>
+              <div className="form-group" style={{ marginBottom: 4 }}>
+                <label>Banner Color</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 4 }}>
+                  <input type="color" value={bannerColorHex} onChange={e => setBannerColorHex(e.target.value)}
+                    style={{ width: 44, height: 32, padding: 2, cursor: "pointer", boxSizing: "border-box" }} />
+                  <input value={bannerColorHex}
+                    onChange={e => { const v = e.target.value; if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setBannerColorHex(v); }}
+                    maxLength={7} style={{ width: 96, fontFamily: "monospace" }} placeholder="#000000" />
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-5)", marginTop: 3 }}>Used when no banner image is set.</div>
+              </div>
+            </Group>
+ 
+            <Group title="Name Font">
+              <div style={{ paddingTop: 8, paddingBottom: 10 }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <button onClick={() => document.getElementById("font-file-pick")?.click()}>
+                    {user?.nameFont ? "Change Font" : "Set Font"}
+                    <input id="font-file-pick" type="file" accept=".ttf,.otf,.woff,.woff2,.sfnt"
+                      style={{ display: "none" }} onChange={pickFont} />
+                  </button>
+                  <button style={{ color: "var(--red-2)" }} onClick={rmFont} disabled={!user?.nameFont && !fontFile}>Remove</button>
+                </div>
+                {fontFile && typeof fontFile !== "string" && (
+                  <div style={{ fontSize: 12, color: "var(--text-5)" }}>Selected: {(fontFile as File).name}</div>
+                )}
+              </div>
+            </Group>
+ 
+            <Group title="About Me">
+              <div className="about-me">
+                <MessageInput isChannel={false} placeholderText="Write something about yourself..."
+                  initialText={bio} setText={setBio} giveNull ref={bioRef} />
+              </div>
+            </Group>
+          </div>
+ 
+          <div className="preview">
+            <div className="banner" style={{
+              // @ts-expect-error
+              "--banner-color": bannerColorHex,
+              "--banner": previewBanner ? `url(${previewBanner})` : "",
+              minHeight: "10vh",
+            }} />
+            <img className="big-avatar uno" src={previewAvatar} alt="preview" />
+            <div className="profile-name uno"
+              style={{ fontFamily: `"UploadedFont", "${user?.nameFont ?? ""}", Inter, sans-serif` }}>
+              <div>{displayName || user?.username}</div>
+            </div>
+            {pronouns && (
+              <div style={{ fontSize: 12, color: "var(--text-5)", marginLeft: 14, marginTop: -2 }}>{pronouns}</div>
+            )}
+            {status && (
+              <div style={{
+                fontSize: 13, color: "var(--text-4)", marginLeft: 14, marginTop: 6,
+                padding: "4px 8px", background: "var(--bg-2)", borderRadius: 8,
+                display: "inline-block", maxWidth: "90%",
+              }}>{status}</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+ 
+  function renderPrivacyTab() {
+    return (
+      <div>
+        <Group title="Social">
+          <Row label="Who can send you friend requests">
+            <Sel value={privacy.whoCanSendFriendRequests} onChange={v => pwr("whoCanSendFriendRequests", v)} options={FRIEND_REQ_OPTS} />
+          </Row>
+          <Row label="Who can send you direct messages">
+            <Sel value={privacy.whoCanSendDms} onChange={v => pwr("whoCanSendDms", v)} options={USER_CTX_OPTS} />
+          </Row>
+          <Row label="Who can add you to group DMs">
+            <Sel value={privacy.whoCanAddToGcs} onChange={v => pwr("whoCanAddToGcs", v)} options={USER_CTX_OPTS} />
+          </Row>
+        </Group>
+ 
+        <Group title="Profile Visibility">
+          <Row label="Who can see your bio">
+            <Sel value={privacy.whoCanSeeBio} onChange={v => pwr("whoCanSeeBio", v)} options={USER_CTX_OPTS} />
+          </Row>
+          <Row label="Who can see your pronouns">
+            <Sel value={privacy.whoCanSeePronouns} onChange={v => pwr("whoCanSeePronouns", v)} options={USER_CTX_OPTS} />
+          </Row>
+          <Row label="Who can see your avatar">
+            <Sel value={privacy.whoCanSeeAvatar} onChange={v => pwr("whoCanSeeAvatar", v)} options={USER_CTX_OPTS} />
+          </Row>
+          <Row label="Who can see your banner">
+            <Sel value={privacy.whoCanSeeBanner} onChange={v => pwr("whoCanSeeBanner", v)} options={USER_CTX_OPTS} />
+          </Row>
+          <Row label="Who can see your status">
+            <Sel value={privacy.whoCanSeeStatus} onChange={v => pwr("whoCanSeeStatus", v)} options={USER_CTX_OPTS} />
+          </Row>
+        </Group>
+ 
+        <Group title="Contact Info">
+          <Row label="Who can see your email" desc="Defaults to no one for privacy.">
+            <Sel value={privacy.whoCanSeeEmail} onChange={v => pwr("whoCanSeeEmail", v)} options={USER_CTX_OPTS} />
+          </Row>
+          <Row label="Who can see your phone number" desc="Defaults to no one for privacy.">
+            <Sel value={privacy.whoCanSeePhoneNumber} onChange={v => pwr("whoCanSeePhoneNumber", v)} options={USER_CTX_OPTS} />
+          </Row>
+        </Group>
+      </div>
+    );
+  }
+ 
+  function renderAppearanceTab() {
+    return (
+      <div>
+        <Group title="Theme">
+          <Row label="App Theme" desc="Choose how the interface looks.">
+            <VisualSel
+              value={(rd("theme", 1)) as number}
+              onChange={v => wr("theme", v)}
+              options={THEME_VISUAL}
+            />
+          </Row>
+          <Row label="App Icon" desc="Customize the application icon variant.">
+            <Sel value={(rd("appIcon", 0)) as number} onChange={v => wr("appIcon", v)} options={APP_ICON_OPTS} />
+          </Row>
+        </Group>
+ 
+        <Group title="Layout">
+          <Row label="Message Density" desc="Cozy uses avatar groups; Compact is denser single-line layout.">
+            <VisualSel
+              value={(rd("compactMode", false)) as boolean ? 1 : 0}
+              onChange={v => wr("compactMode", v === 1)}
+              options={COMPACT_VISUAL}
+            />
+          </Row>
+        </Group>
+ 
+        <Group title="Icon Shapes">
+          <Row label="Server Icon Shape">
+            <VisualSel
+              value={(rd("serverIconDisplayType", 1)) as number}
+              onChange={v => wr("serverIconDisplayType", v)}
+              options={AVATAR_SHAPE_VISUAL}
+            />
+          </Row>
+          <Row label="Other Users' Avatar Shape">
+            <VisualSel
+              value={(rd("avatarDisplayType", 3)) as number}
+              onChange={v => wr("avatarDisplayType", v)}
+              options={USER_AVATAR_SHAPE_VISUAL}
+            />
+          </Row>
+          <Row label="Your Own Avatar Shape">
+            <VisualSel
+              value={(rd("selfAvatarDisplayType", 0)) as number}
+              onChange={v => wr("selfAvatarDisplayType", v)}
+              options={AVATAR_SHAPE_VISUAL}
+            />
+          </Row>
+          <Row label="App Icon Shape">
+            <Sel value={(rd("appIconDisplayType", 0)) as number} onChange={v => wr("appIconDisplayType", v)} options={ICON_OPTS} />
+          </Row>
+        </Group>
+ 
+        <Group title="Names">
+          <Row label="Show on Username Hover" desc="What to display when hovering over a display name.">
+            <Sel value={(rd("nameHoverBehavior", 1)) as number} onChange={v => wr("nameHoverBehavior", v)} options={NAME_HOVER_OPTS} />
+          </Row>
+          <Row label="Display Custom Fonts From" desc="Which users' custom name fonts are shown to you.">
+            <Sel value={(rd("nameFontDisplayType", 0)) as number} onChange={v => wr("nameFontDisplayType", v)} options={FONT_DISPLAY_OPTS} />
+          </Row>
+          <Row label="Always Underline Links">
+            <Toggle value={(rd("alwaysUnderlineLinks", false)) as boolean} onChange={v => wr("alwaysUnderlineLinks", v)} />
+          </Row>
+        </Group>
+ 
+        <Group title="Roles">
+          <Row label="Role Color Display">
+            <VisualSel
+              value={(rd("roleColorSettings", 0)) as number}
+              onChange={v => wr("roleColorSettings", v)}
+              options={ROLE_COLOR_VISUAL}
+            />
+          </Row>
+          <Row label="Apply Saturation to Role Colors" desc="Tint role colors using your saturation setting.">
+            <Toggle value={(rd("applySaturationToRoleColors", false)) as boolean} onChange={v => wr("applySaturationToRoleColors", v)} />
+          </Row>
+          <Row label="Always Expand Role List">
+            <Toggle value={(rd("alwaysExpandRoles", false)) as boolean} onChange={v => wr("alwaysExpandRoles", v)} />
+          </Row>
+          <Row label="Show Role Icons">
+            <Toggle value={(rd("showRoleIcons", true)) as boolean} onChange={v => wr("showRoleIcons", v)} />
+          </Row>
+          <Row label="Show Owner Crown">
+            <Toggle value={(rd("showOwnerCrown", true)) as boolean} onChange={v => wr("showOwnerCrown", v)} />
+          </Row>
+        </Group>
+ 
+        <Group title="Emoji">
+          <Row label="Emoji Rendering" desc="Which emoji set to use for standard unicode emoji.">
+            <VisualSel
+              value={(rd("emojiStyle", 0)) as number}
+              onChange={v => wr("emojiStyle", v)}
+              options={EMOJI_STYLE_VISUAL}
+            />
+          </Row>
+        </Group>
+      </div>
+    );
+  }
+ 
+  function renderAccessibilityTab() {
+    return (
+      <div>
+        <Group title="Visual">
+          <Row label="Reduce Motion" desc="Minimize animations and transitions throughout the interface.">
+            <Toggle value={(rd("reduceMotion", false)) as boolean} onChange={v => wr("reduceMotion", v)} />
+          </Row>
+          <Row label="High Contrast Mode" desc="Increase color contrast for better readability.">
+            <Toggle value={(rd("highContrastMode", false)) as boolean} onChange={v => wr("highContrastMode", v)} />
+          </Row>
+          <Row label="Saturation" desc="Adjust color saturation across the entire interface.">
+            <Slider value={(rd("saturation", 1.0)) as number} onChange={v => wr("saturation", v)}
+              min={0} max={2} step={0.05} format={v => `${Math.round(v * 100)}%`} />
+          </Row>
+          <Row label="Text Size" desc="Scale all text globally.">
+            <Slider value={(rd("textSize", 1.0)) as number} onChange={v => wr("textSize", v)}
+              min={0.75} max={1.5} step={0.05} format={v => `${Math.round(v * 100)}%`} />
+          </Row>
+          <Row label="Dyslexia-Friendly Font" desc="Use OpenDyslexic, a font designed to aid readability.">
+            <Toggle value={(rd("dyslexiaFont", false)) as boolean} onChange={v => wr("dyslexiaFont", v)} />
+          </Row>
+        </Group>
+ 
+        <Group title="Animation">
+          <Row label="Sticker Animation"><Sel value={(rd("stickerAnimate", 0)) as number} onChange={v => wr("stickerAnimate", v)} options={ANIMATE_OPTS} /></Row>
+          <Row label="Emoji Animation"><Sel value={(rd("emojiAnimate", 2)) as number} onChange={v => wr("emojiAnimate", v)} options={ANIMATE_OPTS} /></Row>
+          <Row label="GIF Animation"><Sel value={(rd("gifAnimate", 2)) as number} onChange={v => wr("gifAnimate", v)} options={ANIMATE_OPTS} /></Row>
+          <Row label="Server Icon Animation"><Sel value={(rd("serverAnimate", 0)) as number} onChange={v => wr("serverAnimate", v)} options={ANIMATE_OPTS} /></Row>
+          <Row label="Channel Icon Animation"><Sel value={(rd("channelAnimate", 0)) as number} onChange={v => wr("channelAnimate", v)} options={ANIMATE_OPTS} /></Row>
+          <Row label="Avatar Animation"><Sel value={(rd("avatarAnimate", 2)) as number} onChange={v => wr("avatarAnimate", v)} options={ANIMATE_OPTS} /></Row>
+          <Row label="Glowing Role Animation"><Sel value={(rd("glowRoleAnimate", 0)) as number} onChange={v => wr("glowRoleAnimate", v)} options={ANIMATE_OPTS} /></Row>
+        </Group>
+ 
+        <Group title="Text-to-Speech">
+          <Row label="Enable TTS" desc="Have messages read aloud as they arrive.">
+            <Toggle value={(rd("tts", false)) as boolean} onChange={v => wr("tts", v)} />
+          </Row>
+          <Row label="TTS Speed">
+            <Slider value={(rd("ttsSpeed", 1.0)) as number} onChange={v => wr("ttsSpeed", v)}
+              min={0.5} max={3} step={0.1} format={v => `${v.toFixed(1)}x`} />
+          </Row>
+        </Group>
+ 
+        <Group title="Input">
+          <Row label="Show Send Button" desc="Display a dedicated send button in the message composer.">
+            <Toggle value={(rd("showSendMessageButton", true)) as boolean} onChange={v => wr("showSendMessageButton", v)} />
+          </Row>
+        </Group>
+      </div>
+    );
+  }
+ 
+  function renderVoiceVideoTab() {
+    return (
+      <div>
+        <Group title="Volume">
+          <Row label="Input Volume" desc="Microphone input level sent to others.">
+            <Slider value={(rd("inputVolume", 1.0)) as number} onChange={v => wr("inputVolume", v)}
+              min={0} max={2} step={0.05} format={v => `${Math.round(v * 100)}%`} />
+          </Row>
+          <Row label="Output Volume" desc="Volume of incoming audio from others.">
+            <Slider value={(rd("outputVolume", 1.0)) as number} onChange={v => wr("outputVolume", v)}
+              min={0} max={2} step={0.05} format={v => `${Math.round(v * 100)}%`} />
+          </Row>
+        </Group>
+        <Group title="Input Mode">
+          <Row label="Voice Input Mode" desc="How your microphone activates during voice calls.">
+            <Sel value={(rd("voiceInputMode", 0)) as number} onChange={v => wr("voiceInputMode", v)} options={VOICE_OPTS} />
+          </Row>
+          <Row label="Input Sensitivity" desc="Minimum audio level before voice activity triggers. More negative = more sensitive.">
+            <Slider value={(rd("inputSensitivity", -60)) as number} onChange={v => wr("inputSensitivity", v)}
+              min={-100} max={0} step={1} format={v => `${v} dB`} />
+          </Row>
+        </Group>
+        <Group title="Audio Processing">
+          <Row label="Echo Cancellation" desc="Reduce echo from speakers being picked up by your microphone.">
+            <Toggle value={(rd("echoCancellation", true)) as boolean} onChange={v => wr("echoCancellation", v)} />
+          </Row>
+          <Row label="Noise Suppression" desc="Filter background noise from your microphone input.">
+            <Toggle value={(rd("noiseSuppression", true)) as boolean} onChange={v => wr("noiseSuppression", v)} />
+          </Row>
+          <Row label="Automatic Gain Control" desc="Automatically adjust your microphone volume for a consistent level.">
+            <Toggle value={(rd("automaticGainControl", true)) as boolean} onChange={v => wr("automaticGainControl", v)} />
+          </Row>
+        </Group>
+      </div>
+    );
+  }
+ 
+  function renderChatTab() {
+    return (
+      <div>
+        <Group title="Composition">
+          <Row label="Send with Ctrl+Enter" desc="Require Ctrl+Enter to send; Enter adds a newline.">
+            <Toggle value={(rd("sendMessagesWithCtrlEnter", false)) as boolean} onChange={v => wr("sendMessagesWithCtrlEnter", v)} />
+          </Row>
+          <Row label="Show Mention Suggestions" desc="Show a popup when typing @ # ~ or : in the composer.">
+            <Toggle value={(rd("showMentionSuggestions", true)) as boolean} onChange={v => wr("showMentionSuggestions", v)} />
+          </Row>
+          <Row label="Convert Emoticons to Emoji" desc="Automatically replace :) and similar with emoji.">
+            <Toggle value={(rd("convertEmoticonsToEmoji", false)) as boolean} onChange={v => wr("convertEmoticonsToEmoji", v)} />
+          </Row>
+        </Group>
+ 
+        <Group title="Display">
+          <Row label="Show Timestamps">
+            <Toggle value={(rd("showMessageTimestamps", true)) as boolean} onChange={v => wr("showMessageTimestamps", v)} />
+          </Row>
+          <Row label="Preview Markdown" desc="Render bold, italic, code and other formatting.">
+            <Toggle value={(rd("previewMarkdown", true)) as boolean} onChange={v => wr("previewMarkdown", v)} />
+          </Row>
+          <Row label="Highlight Mentions" desc="Visually highlight messages that mention you.">
+            <Toggle value={(rd("highlightMentions", true)) as boolean} onChange={v => wr("highlightMentions", v)} />
+          </Row>
+          <Row label="Show Read Receipts" desc="Let others see when you have read their messages.">
+            <Toggle value={(rd("showReadReceipts", true)) as boolean} onChange={v => wr("showReadReceipts", v)} />
+          </Row>
+        </Group>
+ 
+        <Group title="Reactions">
+          <Row label="Show Reactions">
+            <Toggle value={(rd("showReactions", true)) as boolean} onChange={v => wr("showReactions", v)} />
+          </Row>
+          <Row label="Show Reaction Count">
+            <Toggle value={(rd("showReactionCount", true)) as boolean} onChange={v => wr("showReactionCount", v)} />
+          </Row>
+          <Row label="Show Who Reacted">
+            <Toggle value={(rd("showUsersWhoReacted", true)) as boolean} onChange={v => wr("showUsersWhoReacted", v)} />
+          </Row>
+        </Group>
+ 
+        <Group title="Spoilers">
+          <Row label="Reveal Spoilers">
+            <VisualSel
+              value={(rd("showSpoilers", 1)) as number}
+              onChange={v => wr("showSpoilers", v)}
+              options={SPOILER_VISUAL}
+            />
+          </Row>
+          <Row label="Reveal Spoilers from Friends">
+            <VisualSel
+              value={(rd("showSpoilersFromFriends", 1)) as number}
+              onChange={v => wr("showSpoilersFromFriends", v)}
+              options={SPOILER_VISUAL}
+            />
+          </Row>
+        </Group>
+ 
+        <Group title="Media and Embeds">
+          <Row label="Show Images from Links">
+            <Toggle value={(rd("showImagesFromLinks", true)) as boolean} onChange={v => wr("showImagesFromLinks", v)} />
+          </Row>
+          <Row label="Show Images Uploaded to Harmony">
+            <Toggle value={(rd("showImagesUploadedToHarmony", true)) as boolean} onChange={v => wr("showImagesUploadedToHarmony", v)} />
+          </Row>
+          <Row label="Show Videos from Links">
+            <Toggle value={(rd("showVideosFromLinks", true)) as boolean} onChange={v => wr("showVideosFromLinks", v)} />
+          </Row>
+          <Row label="Show Videos Uploaded to Harmony">
+            <Toggle value={(rd("showVideosUploadedToHarmony", true)) as boolean} onChange={v => wr("showVideosUploadedToHarmony", v)} />
+          </Row>
+          <Row label="Show Web Embeds" desc="Display rich link previews for websites.">
+            <Toggle value={(rd("showWebEmbeds", true)) as boolean} onChange={v => wr("showWebEmbeds", v)} />
+          </Row>
+          <Row label="Hide Link When Previewing" desc="Collapse the original URL when a preview is shown.">
+            <Toggle value={(rd("hideLinkWhenPreviewing", true)) as boolean} onChange={v => wr("hideLinkWhenPreviewing", v)} />
+          </Row>
+        </Group>
+      </div>
+    );
+  }
+
+  function renderNotificationsTab() {
+    return (
+      <div>
+        <InfoBanner variant="info">
+          Notification settings are coming in a future update.
+        </InfoBanner>
+      </div>
+    );
+  }
+
+  function renderLanguageTab() {
+    return (
+      <div>
+        <InfoBanner variant="info">
+          Language settings are coming in a future update.
+        </InfoBanner>
+      </div>
+    );
+  }
+
+  function renderAdvancedTab() {
+    return (
+      <div>
+        <Group title="Developer">
+          <Row
+            label="Developer Mode"
+            desc="Adds extra tools for debugging. Enables copying raw IDs from context menus and shows additional technical details."
+          >
+            <Toggle
+              value={(rd("developerMode", false)) as boolean}
+              onChange={v => wr("developerMode", v)}
+            />
+          </Row>
+        </Group>
+      </div>
+    );
   }
 
   function loadCurrentTab() {
-    const displayName = getDisplayName(user);
-    const avatar = getAvatar(user);
-    const banner = getBanner(user);
-
-    switch(currentTab) {
-      case "My Account":
-        return (
-          <div className="profile-display">
-            <div
-              className="banner"
-              style={{
-                // @ts-expect-error
-                "--banner-color": "#" + (user?.bannerColor?.toString(16)?.padStart(6, "0") ?? "000000"),
-                "--banner": banner ? `url(${banner})` : undefined
-              }}
-            />
-            <div className="profile-name uno">
-              <img
-                className="big-avatar uno"
-                src={avatar}
-                alt="avatar"
-              />
-              <div>
-                <div 
-                  style={{
-                    fontFamily: `"${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
-                  }}
-                >
-                  {displayName}
-                </div>
-                <div className="profile-id">ID: {user?.id}</div>
-              </div>
-              <button onClick={() => setTab("Profiles")}>
-                Edit User Profile
-              </button>
-            </div>
-            <div className="profile-details uno">
-              <div className="profile-item">
-                <div>
-                  <div>Display Name</div>
-                  <div
-                    style={{
-                      fontFamily: user?.displayName ? `"${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif` : undefined
-                    }}
-                  >
-                    {user?.displayName ? user.displayName : "You haven't added a display name yet."}
-                  </div>
-                </div>
-                <button onClick={() => setTab("Profiles")}>Edit</button>
-              </div>
-              <div className="profile-item">
-                <div>
-                  <div>Username</div>
-                  <div>@{user?.username}</div>
-                </div>
-                <button>Edit</button>
-              </div>
-              <div className="profile-item">
-                <div>
-                  <div>Email</div>
-                  <div>
-                    {user?.email ? emailRevealed ? user.email : "*".repeat(user.email.indexOf('@')) + user.email.substring(user.email.indexOf('@')) : "You haven't added an email yet."}
-                    <a className="ml" onClick={() => setEmailRevealed(!emailRevealed)}>{emailRevealed ? "Hide" : "Reveal"}</a>
-                  </div>
-                </div>
-                <button>{user?.email ? "Edit" : "Add"}</button>
-              </div>
-              <div className="profile-item">
-                <div>
-                  <div>Phone Number</div>
-                  <div>
-                    {user?.phoneNumber ? phoneRevealed ? user.phoneNumber : "*".repeat(user.phoneNumber.length) : "You haven't added a phone number yet."}
-                    {user?.phoneNumber ?
-                      <a className="ml" onClick={() => setPhoneRevealed(!phoneRevealed)}>{phoneRevealed ? "Hide" : "Reveal"}</a> :
-                      null}
-                  </div>
-                </div>
-                <button>{user?.phoneNumber ? "Edit" : "Add"}</button>
-              </div>
-            </div>
-          </div>
-        );
-      case "Profiles":
-        return (
-          <div className="profiles">
-            <div className="profile-nav halign">
-              <div className={"uno int" + (isMainProfile ? " selected" : "")} onClick={() => setIsMainProfile(true)}>
-                Main Profile
-              </div>
-              <div className={"uno int" + (!isMainProfile ? " selected" : "")} onClick={() => setIsMainProfile(false)}>
-                Per-server Profiles
-              </div>
-            </div>
-            {!isMainProfile && (
-              <>
-                <div className="uno">Server</div>
-                {/* do smthn to make a server dropdown thing */}
-                <hr />
-              </>
-            )}
-            <div className="profiles-content halign">
-              <div className="profiles-item">
-                <div className="uno">Display Name</div>
-                <input value={name ?? ""} placeholder={user?.username} onChange={e => setName(e.target.value !== "" ? e.target.value : null)} />
-                <hr />
-                <div className="uno">Pronouns</div>
-                <input value={pronouns ?? ""} placeholder="Add your pronouns" onChange={e => setPronouns(e.target.value !== "" ? e.target.value : null)} />
-                <hr />
-                <div className="uno">Avatar</div>
-                <div className="item-actions">
-                  <button onClick={_ => document.getElementById("avatar-picker")?.click()}>
-                    {user?.avatar ? "Change Avatar" : "Add Avatar"}
-                    <input id="avatar-picker" type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarPick} />
-                  </button>
-                  <button className="dangerous" onClick={handleRemoveAvatar}>Remove Avatar</button>
-                </div>
-                <hr />
-                <div className="uno">Banner</div>
-                <div className="item-actions">
-                  <button onClick={_ => document.getElementById("banner-picker")?.click()}>
-                    {user?.banner ? "Change Banner" : "Add Banner"}
-                    <input id="banner-picker" type="file" accept="image/*" style={{ display: "none" }} onChange={handleBannerPick} />
-                  </button>
-                  <button className="dangerous" onClick={handleRemoveBanner}>Remove Banner</button>
-                  {/* add color picker here to change banner color */}
-                </div>
-                <hr />
-                <div className="uno">Name Font</div>
-                <div className="item-actions">
-                  <button onClick={_ => document.getElementById("font-picker")?.click()}>
-                    {user?.nameFont ? "Change Font" : "Add Font"}
-                    <input id="font-picker" type="file" accept=".ttf,.otf,.woff,.woff2,.sfnt" style={{ display: "none" }} onChange={handleFontPick} />
-                  </button>
-                  <button className="dangerous" onClick={handleRemoveFont}>Remove Font</button>
-                </div>
-                <hr />
-                <div className="uno">About Me</div>
-                <div className="about-me">
-                  <MessageInput isChannel={false} placeholderText="Write your bio" initialText={bio} setText={setBio} giveNull={true} ref={inputRef} />
-                </div>
-              </div>
-              <div className="preview">
-                <div
-                  className="banner"
-                  style={{
-                    // @ts-expect-error
-                    "--banner-color": "#" + (user?.bannerColor?.toString(16)?.padStart(6, "0") ?? "000000"),
-                    "--banner": fBaniFile ? `url(${URL.createObjectURL(fBaniFile)})` : banner ? `url(${banner})` : ""
-                  }}
-                />
-                  <img
-                    className="big-avatar uno"
-                    src={fAviFile ? URL.createObjectURL(fAviFile) : avatar}
-                    alt="avatar"
-                  />
-                <div
-                  className="profile-name uno"
-                  style={{
-                    fontFamily: `"UploadedFont", "${user?.nameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
-                  }}
-                >
-                  <div>{name || user?.username}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      case "Privacy & Safety":
-        return (
-          <div>
-            <div className="profiles-item">
-              <div className="uno">Display Name</div>
-              <input value={name ?? ""} placeholder={user?.username} onChange={e => setName(e.target.value !== "" ? e.target.value : null)} />
-              <hr />
-            </div>
-          </div>
-        )
+    switch (currentTab) {
+      case "My Account":       return renderAccountTab();
+      case "Profiles":         return renderProfilesTab();
+      case "Privacy & Safety": return renderPrivacyTab();
+      case "Appearance":       return renderAppearanceTab();
+      case "Accessibility":    return renderAccessibilityTab();
+      case "Voice & Video":    return renderVoiceVideoTab();
+      case "Chat":             return renderChatTab();
+      case "Notifications":    return renderNotificationsTab();
+      case "Language":         return renderLanguageTab();
+      case "Advanced":         return renderAdvancedTab();
+      default:                 return null;
     }
   }
 
-  function handleRevert() {
-    setName(initialRef.current.name);
-    setPronouns(initialRef.current.pronouns);
-    setBio(initialRef.current.bio);
-    // @ts-expect-error magic ref thing
-    inputRef.current?.setText(initialRef.current.bio);
-    setUserSettings(initialRef.current.settings);
-
-    setFAviFile(null);
-    setFBaniFile(null);
-    setFontFile(null);
-    setAvatarFile(null);
-    setBannerFile(null);
-  }
-
-  async function handleSave() {
-    try {
-      let u = { ...user! };
-      if (currentTab === "My Account") {
-        await updateCore();
-      } else if (currentTab === "Profiles") {
-        await updateVanity();
-        u = { ...u, displayName: name, pronouns, bio };
-      } else {
-        await update();
-      }
-
-      try {
-        if (fAviFile !== null) {
-          const res = await changeAvatar(fAviFile, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-
-          u.avatar = res.avatar;
-          setFAviFile(null);
-        }
-        if (fBaniFile !== null) {
-          const res = await changeBanner(fBaniFile, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-
-          u.banner = res.banner;
-          setFBaniFile(null);
-        }
-        if (fontFile !== null) {
-          if (fontFile instanceof File) {
-            const res = await changeFont(fontFile, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-
-            u.nameFont = res.nameFont;
-          } else {
-            u.nameFont = fontFile;
-          }
-          setFontFile(null);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-      if (u != user) { // send react update stuff
-        setUser(u);
-        addUser(u);
-      }
-
-      // reset initial snapshot to new values
-      initialRef.current = {
-        name,
-        pronouns,
-        bio,
-        nameFont: u.nameFont,
-        settings: userSettings
-      };
-
-      // clear unsaved state
-      setHasUnsaved(false);
-    } catch (err) {
-      console.error(err);
-    }
-  }
+  const tabs = {
+    "USER SETTINGS": ["My Account", "Profiles", "Privacy & Safety"],
+    "APP SETTINGS":  ["Appearance", "Accessibility", "Voice & Video", "Chat", "Notifications", "Language", "Advanced"],
+  };
 
   return (
     <>
-      <div className={"modal-backdrop" + (open ? " open" : "")} onMouseDown={_ => !hasUnsaved && onClose()}>
+      <div
+        className={"modal-backdrop" + (open ? " open" : "")}
+        onMouseDown={() => !hasUnsaved && onClose()}
+      >
         <div className="modal-container settings" onMouseDown={e => e.stopPropagation()}>
           <div className="navigation ovy-auto ovx-hidden">
-            <div className="input-wrapper">
+            <div className="input-wrapper" style={{ width: "100%" }}>
               <Search className="input-icon" />
-              <input placeholder="Search" />
+              <input placeholder="Search settings" />
             </div>
             <hr />
             {Object.entries(tabs).map(([section, items]) => (
@@ -533,19 +1330,15 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 {items.map(item => (
                   <div
                     key={item}
-                    className={
-                      currentTab === item
-                        ? "channel uno selected"
-                        : "channel uno int"
-                    }
-                    onClick={() => setTab(item)}
+                    className={"channel uno" + (currentTab === item ? " selected" : " int") + (hasUnsaved && currentTab !== item ? " semitrans" : "")}
+                    onClick={() => selectTab(item)}
+                    title={hasUnsaved ? "Save or revert changes before switching tabs" : undefined}
+                    style={hasUnsaved && currentTab !== item ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
                   >
                     <div
                       className="nav-icon"
-                      style={{
-                        // @ts-expect-error
-                        "--mask-url": `url(./settings/${getSettingsIconUrl(item)}.png)`
-                      }}
+                      // @ts-expect-error
+                      style={{ "--mask-url": `url(./settings/${iconUrl(item)}.png)` }}
                     />
                     {item}
                   </div>
@@ -553,58 +1346,65 @@ export default function UserSettingsModal({ open, onClose }: any) {
                 <hr />
               </div>
             ))}
-            <div
-              key="logout"
-              className="channel uno int dangerous"
-              onClick={() => logout()}
-            >
-              <div
-                className="nav-icon"
-                style={{
-                  // @ts-expect-error
-                  "--mask-url": `url(./settings/logout.png)`
-                }}
-              />
+            <div className="channel uno int dangerous" onClick={logout}>
+              {/* @ts-expect-error */}
+              <div className="nav-icon" style={{ "--mask-url": "url(./settings/logout.png)" }} />
               Logout
             </div>
           </div>
+
           <div className="settings-content ovy-auto">
             <div className="settings-header ellipsis uno">
               <div
                 className="nav-icon settings-header-icon uno"
-                style={{
-                  // @ts-expect-error
-                  "--mask-url": `url(./settings/${getSettingsIconUrl(currentTab)}.png)`
-                }}
+                // @ts-expect-error
+                style={{ "--mask-url": `url(./settings/${iconUrl(currentTab)}.png)` }}
               />
               {currentTab}
             </div>
+
             {loadCurrentTab()}
+
+            {saveError && (
+              <div style={{
+                color: "var(--red-2)", fontSize: 13, marginTop: 12,
+                padding: "8px 12px", background: "color-mix(in hsl, var(--red-2), transparent 85%)",
+                border: "1px solid color-mix(in hsl, var(--red-2), transparent 60%)",
+                borderRadius: 6,
+              }}>
+                {saveError}
+              </div>
+            )}
+
             {hasUnsaved && (
               <div className="unsaved-bar">
                 <div className="uno">You have unsaved changes</div>
-                <div>
+                <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={handleRevert}>Revert</button>
-                  <button className="save-btn" onClick={handleSave}>Save</button>
+                  <button className="save-btn" onClick={handleSave}>Save Changes</button>
                 </div>
               </div>
             )}
+
+            {/*<div style={{ height: hasUnsaved ? 70 : 24 }} />*/}
           </div>
         </div>
       </div>
-      {showAviCropper && (
+
+      {showAviCropper && croppingSrc && (
         <CroppingModal
-          src={croppingSrc!}
-          onCancel={() => setShowAviCropper(false)}
-          onComplete={handleAviCropComplete}
+          src={croppingSrc}
+          onCancel={() => { setShowAviCropper(false); setCroppingSrc(null); setAvatarFile(null); }}
+          onComplete={onAviCrop}
           headerText="Adjust Your Avatar"
+          shape="circle"
         />
       )}
-      {showBaniCropper && (
+      {showBaniCropper && croppingSrc && (
         <CroppingModal
-          src={croppingSrc!}
-          onCancel={() => setShowBaniCropper(false)}
-          onComplete={handleBaniCropComplete}
+          src={croppingSrc}
+          onCancel={() => { setShowBaniCropper(false); setCroppingSrc(null); setBannerFile(null); }}
+          onComplete={onBaniCrop}
           headerText="Adjust Your Banner"
           shape="rect"
           rectAspect={2}

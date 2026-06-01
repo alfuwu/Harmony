@@ -106,12 +106,18 @@ const insertEmoji = (editor: Editor, emoji: Emoji) => {
   Transforms.move(editor);
 }
 
+export type MessageInputHandle = {
+  setText(text: string | null | undefined): void;
+  focus(moveToEnd?: boolean): void;
+};
+
 const MessageInput = forwardRef(function MessageInput({
   isChannel = true,
   placeholderText = undefined,
   initialText = undefined,
   setText = undefined,
   onEnter = undefined,
+  onKey = undefined,
   giveNull = false,
   style = undefined,
   authState = undefined,
@@ -125,6 +131,7 @@ const MessageInput = forwardRef(function MessageInput({
   initialText?: string | null | undefined,
   setText?: React.Dispatch<React.SetStateAction<string | null | undefined>>,
   onEnter?: (s: string) => void,
+  onKey?: (e: React.KeyboardEvent<HTMLDivElement>) => boolean,
   giveNull?: boolean,
   style?: CSSProperties,
   authState?: AuthState,
@@ -158,6 +165,13 @@ const MessageInput = forwardRef(function MessageInput({
       editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
       editor.history = { undos: [], redos: [] };
       editor.onChange();
+    },
+
+    focus(moveToEnd: boolean = false) {
+      editableRef.current?.focus();
+
+      if (moveToEnd)
+        Transforms.select(editor, Editor.end(editor, []));
     }
   }));
 
@@ -531,6 +545,8 @@ const MessageInput = forwardRef(function MessageInput({
         renderElement={renderElement}
         style={style}
         onKeyDown={e => {
+          if (onKey && onKey(e))
+            return;
           const t = target;
           const results = mentionResults();
 
@@ -575,7 +591,8 @@ const MessageInput = forwardRef(function MessageInput({
             }
           }
 
-          connection?.invoke("StartTyping", currentChannel?.id ?? 0);
+          if (isChannel)
+            connection?.invoke("StartTyping", currentChannel?.id ?? 0);
 
           if (e.key === "Enter" && !e.shiftKey) {
             if (isChannel) {

@@ -16,7 +16,10 @@ import UserPopout from "../layout/popouts/UserPopout";
 import EmojiPopout from "../layout/popouts/EmojiPopout";
 import ContextMenu, { ContextMenuItem } from "../layout/ContextMenu";
 import { getEmojiDataFromNative } from "emoji-mart";
-import MessageInput from "./MessageInput";
+import MessageInput, { MessageInputHandle } from "./MessageInput";
+import EmojiPickerPopout from "../layout/popouts/EmojiPickerPopout";
+import Twemoji from "react-twemoji";
+import { EmojiStyle } from "../../lib/utils/userSettings";
 
 const MERGE_WINDOW = 7 * 60 * 1000; // 7 minutes in ms
 
@@ -35,7 +38,7 @@ export default function MessageList() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState<string | null | undefined>("");
 
-  const inputRef = useRef(null);
+  const inputRef = useRef<MessageInputHandle>(null);
 
   const reMember = userState.getMember(user!.id, serverState.currentServer?.id);
   const me = serverState.currentServer
@@ -83,7 +86,8 @@ export default function MessageList() {
   }, [channelMessages]);
 
   useEffect(() => {
-    if (!container.current) return;
+    if (!container.current)
+      return;
     const el = container.current;
     const obs = new ResizeObserver(() => {
       if (wasAtBottomRef.current) el.scrollTop = el.scrollHeight;
@@ -91,6 +95,17 @@ export default function MessageList() {
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!container.current)
+      return;
+
+    if (editingId !== null && wasAtBottomRef.current) {
+      const el = container.current;
+      el.scrollTop = el.scrollHeight;
+      wasAtBottomRef.current = true;
+    }
+  }, [editingId]);
 
   function formatTimestamp(iso: string): string {
     const date = new Date(iso);
@@ -177,8 +192,7 @@ export default function MessageList() {
 
   async function handleReact(msg: Message, emoji: string) {
     try {
-      const emojiData = await getEmojiDataFromNative(emoji);
-      await react(msg.channelId, msg.id, { id: null, name: emojiData?.id ?? emoji }, { headers: { Authorization: `Bearer ${token}` } });
+      await react(msg.channelId, msg.id, { id: null, name: emoji }, { headers: { Authorization: `Bearer ${token}` } });
     } catch (e) { console.error(e); }
   }
 
@@ -196,15 +210,31 @@ export default function MessageList() {
       label: "Add Reaction",
       icon: "😊",
       onClick: () => {
-        // TODO: implement emoji picker menu
-      },
+        const id = `emoji-picker-${msg.id}`;
+        open({
+          id,
+          element: (
+            <EmojiPickerPopout
+              position={{
+                top: ctxMenu?.y ?? 0,
+                left: ctxMenu?.x ?? 0
+              }}
+              onSelect={(emoji) => {
+                handleReact(msg, emoji);
+                close(id);
+              }}
+            />
+          ),
+          options: {},
+        });
+      }
     });
 
     if (isMine) {
       items.push({
         label: "Edit Message",
         icon: "✏️",
-        onClick: () => { setEditingId(msg.id); setEditContent(msg.content); },
+        onClick: () => { setEditingId(msg.id); setEditContent(msg.content); inputRef.current?.focus(); }
       });
     }
 
@@ -212,26 +242,26 @@ export default function MessageList() {
       items.push({
         label: msg.isPinned ? "Unpin Message" : "Pin Message",
         icon: "📌",
-        onClick: () => handlePin(msg),
+        onClick: () => handlePin(msg)
       });
     }
 
     items.push({
       label: "Save to Quotebook",
       icon: "📖",
-      onClick: () => handleAddToQuotebook(msg),
+      onClick: () => handleAddToQuotebook(msg)
     });
 
     items.push({
       label: "Copy Message ID",
       icon: "🆔",
-      onClick: () => navigator.clipboard.writeText(String(msg.id)),
+      onClick: () => navigator.clipboard.writeText(String(msg.id))
     });
 
     items.push({
       label: "Copy Text",
       icon: "📋",
-      onClick: () => navigator.clipboard.writeText(msg.content),
+      onClick: () => navigator.clipboard.writeText(msg.content)
     });
 
     if (isMine || canDeleteOthers || canEditOther) {
@@ -240,7 +270,7 @@ export default function MessageList() {
         label: "Delete Message",
         icon: "🗑️",
         danger: true,
-        onClick: () => handleDelete(msg),
+        onClick: () => handleDelete(msg)
       });
     }
 
@@ -295,14 +325,15 @@ export default function MessageList() {
             position={{ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX }}
           />
         ),
-        options: {},
+        options: {}
       });
     },
   };
 
+  const typingIds = ((currentChan && channelState.getTyping(currentChan.id)) ?? []).filter(id => id !== user?.id);
   return (
     <>
-      <div className="message-list ovy-auto" ref={container}>
+      <div className={"message-list ovy-auto" + (typingIds.length > 0 ? " typing" : "")} ref={container}>
         {channelMessages.map((msg, i) => {
           const author = userState.get(msg.authorId) ?? {
             id: msg.authorId, displayName: null, username: "Unknown User",
@@ -317,10 +348,9 @@ export default function MessageList() {
 
           let showHeader = true;
           const prev = channelMessages[i - 1];
-          if (prev && prev.authorId === msg.authorId) {
+          if (prev && prev.authorId === msg.authorId)
             if (new Date(msg.timestamp).getTime() - new Date(prev.timestamp).getTime() <= MERGE_WINDOW)
               showHeader = false;
-          }
 
           const isHovered = messageHover === String(msg.id) || ctxMenu?.msg.id === msg.id;
           const isEditing = editingId === msg.id;
@@ -332,6 +362,18 @@ export default function MessageList() {
               onMouseEnter={() => setMessageHover(String(msg.id))}
               onMouseLeave={() => setMessageHover(null)}
               onContextMenu={e => openCtxMenu(e, msg)}
+              onDoubleClick={() => {
+                const canEdit =
+                  msg.authorId === user?.id ||
+                  canEditOther;
+
+                if (!canEdit || editingId === msg.id)
+                  return;
+
+                setEditingId(msg.id);
+                setEditContent(msg.content);
+                requestAnimationFrame(() => inputRef.current?.focus(true));
+              }}
             >
               {showHeader && (
                 <div className="group-header">
@@ -392,6 +434,7 @@ export default function MessageList() {
                         initialText={editContent}
                         setText={setEditContent}
                         onEnter={() => handleSaveEdit(msg)}
+                        onKey={(e) => { if (e.key === "Escape") { setEditingId(null); setEditContent(""); return true; } return false; }}
                         ref={inputRef}
                       />
                     </div>
@@ -422,36 +465,85 @@ export default function MessageList() {
                 )}
 
                 {msg.reactions && msg.reactions.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }} onDoubleClick={e => e.stopPropagation()}>
                     {msg.reactions.map((reaction, ri) => {
                       const hasReacted = reaction.reactors.includes(user?.id ?? -1);
                       return (
                         <button
                           key={ri}
                           onClick={() => {
-                            if (hasReacted) {
+                            if (hasReacted)
                               handleUnreact(msg, reaction.emoji?.name ?? "");
-                            } else {
+                            else
                               react(msg.channelId, msg.id, reaction.emoji!, { headers: { Authorization: `Bearer ${token}` } });
-                            }
                           }}
                           style={{
                             display: "flex", alignItems: "center", gap: 4,
-                            padding: "2px 6px", borderRadius: 12,
+                            padding: "3px 6px", borderRadius: 8,
                             background: hasReacted ? "color-mix(in hsl, var(--accent-2), transparent 70%)" : "var(--bg-2)",
-                            border: hasReacted ? "1px solid var(--accent-1)" : "1px solid var(--border)",
-                            fontSize: 13, cursor: "pointer", color: "var(--text-3)",
-                            boxShadow: "none",
+                            border: hasReacted ? "1.8px solid color-mix(in hsl, var(--accent-1), transparent 30%)" : "1.8px solid var(--border)",
+                            fontSize: 14, fontWeight: 600, cursor: "pointer", color: hasReacted ? "var(--accent-reaction)" : "var(--text-4)",
+                            boxShadow: "none"
                           }}
-                          title={reaction.emoji?.name}
                         >
-                          <span>{reaction.emoji?.name}</span>
-                          <span style={{ fontSize: 11, color: hasReacted ? "var(--accent-reaction)" : "var(--text-4)" }}>
+                          {userSettings?.emojiStyle === EmojiStyle.System ? (
+                            <span className="emoji-reaction-system">
+                              {reaction?.emoji.name}
+                            </span>
+                          ) : (
+                            <Twemoji
+                              options={{
+                                className: "emoji-reaction",
+                                folder: "svg",
+                                ext: ".svg"
+                              }}
+                              noWrapper={true}
+                            >
+                              <span>
+                                {reaction?.emoji.name}
+                              </span>
+                            </Twemoji>
+                          )}
+                          <span style={{ color: hasReacted ? "var(--accent-reaction)" : "var(--text-4)" }}>
                             {reaction.reactors.length}
                           </span>
                         </button>
                       );
                     })}
+                    <button
+                      onClick={e => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const id = `emoji-picker-${msg.id}`;
+                        open({
+                          id,
+                          element: (
+                            <EmojiPickerPopout
+                              position={{
+                                top: rect.bottom,
+                                left: rect.left + 32
+                              }}
+                              onSelect={(emoji) => {
+                                handleReact(msg, emoji);
+                                close(id);
+                              }}
+                            />
+                          ),
+                          options: {}
+                        });
+                      }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        padding: "2px 6px", borderRadius: 10,
+                        background: "var(--bg-2)",
+                        border: "1px solid var(--border)",
+                        fontSize: 16, cursor: "pointer", color: "var(--text-3)",
+                        boxShadow: "none"
+                      }}
+                    >
+                      <svg width={18} height={18}>
+
+                      </svg>
+                    </button>
                   </div>
                 )}
               </div>
@@ -460,16 +552,33 @@ export default function MessageList() {
                 <div className="message-actions">
                   <button
                     title="React"
-                    onClick={() => handleReact(msg, "👍")}
-                    style={{ background: "none", border: "none", boxShadow: "none", cursor: "pointer", padding: "4px 6px", color: "var(--text-4)" }}
+                    onClick={e => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const id = `emoji-picker-${msg.id}`;
+                      open({
+                        id,
+                        element: (
+                          <EmojiPickerPopout
+                            position={{
+                              top: rect.bottom,
+                              left: rect.left + 32
+                            }}
+                            onSelect={(emoji) => {
+                              handleReact(msg, emoji);
+                              close(id);
+                            }}
+                          />
+                        ),
+                        options: {}
+                      });
+                    }}
                   >
                     😊
                   </button>
                   {msg.authorId === user?.id && (
                     <button
                       title="Edit"
-                      onClick={() => { setEditingId(msg.id); setEditContent(msg.content); }}
-                      style={{ background: "none", border: "none", boxShadow: "none", cursor: "pointer", padding: "4px 6px", color: "var(--text-4)" }}
+                      onClick={() => { setEditingId(msg.id); setEditContent(msg.content); requestAnimationFrame(() => inputRef.current?.focus(true)); }}
                     >
                       ✏️
                     </button>
@@ -478,7 +587,6 @@ export default function MessageList() {
                     <button
                       title="Delete"
                       onClick={() => handleDelete(msg)}
-                      style={{ background: "none", border: "none", boxShadow: "none", cursor: "pointer", padding: "4px 6px", color: "var(--red-2)" }}
                     >
                       🗑️
                     </button>
@@ -487,7 +595,6 @@ export default function MessageList() {
                     title="More"
                     onContextMenu={e => { e.preventDefault(); openCtxMenu(e, msg); }}
                     onClick={e => openCtxMenu(e, msg)}
-                    style={{ background: "none", border: "none", boxShadow: "none", cursor: "pointer", padding: "4px 6px", color: "var(--text-4)" }}
                   >
                     ⋯
                   </button>

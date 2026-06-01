@@ -14,11 +14,11 @@ import { ServerProvider, useServerState } from "./lib/state/Servers";
 import { ChannelProvider, useChannelState } from "./lib/state/Channels";
 import { MessageProvider, useMessageState } from "./lib/state/Messages";
 import { initializeClient, syncSignalRRefs } from "./lib/client/init";
-import { PopoutProvider, /*usePopoutState*/ } from "./lib/state/Popouts";
+import { PopoutProvider } from "./lib/state/Popouts";
 import { getAvatar } from "./lib/utils/UserUtils";
-//import UserPopout from "./components/layout/popouts/UserPopout";
 import UserSettingsModal from "./components/layout/modals/UserSettingsModal";
 import TypingIndicator from "./components/messages/TypingIndicator";
+import { Theme, UserSettings } from "./lib/utils/userSettings";
 
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
 export const hostUrl = "http://localhost:5000";
@@ -30,6 +30,39 @@ window.addEventListener("keydown", function (e) {
     e.preventDefault();
   }
 });
+
+function applySettings(settings: UserSettings | null) {
+  const body = document.body;
+  if (!settings)
+    return;
+ 
+  body.style.setProperty("--settings-text-scale", String(settings.textSize ?? 1));
+  body.style.setProperty("--settings-saturation", String(settings.saturation ?? 1));
+ 
+  body.classList.toggle("compact-mode",       !!settings.compactMode);
+  body.classList.toggle("reduce-motion",      !!settings.reduceMotion);
+  body.classList.toggle("high-contrast",      !!settings.highContrastMode);
+  body.classList.toggle("dyslexia-font",      !!settings.dyslexiaFont);
+  body.classList.toggle("always-underline-links", !!settings.alwaysUnderlineLinks);
+  body.classList.toggle("hide-reactions",     !(settings.showReactions ?? true));
+  body.classList.toggle("hide-reaction-count",!(settings.showReactionCount ?? true));
+  body.classList.toggle("no-mention-highlight", !(settings.highlightMentions ?? true));
+ 
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const isLight =
+    settings.theme === Theme.Light ||
+    (settings.theme === Theme.System && !systemDark);
+  body.classList.toggle("theme-light", isLight);
+ 
+  const shapeNames = ["circle", "rounded", "square"];
+  body.setAttribute("data-avatar-shape", shapeNames[settings.avatarDisplayType ?? 0] ?? "circle");
+  body.setAttribute("data-server-icon-shape", shapeNames[settings.serverIconDisplayType ?? 1] ?? "rounded");
+ 
+  const spoilerNames = ["showspoilersalways", "showspoilersonclick", "showspoilersonhover", "showspoilersmoderated"];
+  spoilerNames.forEach(c => body.classList.remove(c));
+  body.classList.add(spoilerNames[settings.showSpoilers ?? 1] ?? "showspoilersonclick");
+}
+
 
 function AppInner() {
   const authState = useAuthState();
@@ -46,6 +79,22 @@ function AppInner() {
   const [showDms, setShowDms] = useState(false);
 
   syncSignalRRefs(messageState, channelState, serverState, userState);
+
+  useEffect(() => {
+    applySettings(userSettings);
+  }, [userSettings]);
+ 
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => applySettings(userSettings);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [userSettings]);
+ 
+  useEffect(() => {
+    document.documentElement.style.fontSize =
+      `${(userSettings?.textSize ?? 1) * 16}px`;
+  }, [userSettings?.textSize]);
 
   useEffect(() => {
     const fetchMe = async () => {
@@ -81,7 +130,7 @@ function AppInner() {
       // @ts-expect-error
       window.users = userState.users;
       // @ts-expect-error
-      window.settings = userSettings;
+      window.userSettings = userSettings;
     }, [serverState.servers, channelState.channels, userState.members, messageState.messages, userState.users, userSettings]);
   }
 
@@ -110,11 +159,10 @@ function AppInner() {
     serverState.setCurrentServer(null);
     channelState.setCurrentChannel(null);
   }
-
   
   return (
     <div className="ven-colors relative" ref={rootRef}>
-      <UserSettingsModal className="modal" open={modalOpen} onClose={() => setModalOpen(false)} />
+      <UserSettingsModal open={modalOpen} onClose={() => setModalOpen(false)} />
 
       {user ? (
         <div className="app">    

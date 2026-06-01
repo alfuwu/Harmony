@@ -1,86 +1,88 @@
 import { Review, Server, User } from "../utils/types";
-import { UserSettings } from "../utils/userSettings";
+import { FriendRequestContext, UserContext, UserSettings } from "../utils/userSettings";
 import { api, binapi } from "./http";
 
 export async function changeAvatar(file: File, options: RequestInit = {}): Promise<{ avatar: string }> {
   const formData = new FormData();
   formData.append("file", file);
-
-  return binapi(`/users/@me/avatar`, {
-    ...options,
-    method: "POST",
-    body: formData
-  });
+  return binapi(`/users/@me/avatar`, { ...options, method: "POST", body: formData });
 }
 export async function changeBanner(file: File, options: RequestInit = {}): Promise<{ banner: string }> {
   const formData = new FormData();
   formData.append("file", file);
-
-  return binapi(`/users/@me/banner`, {
-    ...options,
-    method: "POST",
-    body: formData
-  });
+  return binapi(`/users/@me/banner`, { ...options, method: "POST", body: formData });
 }
 export async function changeFont(file: File, options: RequestInit = {}): Promise<{ nameFont: string }> {
   const formData = new FormData();
   formData.append("file", file);
-
-  return binapi(`/users/@me/font`, {
-    ...options,
-    method: "POST",
-    body: formData
-  });
+  return binapi(`/users/@me/font`, { ...options, method: "POST", body: formData });
 }
 
 export async function deleteAvatar(options: RequestInit = {}): Promise<{ avatar: string | null }> {
-  return api(`/users/@me/avatar`, {
-    ...options,
-    method: "DELETE"
-  });
+  return api(`/users/@me/avatar`, { ...options, method: "DELETE" });
 }
 export async function deleteBanner(options: RequestInit = {}): Promise<{ banner: string | null }> {
-  return api(`/users/@me/banner`, {
-    ...options,
-    method: "DELETE"
-  });
+  return api(`/users/@me/banner`, { ...options, method: "DELETE" });
 }
 export async function deleteFont(options: RequestInit = {}): Promise<{ nameFont: string | null }> {
-  return api(`/users/@me/font`, {
-    ...options,
-    method: "DELETE"
-  });
+  return api(`/users/@me/font`, { ...options, method: "DELETE" });
 }
 
 export async function updateSettings(settings: UserSettings, options: RequestInit = {}): Promise<void> {
-  await api(`/users/@me/settings`, {
+  await api(`/users/@me/settings`, { ...options, method: "PATCH", body: JSON.stringify(settings) });
+}
+
+export interface PrivacyDto {
+  whoCanSendFriendRequests?: FriendRequestContext;
+  whoCanSendDms?: UserContext;
+  whoCanAddToGcs?: UserContext;
+  whoCanSeeEmail?: UserContext;
+  whoCanSeePhoneNumber?: UserContext;
+  whoCanSeeBio?: UserContext;
+  whoCanSeePronouns?: UserContext;
+  whoCanSeeAvatar?: UserContext;
+  whoCanSeeBanner?: UserContext;
+  whoCanSeeStatus?: UserContext;
+}
+
+export async function updatePrivacy(dto: PrivacyDto, options: RequestInit = {}): Promise<void> {
+  await api(`/users/@me/privacy`, { ...options, method: "PATCH", body: JSON.stringify(dto) });
+}
+
+export async function updateProfile(
+  user: {
+    displayName?: string | null;
+    nickname?: string | null;
+    pronouns?: string | null;
+    status?: string | null;
+    bio?: string | null;
+    bannerColor?: number | null;
+    title?: string | null;
+  },
+  server?: Server,
+  options: RequestInit = {}
+) {
+  await api(`/users/@me/profile${server ? `/${server.id}` : ""}`, {
     ...options,
     method: "PATCH",
-    body: JSON.stringify(settings)
+    body: JSON.stringify(user)
   });
 }
 
-export async function updateProfile(user: { displayName?: string | null, nickname?: string | null, pronouns?: string | null, status?: string | null, bio?: string | null }, server?: Server, options: RequestInit = {}) {
-  await api(`/users/@me/profile${server ? `/${server.id}` : ''}`, {
-    ...options,
-    method: "PATCH",
-    body: JSON.stringify(user)
-  })
-}
-
-export async function updateMe(user: { email?: string | null, phoneNumber?: string | null, username?: string | null, password?: string | null }, options: RequestInit = {}) {
-  await api(`/users/@me`, {
-    ...options,
-    method: "PATCH",
-    body: JSON.stringify(user)
-  })
+export async function updateMe(
+  user: {
+    email?: string | null;
+    phoneNumber?: string | null;
+    username?: string | null;
+    password?: string | null;
+  },
+  options: RequestInit = {}
+) {
+  await api(`/users/@me`, { ...options, method: "PATCH", body: JSON.stringify(user) });
 }
 
 export async function getReviews(user: User, options: RequestInit = {}): Promise<Review[]> {
-  return api(`/users/${user.id}/reviews`, {
-    ...options,
-    method: "GET"
-  });
+  return api(`/users/${user.id}/reviews`, { ...options, method: "GET" });
 }
 
 export async function submitReview(user: User, content: string, options: RequestInit = {}): Promise<Review> {
@@ -100,8 +102,5 @@ export async function updateReview(user: User, content: string, options: Request
 }
 
 export async function deleteReview(user: User, options: RequestInit = {}): Promise<void> {
-  await api(`/users/${user.id}/reviews`, {
-    ...options,
-    method: "DELETE"
-  });
+  await api(`/users/${user.id}/reviews`, { ...options, method: "DELETE" });
 }
