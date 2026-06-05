@@ -16,6 +16,22 @@ export function getDisplayName(user: User | null | undefined, member: Member | u
     return member?.nickname || user?.displayName || user?.username || "Unknown User";
 }
 
+export function getHandle(user: User | null | undefined): string {
+    if (!user)
+        return "unknown";
+    if (!user.discriminator)
+        return user.username;
+    return `${user.username}#${String(user.discriminator).padStart(4, "0")}`;
+}
+
+export function getHandleOrNull(user: User | null | undefined): string | null {
+    if (!user)
+        return null;
+    if (!user.discriminator)
+        return user.username;
+    return `${user.username}#${String(user.discriminator).padStart(4, "0")}`;
+}
+
 export function isCustomFont(font: string): boolean {
     return !!font.match(/[a-f0-9]{32}/);
 }

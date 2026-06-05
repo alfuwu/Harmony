@@ -70,7 +70,7 @@ export default function TitleBar() {
   const { icon, name, sub } = getTitle();
 
   return (
-    <div className="title-bar">
+    <div className="title-bar" data-tauri-drag-region>
       <div className="title uno">
         {icon}
         <span>{name}</span>

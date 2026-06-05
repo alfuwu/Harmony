@@ -5,6 +5,7 @@ import {
   getBanner,
   getBio,
   getDisplayName,
+  getHandle,
   getPronouns,
   getRoleColor,
 } from "../../../lib/utils/UserUtils";
@@ -855,7 +856,7 @@ export default function UserPopout({
               fontSize: 13, color: "var(--text-5)", fontWeight: 500,
               display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap",
             }}>
-              <span>@{user.username}</span>
+              <span>@{getHandle(user)}</span>
               {resolvedPronouns && (
                 <>
                   <span style={{ color: "var(--border)" }}>·</span>
@@ -883,12 +884,11 @@ export default function UserPopout({
                   : "color-mix(in hsl, var(--yellow-2), transparent 50%)"}`,
                 letterSpacing: "0.04em",
               }}>
-                {user.titleIsSystem ? "⚡ " : "🏷 "}{user.title}
+                {user.title}
               </div>
             )}
           </div>
 
-          {/* Status line */}
           <div style={{
             display: "flex", alignItems: "center", gap: 5,
             marginBottom: 8, marginTop: 6, flexWrap: "wrap",
@@ -1007,7 +1007,6 @@ export default function UserPopout({
             />
           </div>
 
-          {/* Roles */}
           {member && member.roles.length > 0 && (
             <>
               <Divider />
@@ -1042,7 +1041,6 @@ export default function UserPopout({
             </>
           )}
 
-          {/* DM accent swatches */}
           {(user.dmColor || (user.dmColors && user.dmColors.length > 0)) && (
             <>
               <Divider />
@@ -1080,8 +1078,7 @@ export default function UserPopout({
             </>
           )}
 
-          {/* Last seen (offline users, or users who share while offline) */}
-          {(status === OnlineStatus.Offline || user.showStatusWhileOffline) && user.lastSeen && (
+          {status === OnlineStatus.Offline && user.lastSeen && (
             <>
               <Divider />
               <div>
@@ -1093,13 +1090,6 @@ export default function UserPopout({
             </>
           )}
         </div>
-
-        <style>{`
-          @keyframes popout-in {
-            from { opacity: 0; transform: scale(0.93) translateY(-6px); }
-            to   { opacity: 1; transform: scale(1)    translateY(0); }
-          }
-        `}</style>
       </div>
     </>
   );

@@ -13,3 +13,12 @@ export async function registerUser(email: string, password: string, username: st
     body: JSON.stringify({ email, password, username })
   });
 }
+
+export interface UsernameAvailability {
+  pomelo: boolean;
+  discriminator: number;
+}
+
+export async function checkUsernameAvailability(username: string): Promise<UsernameAvailability> {
+  return api(`/auth/username?u=${encodeURIComponent(username)}`);
+}

@@ -28,6 +28,7 @@ export interface User {
   phoneNumberVerified?: boolean | null;
   displayName?: string | null;
   username: string;
+  discriminator?: number | null; // 0 = Pomelo; 1-9999 = Discriminator
   passwordHash: string;
   status?: string | null;
   showStatusWhileOffline?: boolean;

@@ -3,7 +3,7 @@ import { useServerState } from "../../lib/state/Servers";
 import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
-import { parseMarkdown } from "../../lib/utils/Markdown";
+import { parseMarkdown } from "../../lib/utils/MarkdownRenderer";
 import { getAvatar, getDisplayName, getPronouns, getRoleColor, mentionedIn } from "../../lib/utils/UserUtils";
 import { Channel, Member, Message, Server, User } from "../../lib/utils/types";
 import { usePopoutState } from "../../lib/state/Popouts";
@@ -22,6 +22,10 @@ import Twemoji from "react-twemoji";
 import { EmojiStyle } from "../../lib/utils/userSettings";
 
 const MERGE_WINDOW = 7 * 60 * 1000; // 7 minutes in ms
+
+function getId(msg: Message): string {
+  return msg.id + msg.timestamp + msg.nonce;
+}
 
 export default function MessageList() {
   const { token, user, userSettings } = useAuthState();
@@ -352,20 +356,20 @@ export default function MessageList() {
             if (new Date(msg.timestamp).getTime() - new Date(prev.timestamp).getTime() <= MERGE_WINDOW)
               showHeader = false;
 
-          const isHovered = messageHover === String(msg.id) || ctxMenu?.msg.id === msg.id;
+          const isHovered = messageHover === getId(msg) || ctxMenu?.msg.id === msg.id;
           const isEditing = editingId === msg.id;
 
           return (
             <div
-              key={msg.id + msg.timestamp}
+              key={getId(msg)}
               className={"message" + (isMentioned ? " mentioned" : "") + (isHovered ? " hover" : "")}
-              onMouseEnter={() => setMessageHover(String(msg.id))}
+              onMouseEnter={() => setMessageHover(getId(msg))}
               onMouseLeave={() => setMessageHover(null)}
               onContextMenu={e => openCtxMenu(e, msg)}
               onDoubleClick={() => {
-                const canEdit =
-                  msg.authorId === user?.id ||
-                  canEditOther;
+                const canEdit = !!!msg.sending &&
+                  (msg.authorId === user?.id ||
+                  canEditOther);
 
                 if (!canEdit || editingId === msg.id)
                   return;
@@ -548,7 +552,7 @@ export default function MessageList() {
                 )}
               </div>
 
-              {isHovered && !isEditing && (
+              {isHovered && !isEditing && !!!msg.sending && (
                 <div className="message-actions">
                   <button
                     title="React"
