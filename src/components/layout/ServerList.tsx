@@ -9,6 +9,7 @@ import CreateServerModal from "./modals/CreateSeverModal";
 import ContextMenu, { ContextMenuItem } from "./ContextMenu";
 import { joinServer } from "../../lib/api/signalrClient";
 import { hostUrl } from "../../App";
+import { getIcon } from "../../lib/utils/ServerUtils";
  
 interface Props {
   onDmClick: () => void;
@@ -85,7 +86,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
           className={"server uno" + (currentServer && currentServer.id === s.id ? " selected" : "")}
           onContextMenu={e => openCtx(e, s.id)}
         >
-          <img onClick={() => handleSelectServer(s)} className="server-icon" src={s.icon ? "https://" + s.icon : "https://cdn.discordapp.com/emojis/1327190606535069726.png"} alt={s.name || "server"} />
+          <img onClick={() => handleSelectServer(s)} className="server-icon" src={getIcon(s)} alt={s.name || "server"} />
         </div>
       ))}
       <hr />

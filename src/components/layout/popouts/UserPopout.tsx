@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, useEffect, useCallback } from "react";
-import { Channel, Member, OnlineStatus, Review, Server, User } from "../../../lib/utils/types";
+import { AbstractChannel, Member, OnlineStatus, Review, Server, User } from "../../../lib/utils/types";
 import {
   getAvatar,
   getBanner,
@@ -18,7 +18,7 @@ import { loadServer } from "../../../lib/api/serverApi";
 import { MessageState } from "../../../lib/state/Messages";
 import EmojiPopout from "./EmojiPopout";
 import { getEmojiDataFromNative } from "emoji-mart";
-import { parseMarkdown } from "../../../lib/utils/Markdown";
+import { RenderContext, RenderMarkdown } from "../../../lib/utils/MarkdownRenderer";
 import {
   getUserBadges,
   Badge,
@@ -177,7 +177,8 @@ interface ReviewsModalProps {
   messageState: MessageState;
   userState: UserState;
   authState: { token: string | null, userSettings: UserSettings | null, user: User | null };
-  markdownData: {};
+  spoilerState: React.MutableRefObject<Map<number, boolean>>;
+  markdownData: RenderContext;
   opts: RequestInit;
   onClose: () => void;
 }
@@ -190,6 +191,7 @@ function ReviewsModal({
   messageState,
   userState,
   authState,
+  spoilerState,
   markdownData,
   opts,
   onClose
@@ -385,7 +387,7 @@ function ReviewsModal({
                     )}
                   </div>
                   <div style={{ fontSize: 13, color: "var(--text-3)", lineHeight: 1.45, wordBreak: "break-word" }}>
-                    {parseMarkdown(review.content, markdownData)}
+                    {RenderMarkdown({ content: review.content, spoilerStateRef: spoilerState, ...markdownData })}
                   </div>
                 </div>
               </div>
@@ -470,7 +472,8 @@ interface ReviewsButtonProps {
   userState: UserState;
   token: string | null;
   userSettings: UserSettings | null;
-  markdownData: {};
+  spoilerState: React.MutableRefObject<Map<number, boolean>>;
+  markdownData: RenderContext;
   open: (popout: Popout) => void;
   close: (id: string) => void;
 }
@@ -484,6 +487,7 @@ function ReviewsButton({
   userState,
   token,
   userSettings,
+  spoilerState,
   markdownData,
   open,
   close
@@ -527,6 +531,7 @@ function ReviewsButton({
           messageState={messageState}
           userState={userState}
           authState={{ token, userSettings, user: currentUser }}
+          spoilerState={spoilerState}
           markdownData={markdownData}
           opts={opts}
           onClose={() => close("user-reviews")}
@@ -613,6 +618,7 @@ export default function UserPopout({
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [badges, setBadges] = useState<Badge[]>([]);
+  const spoilerState = useRef<Map<number, boolean>>(new Map());
 
   useLayoutEffect(() => {
     if (ref.current) {
@@ -686,14 +692,14 @@ export default function UserPopout({
     });
   }
 
-  const markdownData = {
+  const markdownData: RenderContext = {
     serverState, channelState, userState, userSettings,
     onMentionClick: (u: User, m: Member, event: React.MouseEvent) => {
       event.stopPropagation();
       event.preventDefault();
       openUserPopout(event.currentTarget, u, m);
     },
-    onChannelClick: (channel: Channel, event: React.MouseEvent) => {
+    onChannelClick: (channel: AbstractChannel, event: React.MouseEvent) => {
       event.stopPropagation();
       if (channelState.currentChannel?.id !== channel.id) {
         event.preventDefault();
@@ -731,7 +737,7 @@ export default function UserPopout({
             position={{ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX }}
           />
         ),
-        options: {},
+        options: {}
       });
     },
   };
@@ -923,7 +929,7 @@ export default function UserPopout({
                 borderRadius: 6, padding: "6px 8px",
                 border: "1px solid var(--border-light)",
               }}>
-                {parseMarkdown(resolvedBio, markdownData)}
+                {RenderMarkdown({ content: resolvedBio, spoilerStateRef: spoilerState, ...markdownData })}
               </div>
             </div>
           )}
@@ -1001,6 +1007,7 @@ export default function UserPopout({
               userState={userState}
               token={token}
               userSettings={userSettings}
+              spoilerState={spoilerState}
               markdownData={markdownData}
               open={open}
               close={close}

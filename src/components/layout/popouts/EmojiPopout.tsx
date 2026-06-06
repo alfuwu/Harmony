@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { renderEmoji } from "../../../lib/utils/Markdown";
+import { renderEmoji } from "../../../lib/utils/MarkdownRenderer";
 import { UserSettings } from "../../../lib/utils/userSettings";
 
 interface EmojiPopoutProps {

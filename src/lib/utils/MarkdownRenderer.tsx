@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, JSX } from 'react';
+import React, { useState, useCallback, useMemo, JSX, useEffect } from 'react';
 import type {
   DocumentAST, BlockNode, InlineNode,
   TextNode, ListItemNode, NumberedListItemNode,
@@ -12,21 +12,41 @@ import type { UserState } from '../state/Users';
 import type { ServerState } from '../state/Servers';
 import type { ChannelState } from '../state/Channels';
 import Twemoji from 'react-twemoji';
+import ShikiHighlighter from 'react-shiki';
+import { getIcon } from './ServerUtils';
+import { ModelOperations } from '@vscode/vscode-languagedetection';
 
+const modelOperations = new ModelOperations(
+  {
+    modelJsonLoaderFunc: async () => {
+      const response = await fetch('https://cdn.jsdelivr.net/npm/@vscode/vscode-languagedetection/model/model.json');
+      return await response.json();
+    },
+    weightsLoaderFunc: async () => {
+      const response = await fetch('https://cdn.jsdelivr.net/npm/@vscode/vscode-languagedetection/model/group1-shard1of1.bin');
+      return await response.arrayBuffer();
+    }
+  }
+);
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
 function fmtRelative(date: Date): string {
   const diff = date.getTime() - Date.now();
   const s = Math.round(diff / 1000);
-  if (Math.abs(s)  < 60)  return rtf.format(s, 'second');
+  if (Math.abs(s) < 60)
+    return rtf.format(s, 'second');
   const m = Math.round(s / 60);
-  if (Math.abs(m)  < 60)  return rtf.format(m, 'minute');
+  if (Math.abs(m) < 60)
+    return rtf.format(m, 'minute');
   const h = Math.round(m / 60);
-  if (Math.abs(h)  < 24)  return rtf.format(h, 'hour');
+  if (Math.abs(h) < 24)
+    return rtf.format(h, 'hour');
   const d = Math.round(h / 24);
-  if (Math.abs(d)  < 30)  return rtf.format(d, 'day');
+  if (Math.abs(d) < 30)
+    return rtf.format(d, 'day');
   const mo = Math.round(d / 30);
-  if (Math.abs(mo) < 12)  return rtf.format(mo, 'month');
+  if (Math.abs(mo) < 12)
+    return rtf.format(mo, 'month');
   return rtf.format(Math.round(mo / 12), 'year');
 }
 
@@ -40,6 +60,7 @@ export function renderEmoji(userSettings: UserSettings | null, emoji: string, cl
             return;
           onClick(emoji, e);
         }}
+        onDoubleClick={e => e.stopPropagation()}
       >
         {emoji}
       </span>
@@ -58,6 +79,7 @@ export function renderEmoji(userSettings: UserSettings | null, emoji: string, cl
               return;
             onClick(emoji, e);
           }}
+          onDoubleClick={e => e.stopPropagation()}
         >
           {emoji}
         </span>
@@ -74,9 +96,9 @@ export function formatTimestamp(ms: number, style = 'f'): string {
     case 'd': return d.toLocaleDateString();
     case 'D': return d.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
     case 'f': return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-    case 'F': return d.toLocaleString([], { dateStyle: 'full',   timeStyle: 'short' });
+    case 'F': return d.toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
     case 'R': return fmtRelative(d);
-    default:  return d.toLocaleString();
+    default: return d.toLocaleString();
   }
 }
 
@@ -87,7 +109,6 @@ export interface RenderContext {
   userSettings?: UserSettings | null;
   noBigEmoji?: boolean;
   showSpoilers?: 'always' | 'onHover';
-  // Member is the third param to match the original signature used by MessageList
   onMentionClick?: (user: User, member: any, e: React.MouseEvent) => void;
   onRoleClick?: (role: any, server: Server, e: React.MouseEvent) => void;
   onChannelClick?: (ch: AbstractChannel, e: React.MouseEvent) => void;
@@ -97,14 +118,14 @@ export interface RenderContext {
 
 function SpoilerSpan({ children, stateMap, id, showAlways }: {
   children: React.ReactNode;
-  stateMap: React.MutableRefObject<Map<number, boolean>>;
+  stateMap: React.MutableRefObject<Map<number, boolean>> | null;
   id: number;
   showAlways: boolean;
 }) {
-  const [shown, setShown] = useState(() => stateMap.current.get(id) ?? false);
+  const [shown, setShown] = useState(() => stateMap?.current.get(id) ?? false);
   const toggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setShown(prev => { const next = !prev; stateMap.current.set(id, next); return next; });
+    setShown(prev => { const next = !prev; stateMap?.current.set(id, next); return next; });
   }, [id, stateMap]);
   return (
     <span className={`spoiler${shown || showAlways ? ' shown' : ''}`} onClick={toggle} onDoubleClick={e => e.stopPropagation()}>
@@ -113,33 +134,94 @@ function SpoilerSpan({ children, stateMap, id, showAlways }: {
   );
 }
 
-let _key = 0;
-const k = () => ++_key;
+const CodeBlock = React.memo(function CodeBlock({ content, language }: { content: string; language?: string }) {
+  const [copied, setCopied] = useState(false);
+  const [detectedLanguage, setDetectedLanguage] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (language)
+      return;
+
+    const t = content.trim();
+    if (!t || t.length < 10) {
+      setDetectedLanguage(undefined);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function triggerDetection() {
+      try {
+        const results = await modelOperations.runModel(t);
+        if (isMounted && results && results.length > 0)
+          setDetectedLanguage(results[0].languageId);
+      } catch (error) {
+        console.error("VSCode language detection failed:", error);
+      }
+    }
+
+    triggerDetection();
+
+    return () => { isMounted = false; };
+  }, [content, language]);
+
+  const effectiveLanguage = language || detectedLanguage || 'text';
+
+  // 1.5692em is abt one line at font-size 0.875rem / line-height 1.6
+  const lineCount = useMemo(() => content.split('\n').length, [content]);
+  const scrollStyle = useMemo(() => ({ minHeight: `calc(${lineCount * 1.5692}em + 40px)` }), [lineCount]);
+
+  const copy = useCallback(() => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [content]);
+
+  return (
+    <div className="code-block-wrapper">
+      <div className="code-block-header">
+        <span className="code-block-lang">{effectiveLanguage}</span>
+        <button className="code-block-copy" onClick={copy} onDoubleClick={e => e.stopPropagation()} title="Copy code">
+          {copied ? '✓ Copied' : 'Copy'}
+        </button>
+      </div>
+      <div className="multiline-code" style={scrollStyle}>
+        <ShikiHighlighter className="shiki" language={effectiveLanguage} theme="github-dark">
+          {content}
+        </ShikiHighlighter>
+      </div>
+    </div>
+  );
+});
 
 function ri(
   nodes: InlineNode[],
   ctx: RenderContext,
-  sm: React.MutableRefObject<Map<number, boolean>>,
+  sm: React.MutableRefObject<Map<number, boolean>> | null,
   sc: { n: number },
+  kc: { n: number }
 ): JSX.Element[] {
-  return nodes.map(n => rin(n, ctx, sm, sc));
+  return nodes.map(n => rin(n, ctx, sm, sc, kc));
 }
 
 function rin(
   node: InlineNode,
   ctx: RenderContext,
-  sm: React.MutableRefObject<Map<number, boolean>>,
+  sm: React.MutableRefObject<Map<number, boolean>> | null,
   sc: { n: number },
+  kc: { n: number }
 ): JSX.Element {
-  const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc);
+  const k = () => ++kc.n;
+  const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc, kc);
 
   switch (node.type) {
     case 'text': return <span key={k()}>{node.content}</span>;
-    case 'bold': return <b   key={k()}>{ch(node.children)}</b>;
-    case 'italic': return <i   key={k()}>{ch(node.children)}</i>;
-    case 'boldItalic': return <b   key={k()}><i>{ch(node.children)}</i></b>;
-    case 'underline': return <u   key={k()}>{ch(node.children)}</u>;
-    case 'strikethrough': return <s   key={k()}>{ch(node.children)}</s>;
+    case 'bold': return <b key={k()}>{ch(node.children)}</b>;
+    case 'italic': return <i key={k()}>{ch(node.children)}</i>;
+    case 'boldItalic': return <b key={k()}><i>{ch(node.children)}</i></b>;
+    case 'underline': return <u key={k()}>{ch(node.children)}</u>;
+    case 'strikethrough': return <s key={k()}>{ch(node.children)}</s>;
     case 'superscript': return <sup key={k()}>{ch(node.children)}</sup>;
     case 'subscript': return <sub key={k()}>{ch(node.children)}</sub>;
 
@@ -170,21 +252,21 @@ function rin(
 
     case 'link': {
       const inner = node.label ? ch(node.label) : [<span key={k()}>{node.url}</span>];
-      return <a key={k()} href={node.url} target="_blank" rel="noreferrer">{inner}</a>;
+      return <a key={k()} href={node.url} target="_blank" rel="noreferrer" onDoubleClick={e => e.stopPropagation()}>{inner}</a>;
     }
 
     case 'timestamp':
-      return <span key={k()} className="timestamp">{formatTimestamp(node.timestamp * 1000, node.style)}</span>;
+      return <span key={k()} className="timestamp-render">{formatTimestamp(node.timestamp * 1000, node.style)}</span>;
 
     case 'mention_everyone':
-      return <span key={k()} className="mention int">@{node.subtype}</span>;
+      return <span key={k()} className="mention int" onDoubleClick={e => e.stopPropagation()}>@{node.subtype}</span>;
 
-    case 'mention_user': {
+    case 'mention-user': {
       const us = ctx.userState;
       const ss = ctx.serverState;
-      const u  = us?.users.find((x: User) => x.id === node.id);
-      const m  = u && us ? us.getMember(u.id, ss?.currentServer?.id) : undefined;
-      const name  = u ? '@' + getDisplayName(u, m) : `<@${node.id}>`;
+      const u = us?.users.find((x: User) => x.id === node.id);
+      const m = u && us ? us.getMember(u.id, ss?.currentServer?.id) : undefined;
+      const name = u ? '@' + getDisplayName(u, m) : `<@${node.id}>`;
       const color = u && ss ? getRoleColor(ss, u, m, ss.currentServer === null) : undefined;
       return (
         <span
@@ -195,16 +277,17 @@ function rin(
             '--special-mention-color': color,
           } as any}
           onClick={u && ctx.onMentionClick ? e => ctx.onMentionClick!(u, m, e) : undefined}
+          onDoubleClick={e => e.stopPropagation()}
         >
           {name}
         </span>
       );
     }
 
-    case 'mention_role': {
+    case 'mention-role': {
       const ss = ctx.serverState;
-      const s  = ss?.currentServer;
-      const r  = s?.roles.find((x: any) => x.id === node.id);
+      const s = ss?.currentServer;
+      const r = s?.roles.find((x: any) => x.id === node.id);
       const name = r?.name ? `@${r.name}` : `<@&${node.id}>`;
       return (
         <span
@@ -212,13 +295,14 @@ function rin(
           className="mention int"
           style={{ '--special-mention-color': r?.color ? `#${r.color.toString(16).padStart(6, '0')}` : undefined } as any}
           onClick={r && s && ctx.onRoleClick ? e => ctx.onRoleClick!(r, s, e) : undefined}
+          onDoubleClick={e => e.stopPropagation()}
         >
           {name}
         </span>
       );
     }
 
-    case 'mention_channel': {
+    case 'mention-channel': {
       const cs = ctx.channelState;
       const ch2 = cs?.channels.find((x: AbstractChannel) => x.id === node.id) as AbstractChannel | undefined;
       const name = ch2?.name ?? `<#${node.id}>`;
@@ -227,23 +311,25 @@ function rin(
           key={k()}
           className="mention int"
           onClick={ch2 && ctx.onChannelClick ? e => ctx.onChannelClick!(ch2, e) : undefined}
+          onDoubleClick={e => e.stopPropagation()}
         >
           {ch2 && getChannelIcon(ch2, { className: 'icon' })}{name}
         </span>
       );
     }
 
-    case 'mention_server': {
-      const ss  = ctx.serverState;
+    case 'mention-server': {
+      const ss = ctx.serverState;
       const srv = ss?.servers.find((x: Server) => x.id === node.id);
-      const name = srv?.name ? `~${srv.name}` : `<~${node.id}>`;
+      const name = srv?.name ? `${srv.name}` : `<#&${node.id}>`;
       return (
         <span
           key={k()}
           className="mention int"
           onClick={srv && ctx.onServerClick ? e => ctx.onServerClick!(srv, e) : undefined}
+          onDoubleClick={e => e.stopPropagation()}
         >
-          {name}
+          {srv && <img src={getIcon(srv)} className="server-icon2" />}{name}
         </span>
       );
     }
@@ -263,18 +349,19 @@ function rin(
 function renderBlocks(
   ast: DocumentAST,
   ctx: RenderContext,
-  sm: React.MutableRefObject<Map<number, boolean>>,
+  sm: React.MutableRefObject<Map<number, boolean>> | null,
   sc: { n: number },
-  bigEmoji: boolean,
+  kc: { n: number },
+  bigEmoji: boolean
 ): JSX.Element[] {
   const out: JSX.Element[] = [];
   let i = 0;
   let prevWasInline = false;
+  const k = () => ++kc.n;
 
   while (i < ast.length) {
     const block = ast[i];
 
-    // Group consecutive unordered list items
     if (block.type === 'listItem') {
       const items: ListItemNode[] = [];
       while (i < ast.length && ast[i].type === 'listItem') {
@@ -283,7 +370,7 @@ function renderBlocks(
       }
       out.push(
         <ul key={k()}>
-          {items.map(it => <li key={k()}>{ri(it.children, ctx, sm, sc)}</li>)}
+          {items.map(it => <li key={k()}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
         </ul>,
       );
       prevWasInline = false;
@@ -299,7 +386,7 @@ function renderBlocks(
       out.push(
         <ol key={k()}>
           {items.map(it => (
-            <li key={k()} value={it.number}>{ri(it.children, ctx, sm, sc)}</li>
+            <li key={k()} value={it.number}>{ri(it.children, ctx, sm, sc, kc)}</li>
           ))}
         </ol>,
       );
@@ -307,12 +394,9 @@ function renderBlocks(
       continue;
     }
 
-    // Code blocks are block-level
     if (block.type === 'codeBlock') {
       out.push(
-        <pre key={k()} className="multiline-code">
-          <code>{block.content}</code>
-        </pre>,
+        <CodeBlock key={k()} content={block.content} language={block.language} />
       );
       prevWasInline = false;
       i++;
@@ -322,7 +406,7 @@ function renderBlocks(
     if (prevWasInline)
       out.push(<br key={k()} />);
 
-    out.push(renderBlock(block, ctx, sm, sc, bigEmoji));
+    out.push(renderBlock(block, ctx, sm, sc, kc, bigEmoji));
     prevWasInline = true;
     i++;
   }
@@ -333,11 +417,13 @@ function renderBlocks(
 function renderBlock(
   block: BlockNode,
   ctx: RenderContext,
-  sm: React.MutableRefObject<Map<number, boolean>>,
+  sm: React.MutableRefObject<Map<number, boolean>> | null,
   sc: { n: number },
-  bigEmoji: boolean,
+  kc: { n: number },
+  bigEmoji: boolean
 ): JSX.Element {
-  const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc);
+  const k = () => ++kc.n;
+  const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc, kc);
 
   switch (block.type) {
     case 'paragraph': {
@@ -345,9 +431,9 @@ function renderBlock(
         return (
           <span key={k()} style={{ whiteSpace: 'pre-wrap' }}>
             {block.children.map(n => {
-              if (n.type === 'text')  return <span key={k()}>{(n as TextNode).content}</span>;
+              if (n.type === 'text') return <span key={k()}>{(n as TextNode).content}</span>;
               if (n.type === 'emoji') return <span key={k()}>{renderEmoji(ctx.userSettings ?? null, n.native, 'emoji-big int', ctx.onEmojiClick ?? null)}</span>;
-              return rin(n, ctx, sm, sc);
+              return rin(n, ctx, sm, sc, kc);
             })}
           </span>
         );
@@ -362,7 +448,11 @@ function renderBlock(
       return <span key={k()} className="subheader">{ch(block.children)}</span>;
 
     case 'quote':
-      return <span key={k()} className="quote">{ch(block.children)}</span>;
+      return (
+        <span key={k()} className="quote">
+          {ch(block.children)}
+        </span>
+      );
 
     default:
       return <span key={k()} />;
@@ -375,33 +465,10 @@ interface MarkdownProps extends RenderContext {
 }
 
 export function RenderMarkdown({ content, spoilerStateRef, ...ctx }: MarkdownProps) {
-  const internalRef = useRef<Map<number, boolean>>(new Map());
-  const sm = spoilerStateRef ?? internalRef;
+  const sm = spoilerStateRef ?? null;
   const ast = parseDocument(content);
   const bigEmoji = !ctx.noBigEmoji && isBigEmoji(ast);
   const sc = { n: 0 };
-  return <>{renderBlocks(ast, ctx, sm, sc, bigEmoji)}</>;
-}
-
-// legacy shim, keeps existing call-sites working
-export function parseMarkdown(content: string, attributes?: any): JSX.Element[] {
-  if (!content) return [];
-  const ctx: RenderContext = {
-    userState: attributes?.userState,
-    serverState: attributes?.serverState,
-    channelState: attributes?.channelState,
-    userSettings: attributes?.userSettings,
-    noBigEmoji: attributes?.noBigEmoji,
-    showSpoilers: attributes?.showSpoilers,
-    onMentionClick: attributes?.onMentionClick,
-    onRoleClick: attributes?.onRoleClick,
-    onChannelClick: attributes?.onChannelClick,
-    onServerClick: attributes?.onServerClick,
-    onEmojiClick: attributes?.onEmojiClick,
-  };
-  const sm = { current: new Map<number, boolean>() };
-  const ast = parseDocument(content);
-  const bigEmoji = !ctx.noBigEmoji && isBigEmoji(ast);
-  const sc = { n: 0 };
-  return renderBlocks(ast, ctx, sm, sc, bigEmoji);
+  const kc = { n: 0 };
+  return <>{renderBlocks(ast, ctx, sm, sc, kc, bigEmoji)}</>;
 }

@@ -51,7 +51,7 @@ export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
         </p>
 
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-          {loading && <div style={{ color: "var(--text-4)", textAlign: "center" }}>Loading…</div>}
+          {loading && <div style={{ color: "var(--text-4)", textAlign: "center" }}>Loading...</div>}
 
           {!loading && entries.length === 0 && (
             <div style={{ color: "var(--text-4)", textAlign: "center", padding: "20px 0" }}>

@@ -3,8 +3,8 @@ import {
   forwardRef, useImperativeHandle, CSSProperties,
 } from "react";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
-import { createEditor, Node, Editor, Transforms, Range, Text } from "slate";
-import { withHistory } from "slate-history";
+import { createEditor, Node, Editor, Transforms, Range, Text, BaseElement, BaseEditor } from "slate";
+import { HistoryEditor, withHistory } from "slate-history";
 import ReactDOM from "react-dom";
 
 import { ChannelState, useChannelState } from "../../lib/state/Channels";
@@ -32,6 +32,7 @@ import {
 import data, { Emoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
 import { connection } from "../../lib/api/signalrClient";
+import { getIcon } from "../../lib/utils/ServerUtils";
 
 init({ data });
 
@@ -44,26 +45,58 @@ const withMentions = (editor: Editor) => {
   return editor;
 };
 
-const ins = (editor: Editor, node: any) => { Transforms.insertNodes(editor, node); Transforms.move(editor); };
+const ins = (editor: Editor, node: any) => {
+  Transforms.insertNodes(editor, node);
+  Transforms.move(editor);
+};
 
 const insertUserMention = (editor: Editor, user: User) =>
-  ins(editor, { type: "mention_user",    id: user.id,    user,    children: [{ text: `<@${user.id}>`    }] });
+  ins(editor, { type: "mention-user", id: user.id, user, children: [{ text: `<@${user.id}>` }] });
 const insertChannelMention = (editor: Editor, ch: AbstractChannel) =>
-  ins(editor, { type: "mention_channel", id: ch.id,      channel: ch,   children: [{ text: `<#${ch.id}>`    }] });
+  ins(editor, { type: "mention-channel", id: ch.id, channel: ch, children: [{ text: `<#${ch.id}>` }] });
 const insertServerMention  = (editor: Editor, srv: Server) =>
-  ins(editor, { type: "mention_server",  id: srv.id,     server:  srv,  children: [{ text: `<~${srv.id}>`   }] });
-// @ts-expect-error
+  ins(editor, { type: "mention-server", id: srv.id, server: srv, children: [{ text: `<#&${srv.id}>` }] });
 const insertRoleMention = (editor: Editor, role: Role) =>
-  ins(editor, { type: "mention_role",    id: role.id,    role,    children: [{ text: `<@&${role.id}>`  }] });
+  ins(editor, { type: "mention-role", id: role.id, role, children: [{ text: `<@&${role.id}>` }] });
 const insertEmoji = (editor: Editor, emoji: Emoji) => {
   // @ts-expect-error
   const native = emoji.native ?? emoji.skins?.[0]?.native ?? "";
   ins(editor, { type: "emoji", emoji: native, children: [{ text: native }] });
 };
 
+function serializeInlineNode(node: any): string {
+  if (node.text !== undefined)
+    return node.text as string;
+  switch (node.type) {
+    case "mention-user":    return `<@${node.id}>`;
+    case "mention-channel": return `<#${node.id}>`;
+    case "mention-server":  return `<#&${node.id}>`;
+    case "mention-role":    return `<@&${node.id}>`;
+    case "emoji":           return (node.emoji as string) ?? "";
+    default:
+      if (node.children)
+        return (node.children as any[]).map(serializeInlineNode).join("");
+      return "";
+  }
+}
+
+function serializeFragmentToText(nodes: any[]): string {
+  return nodes
+    .map(block => {
+      const content = ((block.children ?? []) as any[]).map(serializeInlineNode).join("");
+      switch (block.type) {
+        case "quote":              return `> ${content}`;
+        case "list-item":          return `- ${content}`;
+        case "numbered-list-item": return `${block.number ?? 1}. ${content}`;
+        default:                   return content;
+      }
+    })
+    .join("\n");
+}
+
 export type MessageInputHandle = {
-  setText(text: string | null | undefined): void;
-  focus(moveToEnd?: boolean): void;
+  setText(text: string | null | undefined, select?: boolean): void;
+  focus(moveToEnd?: boolean, preventScroll?: boolean): void;
 };
 
 const MessageInput = forwardRef(function MessageInput({
@@ -83,7 +116,7 @@ const MessageInput = forwardRef(function MessageInput({
 }: {
   isChannel?: boolean;
   placeholderText?: string;
-  initialText?:  | null | undefined;
+  initialText?: string | null;
   setText?: React.Dispatch<React.SetStateAction<string | null | undefined>>;
   onEnter?: (s: string) => void;
   onKey?: (e: React.KeyboardEvent<HTMLDivElement>) => boolean;
@@ -95,10 +128,10 @@ const MessageInput = forwardRef(function MessageInput({
   userState?: UserState;
   serverState?: ServerState;
 }, ref) {
-  const { token, user, userSettings } = authState  ?? useAuthState();
+  const { token, user, userSettings } = authState ?? useAuthState();
   const { channels, currentChannel } = channelState ?? useChannelState();
   const { addMessage } = messageState ?? useMessageState();
-  const { users, getMember } = userState   ?? useUserState();
+  const { users, getMember } = userState ?? useUserState();
   serverState ??= useServerState();
   const { servers, currentServer } = serverState;
 
@@ -120,9 +153,19 @@ const MessageInput = forwardRef(function MessageInput({
         (id) => serversRef.current.find((s: Server) => s.id === id),
         (username, discriminator) => usersRef.current.find((u: User) => u.username.toLowerCase() == username.toLowerCase() && u.discriminator == discriminator)
       )
-    ),
-    [],
+    ) as BaseEditor & HistoryEditor & ReactEditor,
+    []
   );
+
+  useEffect(() => {
+    if (initialText) {
+      editor.selection = null;
+      try {
+        Editor.normalize(editor, { force: true });
+      } catch { /* ignore */ }
+      editor.onChange();
+    }
+  }, []);
 
   const editableRef = useRef<HTMLDivElement | null>(null);
   const [target, setTarget] = useState<Range | null>(null);
@@ -162,44 +205,66 @@ const MessageInput = forwardRef(function MessageInput({
   }, []);
 
   useImperativeHandle(ref, () => ({
-    setText(text: string | null | undefined) {
-      editor.children  = slateFromMarkdown(text);
-      editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
-      editor.history   = { undos: [], redos: [] };
+    setText(text: string | null | undefined, select = false) {
+      editor.children = slateFromMarkdown(text);
+      editor.selection = null;
+      editor.history = { undos: [], redos: [] };
+      try {
+        Editor.normalize(editor, { force: true });
+      } catch { /* ignore */ }
+      try {
+        Transforms.select(editor, select ? Editor.start(editor, []) : Editor.end(editor, []));
+      } catch {
+        editor.selection = null;
+      }
       editor.onChange();
     },
-    focus(moveToEnd = false) {
-      editableRef.current?.focus();
-      if (moveToEnd)
-        Transforms.select(editor, Editor.end(editor, []));
+    focus(moveToEnd = false, preventScroll = false) {
+      if (moveToEnd) {
+        try {
+          const endPoint = Editor.end(editor, []);
+          Transforms.select(editor, endPoint);
+
+          const [domNode, domOffset] = ReactEditor.toDOMPoint(editor, endPoint);
+          const range = document.createRange();
+          range.setStart(domNode, domOffset);
+          range.collapse(true);
+          const sel = window.getSelection();
+          if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        } catch { /* DOM not ready or editor empty */ }
+      }
+      editableRef.current?.focus({ preventScroll });
     },
   }));
 
-  const getMarkdown = () => serializeSlateToMarkdown(editor.children as any[]);
+  const getMarkdown = () => serializeSlateToMarkdown(editor.children);
 
   const clearEditor = () => {
     // @ts-expect-error
-    editor.children  = [{ type: "paragraph", children: [{ text: "" }] }];
+    editor.children = [{ type: "paragraph", children: [{ text: "" }] }];
     editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
-    editor.history   = { undos: [], redos: [] };
+    editor.history = { undos: [], redos: [] };
     editor.onChange();
   };
 
-  // Each block's text is tokenized independently.
-  // - Inline formatting (bold, italic, ,,,) is handled via tokens.
-  // - Headers/subheaders typed as paragraph text are also detected at pos 0.
   const decorate = ([node, path]: any): any[] => {
     if (!Text.isText(node))
       return [];
     if (path.length !== 2)
-      return []; // skip text inside void elements
+      return [];
 
     let block: any;
     try {
       block = Node.get(editor, [path[0]]);
     } catch { return []; }
 
-    const blockText  = Node.string(block);
+    if (block?.type === 'code-block')
+      return [];
+
+    const blockText = Node.string(block);
     const childIndex = path[1];
 
     let offset = 0;
@@ -257,15 +322,13 @@ const MessageInput = forwardRef(function MessageInput({
     if (leaf.link)
       rendered = <a>{rendered}</a>;
     if (leaf.timestamp)
-      rendered = <span className="timestamp">{formatTimestamp(Number(leaf.timestamp) * 1000, leaf.style)}</span>;
+      rendered = <span className="timestamp-edit" title={formatTimestamp(Number(leaf.timestamp) * 1000, leaf.style)}>{rendered}</span>;
     if (leaf.mention_everyone)
       rendered = <span className="mention int">{rendered}</span>;
-    // Block-level decorations for headers/subheaders typed as paragraph text
     if (leaf.header)
       rendered = <span className={`h${leaf.size}`}>{rendered}</span>;
     if (leaf.subheader)
       rendered = <span className="subheader">{rendered}</span>;
-    // mds always last so it can override everything with gray colour
     if (leaf.mds)
       rendered = <span className="mds">{rendered}</span>;
 
@@ -275,7 +338,7 @@ const MessageInput = forwardRef(function MessageInput({
   const renderElement = (props: any) => {
     const { element, attributes, children } = props;
     switch (element.type) {
-      case "mention_user": {
+      case "mention-user": {
         const m = getMember(element.user?.id, currentServer?.id);
         return (
           <span
@@ -291,7 +354,7 @@ const MessageInput = forwardRef(function MessageInput({
           </span>
         );
       }
-      case "mention_role":
+      case "mention-role":
         return (
           <span
             {...attributes}
@@ -302,16 +365,16 @@ const MessageInput = forwardRef(function MessageInput({
             @{element.role?.name}
           </span>
         );
-      case "mention_channel":
+      case "mention-channel":
         return (
           <span {...attributes} contentEditable={false} className="mention int">
             {getChannelIcon(element.channel, { className: "icon" })}{element.channel?.name}
           </span>
         );
-      case "mention_server":
+      case "mention-server":
         return (
           <span {...attributes} contentEditable={false} className="mention int">
-            ~{element.server?.name}
+            <img src={getIcon(element.server)} className="server-icon2" />{element.server?.name}
           </span>
         );
       case "emoji":
@@ -327,25 +390,24 @@ const MessageInput = forwardRef(function MessageInput({
       case "list-item":
         return (
           <div {...attributes} className="editor-list-item">
-            <span contentEditable={false} className="editor-list-bullet" aria-hidden>•</span>
-            <span>{children}</span>
+            {children}
           </div>
         );
 
       case "numbered-list-item":
         return (
-          <div {...attributes} className="editor-numbered-item">
-            <span contentEditable={false} className="editor-list-number" aria-hidden>{element.number}.</span>
-            <span>{children}</span>
-          </div>
-        );
-
-      case "code-block":
-        return (
-          <div {...attributes} className="editor-code-block" spellCheck={false}>
+          <div {...attributes} className="editor-numbered-item" data-number={String(element.number) + '.'}>
             {children}
           </div>
         );
+
+      case "code-block": {
+        return (
+          <div {...attributes} className="editor-code-block">
+            <div spellCheck={false}>{children}</div>
+          </div>
+        );
+      }
 
       default:
         return <div {...attributes}>{children}</div>;
@@ -356,14 +418,32 @@ const MessageInput = forwardRef(function MessageInput({
     const s = search.toLowerCase();
     if (!s)
       return [];
-    const q = s.slice(1);
-    if (search.startsWith("#"))
-      return channels.filter((c: AbstractChannel) => c.serverId === currentChannel?.serverId && c.name?.toLowerCase()?.startsWith(q)).slice(0, 10).map((c: AbstractChannel) => ({ ...c, type: "channel" }));
-    if (search.startsWith("~"))
-      return servers.filter((sv: Server) => sv.name.toLowerCase().startsWith(q)).slice(0, 10).map((sv: Server) => ({ ...sv, type: "server" }));
-    if (search.startsWith("@"))
-      return users.filter((u: User) => u?.displayName?.toLowerCase()?.startsWith(q) || u.username.toLowerCase().startsWith(q)).slice(0, 10).map((u: User) => ({ ...u, type: "user" }));
-    if (search.startsWith(":"))
+    const q2 = s.slice(2); // for two-char prefixes @& and #&
+    const q1 = s.slice(1); // for one-char prefixes @, #, :
+
+    if (s.startsWith("@&")) {
+      const roles: Role[] = (currentServer as any)?.roles ?? [];
+      return roles
+        .filter((r: Role) => r.name?.toLowerCase()?.startsWith(q2))
+        .slice(0, 10)
+        .map((r: Role) => ({ ...r, type: "role" }));
+    }
+    if (s.startsWith("#&"))
+      return servers
+        .filter((sv: Server) => sv.name.toLowerCase().startsWith(q2))
+        .slice(0, 10)
+        .map((sv: Server) => ({ ...sv, type: "server" }));
+    if (s.startsWith("#"))
+      return channels
+        .filter((c: AbstractChannel) => c.serverId === currentChannel?.serverId && c.name?.toLowerCase()?.startsWith(q1))
+        .slice(0, 10)
+        .map((c: AbstractChannel) => ({ ...c, type: "channel" }));
+    if (s.startsWith("@"))
+      return users
+        .filter((u: User) => u?.displayName?.toLowerCase()?.startsWith(q1) || u.username.toLowerCase().startsWith(q1))
+        .slice(0, 10)
+        .map((u: User) => ({ ...u, type: "user" }));
+    if (s.startsWith(":"))
       return emojiResults;
     return [];
   };
@@ -387,7 +467,6 @@ const MessageInput = forwardRef(function MessageInput({
 
   return (
     <Slate
-      // @ts-expect-error
       editor={editor}
       initialValue={initialValue}
       onChange={() => {
@@ -395,23 +474,35 @@ const MessageInput = forwardRef(function MessageInput({
         if (selection && Range.isCollapsed(selection)) {
           try {
             let from = selection.anchor;
+            const anchorBlockIndex = selection.anchor.path[0];
+
             while (true) {
               const prev = Editor.before(editor, from, { distance: 1 });
               if (!prev)
                 break;
-              const r  = Editor.range(editor, prev, from);
+              if (prev.path[0] !== anchorBlockIndex)
+                break;
+              const r = Editor.range(editor, prev, from);
               if (/\s/.test(Editor.string(editor, r)))
+                break;
+              const [node] = Editor.nodes(editor, {
+                at: prev,
+                match: (n) => editor.isVoid(n as BaseElement)
+              });
+              if (node)
                 break;
               from = prev;
             }
             const mentionRange = Editor.range(editor, from, selection.anchor);
             const mentionText = Editor.string(editor, mentionRange);
-            const m = mentionText.match(/^([@#~:])([\w-]*)$/);
-            if (m) {
+            const triggered = /^(@&|#&|[@#:])([\w_\-\.~]{1,})$/.test(mentionText);
+            if (triggered) {
               setTarget(mentionRange);
               setSearch(mentionText);
               setIndex(0);
-            } else setTarget(null);
+            } else {
+              setTarget(null);
+            }
           } catch { /* lalala yeah i eat transient errors bite me */ }
         } else {
           setTarget(null);
@@ -427,29 +518,35 @@ const MessageInput = forwardRef(function MessageInput({
         ReactDOM.createPortal(
           <div
             ref={el => {
-              if (!el) return;
+              if (!el)
+                return;
               requestAnimationFrame(() => {
                 let rect: DOMRect;
                 if (isChannel) {
                   const wrap = document.querySelector(".msg-wrap");
-                  if (!wrap) return;
+                  if (!wrap)
+                    return;
                   rect = wrap.getBoundingClientRect();
                 } else {
-                  // @ts-expect-error
-                  const domRange = ReactEditor.toDOMRange(editor, target);
+                  const domRange = ReactEditor.toDOMRange(editor, target!);
                   rect = domRange.getBoundingClientRect();
                 }
                 const popupH = el.offsetHeight;
                 el.style.position = "absolute";
-                el.style.top  = `${rect.top + window.pageYOffset - popupH - 4}px`;
+                el.style.top = `${rect.top + window.pageYOffset - popupH - 4}px`;
                 el.style.left = `${rect.left + window.pageXOffset}px`;
-                if (isChannel) el.style.width = `${rect.width - 8}px`;
+                if (isChannel)
+                  el.style.width = `${rect.width - 8}px`;
               });
             }}
             className="ven-colors mention-popup uno"
           >
             <span className="mention-title">
-              {search[0] === "@" ? "MEMBERS" : search[0] === "#" ? "CHANNELS" : search[0] === "~" ? "SERVERS" : "EMOJIS"}
+              {search.startsWith("@&") ? "ROLES"
+               : search.startsWith("#&") ? "SERVERS"
+               : search[0] === "@" ? "MEMBERS"
+               : search[0] === "#" ? "CHANNELS"
+               : "EMOJIS"}
             </span>
             {mentionResults().map((item, i) => {
               switch (item.type) {
@@ -458,7 +555,7 @@ const MessageInput = forwardRef(function MessageInput({
                   const m = getMember(u.id, currentServer?.id);
                   return (
                     <div key={u.id} className={`mention-item int ${i === index ? "active" : ""}`}
-                      onClick={() => { Transforms.select(editor, target); insertUserMention(editor, u); setTarget(null); }}
+                      onMouseDown={e => { e.preventDefault(); Transforms.select(editor, target!); insertUserMention(editor, u); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
                       <img className="avatar" src={getAvatar(u, m)} alt="avatar" />
                       <span style={{ fontFamily: `${m?.nameFont}, ${u.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif` }}>{getDisplayName(u, m)}</span>
@@ -470,7 +567,7 @@ const MessageInput = forwardRef(function MessageInput({
                   const c = item as Channel;
                   return (
                     <div key={c.id} className={`mention-item int ${i === index ? "active" : ""}`}
-                      onClick={() => { Transforms.select(editor, target); insertChannelMention(editor, c); setTarget(null); }}
+                      onMouseDown={e => { e.preventDefault(); Transforms.select(editor, target!); insertChannelMention(editor, c); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
                       {getChannelIcon(c, { className: "icon" })}<span>{c.name}</span>
                     </div>
@@ -480,17 +577,29 @@ const MessageInput = forwardRef(function MessageInput({
                   const sv = item as Server;
                   return (
                     <div key={sv.id} className={`mention-item int ${i === index ? "active" : ""}`}
-                      onClick={() => { Transforms.select(editor, target); insertServerMention(editor, sv); setTarget(null); }}
+                      onMouseDown={e => { e.preventDefault(); Transforms.select(editor, target!); insertServerMention(editor, sv); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
-                      <span>~{sv.name}</span>
+                      <span>#&{sv.name}</span>
+                    </div>
+                  );
+                }
+                case "role": {
+                  const r = item as Role;
+                  return (
+                    <div key={r.id} className={`mention-item int ${i === index ? "active" : ""}`}
+                      onMouseDown={e => { e.preventDefault(); Transforms.select(editor, target!); insertRoleMention(editor, r); setTarget(null); }}
+                      onMouseEnter={() => setIndex(i)}>
+                      <span style={{ color: r.color ? `#${r.color.toString(16).padStart(6, "0")}` : undefined }}>
+                        @{r.name}
+                      </span>
                     </div>
                   );
                 }
                 case "emoji": {
-                  const e = item as unknown as Emoji;
+                  const e = item as Emoji;
                   return (
                     <div key={item.id} className={`mention-item int ${i === index ? "active" : ""}`}
-                      onClick={() => { Transforms.select(editor, target); insertEmoji(editor, e); setTarget(null); }}
+                      onMouseDown={ev => { ev.preventDefault(); Transforms.select(editor, target!); insertEmoji(editor, e); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
                       <span>{renderEmoji(userSettings, e.skins[0].native)} :{item.id}:</span>
                     </div>
@@ -516,6 +625,40 @@ const MessageInput = forwardRef(function MessageInput({
         renderLeaf={Leaf}
         renderElement={renderElement}
         style={style}
+        // Suppress Slate's built-in scroll-cursor-into-view behaviour.
+        // For the channel input this is a no-op (it's always visible at the
+        // bottom).  For inline message editing it prevents the message list
+        // from jumping when focus() is called.
+        scrollSelectionIntoView={() => {}}
+
+        onCopy={e => {
+          const { selection } = editor;
+          if (!selection)
+            return;
+          e.preventDefault();
+          const fragment = Editor.fragment(editor, selection);
+          const text = serializeFragmentToText(fragment);
+          e.clipboardData.setData("text/plain", text);
+          try {
+            const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
+            e.clipboardData.setData("application/x-slate-fragment", encoded);
+          } catch { /* btoa can fail on certain unicode in rare cases */ }
+        }}
+        onCut={e => {
+          const { selection } = editor;
+          if (!selection || Range.isCollapsed(selection))
+            return;
+          e.preventDefault();
+          const fragment = Editor.fragment(editor, selection);
+          const text = serializeFragmentToText(fragment);
+          e.clipboardData.setData("text/plain", text);
+          try {
+            const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
+            e.clipboardData.setData("application/x-slate-fragment", encoded);
+          } catch {}
+          Transforms.delete(editor);
+        }}
+
         onKeyDown={e => {
           if (onKey && onKey(e))
             return;
@@ -546,9 +689,12 @@ const MessageInput = forwardRef(function MessageInput({
                   case "server":
                     insertServerMention(editor, results[index] as Server);
                     break;
+                  case "role":
+                    insertRoleMention(editor, results[index] as Role);
+                    break;
                   case "emoji":
                     setEmojiResults([]);
-                    insertEmoji(editor, results[index] as unknown as Emoji);
+                    insertEmoji(editor, results[index] as Emoji);
                     break;
                 }
                 setTarget(null);
@@ -573,7 +719,7 @@ const MessageInput = forwardRef(function MessageInput({
                 return;
               }
             } else {
-              if (['code-block'].includes(blockType ?? '')) {
+              if (!e.ctrlKey && blockType === 'code-block') {
                 e.preventDefault();
                 editor.insertBreak();
                 return;
@@ -608,12 +754,68 @@ const MessageInput = forwardRef(function MessageInput({
           }
 
           if (e.key === "ArrowDown" && getCurrentBlockType() === 'code-block') {
-            // todo: check if at last line of code block, and if so, escape code block to regular text again
+            const sel = editor.selection;
+            if (sel && Range.isCollapsed(sel)) {
+              const path = Editor.path(editor, sel);
+              if (Editor.isEnd(editor, sel.anchor, path)) {
+                const end = Editor.end(editor, path);
+                const next = Editor.after(editor, end);
+                if (!next) {
+                  Editor.withoutNormalizing(editor, () => {
+                    const nextPath = [path[0] + 1] as [number];
+                    Transforms.insertNodes(editor, { type: 'paragraph', children: [{ text: '' }] } as any, { at: nextPath });
+                    Transforms.select(editor, Editor.start(editor, nextPath));
+                  });
+                  return;
+                }
+              }
+            }
           }
 
           queueMicrotask(() => skipMention(e.key === "ArrowLeft"));
         }}
         onKeyUp={e => skipMention(e.key === "ArrowLeft")}
+
+        onPaste={e => {
+          const text = e.clipboardData.getData("text/plain");
+          if (!text) return;
+          e.preventDefault();
+
+          if (editor.selection && !Range.isCollapsed(editor.selection))
+            Transforms.delete(editor);
+
+          const blockType = getCurrentBlockType();
+
+          if (blockType === "code-block") {
+            Transforms.insertText(editor, text);
+            return;
+          }
+
+          const fragment = slateFromMarkdown(text) as any[];
+          const hasComplexBlocks = fragment.some((b: any) => b.type !== "paragraph");
+
+          if (hasComplexBlocks) {
+            const blockEntry = Editor.above(editor, {
+              match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any),
+            });
+            if (blockEntry) {
+              const [bNode, bPath] = blockEntry as any;
+              if (Node.string(bNode) === "") {
+                Editor.withoutNormalizing(editor, () => {
+                  Transforms.removeNodes(editor, { at: bPath });
+                  Transforms.insertNodes(editor, fragment, { at: bPath });
+                });
+                try {
+                  const lastIdx = (bPath[0] as number) + fragment.length - 1;
+                  Transforms.select(editor, Editor.end(editor, [lastIdx]));
+                } catch {}
+                return;
+              }
+            }
+          }
+
+          Transforms.insertFragment(editor, fragment);
+        }}
       />
     </Slate>
   );

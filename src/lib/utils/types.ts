@@ -53,6 +53,7 @@ export interface User {
   level?: number | null;
 
   // only populated for the self
+  twoFactorEnabled?: boolean | null;
   whoCanSendFriendRequests?: FriendRequestContext | null;
   whoCanSendDms?: UserContext | null;
   whoCanAddToGcs?: UserContext | null;

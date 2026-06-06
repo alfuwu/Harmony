@@ -6,12 +6,12 @@ export interface ServerState {
   setCurrentServer: React.Dispatch<React.SetStateAction<Server | null>>;
   servers: Server[];
   setServers: React.Dispatch<React.SetStateAction<Server[]>>;
-  get: (id: number) => Server | undefined;
-  getServer: (id: number) => Server | undefined;
+  get: (id?: number | null) => Server | undefined;
+  getServer: (id?: number | null) => Server | undefined;
   addServer: (server: Server) => void;
   addServers: (servers: Server[]) => void;
-  removeServer: (id: number) => void;
-  removeServers: (ids: number[]) => void;
+  removeServer: (id?: number | null) => void;
+  removeServers: (ids: (number | null | undefined)[]) => void;
 }
 
 const ServerContext = createContext<ServerState | undefined>(undefined);
@@ -20,7 +20,7 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [currentServer, setCurrentServer] = useState<Server | null>(null);
   const [servers, setServers] = useState<Server[]>([]);
 
-  const get = (id: number) =>
+  const get = (id?: number | null) =>
     servers.find(c => c.id === id);
 
   const addServer = (server: Server) => 
@@ -33,10 +33,10 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const removeServer = (id: number) =>
+  const removeServer = (id?: number | null) =>
     setServers(prev => prev.filter(c => c.id !== id));
 
-  const removeServers = (ids: number[]) =>
+  const removeServers = (ids: (number | null | undefined)[]) =>
     setServers(prev => prev.filter(c => !ids.includes(c.id)));
 
   const value = {

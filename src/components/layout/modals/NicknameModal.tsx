@@ -61,7 +61,7 @@ export default function NicknameModal({ open, target, currentNickname, onClose, 
         <div className="modal-buttons">
           <button onClick={onClose}>Cancel</button>
           <button className="create-btn" onClick={handleSave} disabled={loading}>
-            {loading ? "Saving…" : "Save"}
+            {loading ? "Saving..." : "Save"}
           </button>
         </div>
       </div>

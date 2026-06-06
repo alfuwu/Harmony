@@ -3,9 +3,9 @@ import { useServerState } from "../../lib/state/Servers";
 import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
-import { parseMarkdown } from "../../lib/utils/MarkdownRenderer";
+import { RenderContext, RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
 import { getAvatar, getDisplayName, getPronouns, getRoleColor, mentionedIn } from "../../lib/utils/UserUtils";
-import { Channel, Member, Message, Server, User } from "../../lib/utils/types";
+import { AbstractChannel, Member, Message, Server, User } from "../../lib/utils/types";
 import { usePopoutState } from "../../lib/state/Popouts";
 import { useAuthState } from "../../lib/state/Auth";
 import { loadServer } from "../../lib/api/serverApi";
@@ -42,7 +42,8 @@ export default function MessageList() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState<string | null | undefined>("");
 
-  const inputRef = useRef<MessageInputHandle>(null);
+  const inputRef = useRef<MessageInputHandle>(null); 
+  const spoilerState = useRef<Map<number, boolean>>(new Map());
 
   const reMember = userState.getMember(user!.id, serverState.currentServer?.id);
   const me = serverState.currentServer
@@ -61,6 +62,19 @@ export default function MessageList() {
       .filter(m => m.channelId === currentChan.id)
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }, [currentChan, messageState.messages]);
+
+  function startEditing(msg: Message, useAnimationFrame = false) {
+    setEditingId(msg.id);
+    setEditContent(msg.content);
+    
+    if (useAnimationFrame) {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus(true, true);
+      });
+    } else {
+      inputRef.current?.focus(true, true);
+    }
+  }
 
   const handleScroll = () => {
     if (!container.current)
@@ -94,7 +108,8 @@ export default function MessageList() {
       return;
     const el = container.current;
     const obs = new ResizeObserver(() => {
-      if (wasAtBottomRef.current) el.scrollTop = el.scrollHeight;
+      if (wasAtBottomRef.current)
+        el.scrollTop = el.scrollHeight;
     });
     obs.observe(el);
     return () => obs.disconnect();
@@ -119,8 +134,10 @@ export default function MessageList() {
     const sameDay = date.toDateString() === now.toDateString();
     const isYesterday = date.toDateString() === yesterday.toDateString();
     const t = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    if (sameDay) return t;
-    if (isYesterday) return `Yesterday at ${t}`;
+    if (sameDay)
+      return t;
+    if (isYesterday)
+      return `Yesterday at ${t}`;
     return `${(date.getMonth() + 1).toString().padStart(2, "0")}/${date.getDate().toString().padStart(2, "0")}/${date.getFullYear()}`;
   }
 
@@ -238,7 +255,7 @@ export default function MessageList() {
       items.push({
         label: "Edit Message",
         icon: "✏️",
-        onClick: () => { setEditingId(msg.id); setEditContent(msg.content); inputRef.current?.focus(); }
+        onClick: () => startEditing(msg, true)
       });
     }
 
@@ -281,22 +298,19 @@ export default function MessageList() {
     return items;
   }
 
-  const markdownData = {
-    serverState,
-    channelState,
-    userState,
-    userSettings,
+  const markdownData: RenderContext = {
+    serverState, channelState, userState, userSettings,
     onMentionClick: (u: User, m: Member, event: React.MouseEvent) => {
       event.stopPropagation();
       event.preventDefault();
       openUserPopout(event.currentTarget, u, m);
     },
-    onChannelClick: (channel: Channel, event: React.MouseEvent) => {
+    onChannelClick: (channel: AbstractChannel, event: React.MouseEvent) => {
       event.stopPropagation();
       if (channelState.currentChannel?.id !== channel.id) {
         event.preventDefault();
-        if (serverState.currentServer?.id !== (channel as any).serverId) {
-          const s = serverState.get((channel as any).serverId);
+        if (serverState.currentServer?.id !== channel.serverId) {
+          const s = serverState.get(channel.serverId);
           if (s) {
             loadServer(s, channelState, userState, messageState, token!);
             serverState.setCurrentServer(s);
@@ -337,7 +351,14 @@ export default function MessageList() {
   const typingIds = ((currentChan && channelState.getTyping(currentChan.id)) ?? []).filter(id => id !== user?.id);
   return (
     <>
-      <div className={"message-list ovy-auto" + (typingIds.length > 0 ? " typing" : "")} ref={container}>
+      <div
+        className={
+          "message-list ovy-auto" +
+          (typingIds.length > 0 ? " typing" : "") +
+          (userSettings?.compactMode ? " compact-messages" : "")
+        }
+        ref={container}
+      >
         {channelMessages.map((msg, i) => {
           const author = userState.get(msg.authorId) ?? {
             id: msg.authorId, displayName: null, username: "Unknown User",
@@ -350,11 +371,10 @@ export default function MessageList() {
           const pronouns = getPronouns(author, member);
           const isMentioned = mentionedIn(msg, user!, reMember);
 
-          let showHeader = true;
+          let showHeader = userSettings?.compactMode ? false : true;
           const prev = channelMessages[i - 1];
-          if (prev && prev.authorId === msg.authorId)
-            if (new Date(msg.timestamp).getTime() - new Date(prev.timestamp).getTime() <= MERGE_WINDOW)
-              showHeader = false;
+          if (prev && prev.authorId === msg.authorId && new Date(msg.timestamp).getTime() - new Date(prev.timestamp).getTime() <= MERGE_WINDOW)
+            showHeader = false;
 
           const isHovered = messageHover === getId(msg) || ctxMenu?.msg.id === msg.id;
           const isEditing = editingId === msg.id;
@@ -374,9 +394,7 @@ export default function MessageList() {
                 if (!canEdit || editingId === msg.id)
                   return;
 
-                setEditingId(msg.id);
-                setEditContent(msg.content);
-                requestAnimationFrame(() => inputRef.current?.focus(true));
+                startEditing(msg, true);
               }}
             >
               {showHeader && (
@@ -396,7 +414,7 @@ export default function MessageList() {
                       }}
                       onClick={e => openUserPopout(e.currentTarget, author, member)}
                     >
-                      {parseMarkdown(name, markdownData)}
+                      {RenderMarkdown({ content: name, spoilerStateRef: spoilerState, ...markdownData })}
                     </span>
                     <span className="timestamp">
                       <span className="mr uno">•</span>
@@ -408,17 +426,38 @@ export default function MessageList() {
                         {pronouns}
                       </span>
                     )}
-                    {msg.isPinned && (
-                      <span style={{ marginLeft: 6, fontSize: 11, color: "var(--accent-1)" }}>📌</span>
-                    )}
                   </div>
                 </div>
               )}
 
-              <div className="content-container">
+              <div
+                className="content-container"
+              >
                 {!showHeader && (
-                  <span className="timestamp uno">
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  <span
+                    className={
+                      userSettings?.compactMode
+                        ? "compact-ts uno"
+                        : "timestamp uno"
+                    }
+                  >
+                    {new Date(msg.timestamp).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit"
+                    })}
+                  </span>
+                )}
+
+                {userSettings?.compactMode && (
+                  <span
+                    className="author int"
+                    style={{
+                      fontFamily: `"${member?.nameFont ?? ""}", "${author.nameFont ?? ""}", Inter, sans-serif`,
+                      color: roleColor,
+                    }}
+                    onClick={e => openUserPopout(e.currentTarget, author, member)}
+                  >
+                    {RenderMarkdown({ content: name, spoilerStateRef: spoilerState, ...markdownData })}
                   </span>
                 )}
 
@@ -460,12 +499,12 @@ export default function MessageList() {
                   </div>
                 ) : (
                   <span className={"content" + (msg.sending ? " sending" : "")}>
-                    {parseMarkdown(msg.content, markdownData)}
-                  </span>
-                )}
+                    {RenderMarkdown({ content: msg.content, spoilerStateRef: spoilerState, ...markdownData })}
 
-                {msg.editedTimestamp && !isEditing && (
-                  <span className="edited-mark">(edited)</span>
+                    {msg.editedTimestamp && !isEditing && (
+                      <span className="edited-mark uno">(edited)</span>
+                    )}
+                  </span>
                 )}
 
                 {msg.reactions && msg.reactions.length > 0 && (
@@ -582,7 +621,7 @@ export default function MessageList() {
                   {msg.authorId === user?.id && (
                     <button
                       title="Edit"
-                      onClick={() => { setEditingId(msg.id); setEditContent(msg.content); requestAnimationFrame(() => inputRef.current?.focus(true)); }}
+                      onClick={() => startEditing(msg, true)}
                     >
                       ✏️
                     </button>

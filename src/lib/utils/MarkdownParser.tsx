@@ -1,4 +1,5 @@
-import { type InlineNode, type BlockNode, type DocumentAST, type DecoToken, type TextNode, COLORS } from './MarkdownAST';
+import { COLORS } from './MarkdownAST';
+import type { InlineNode, BlockNode, DocumentAST, DecoToken, TextNode } from './MarkdownAST';
 
 class InlineParser {
   private pos = 0;
@@ -7,6 +8,7 @@ class InlineParser {
     private readonly src: string,
     private readonly tokens: DecoToken[],
     private readonly base: number = 0,
+    private readonly nested: boolean = false, // true when called from inner() — disables block-level constructs
   ) {}
 
   private get done() {
@@ -38,7 +40,11 @@ class InlineParser {
     while (i <= this.src.length - delim.length) {
       const c = this.src[i];
       if (c === '\\') {
-        i += 2;
+        let skip = 2;
+        if (dc !== '\\' && this.src[i + 1] === this.src[i + 1])
+          while (this.src[i + skip] === this.src[i + 1])
+            skip++;
+        i += skip;
         continue;
       }
       if (c === '`' && dc !== '`') {
@@ -61,7 +67,7 @@ class InlineParser {
   }
 
   private inner(start: number, end: number): InlineNode[] {
-    const child = new InlineParser(this.src.slice(start, end), this.tokens, this.base + start);
+    const child = new InlineParser(this.src.slice(start, end), this.tokens, this.base + start, true);
     return child.parse();
   }
 
@@ -76,7 +82,7 @@ class InlineParser {
     this.eat(len);
     const children = this.inner(this.pos, e);
     this.pos = e + len;
-    return { type: style, children } as unknown as InlineNode;
+    return { type: style, children } as InlineNode;
   }
 
   private parseOne(): InlineNode | null {
@@ -84,17 +90,15 @@ class InlineParser {
     const c = this.peek();
     const p = this.pos;
 
-    // Handles > -# text, > ## heading, - -# etc. in the renderer,
-    // and drives correct heading/subheader decoration in the editor.
-    if (p === 0) {
+    if (p === 0 && !this.nested) {
       const shM = /^-# (.+)/.exec(this.src);
       if (shM) {
         this.deco('mds', 0, 2);
         this.deco('subheader', 0, this.src.length);
-        this.pos = 3; // skip "-# "
+        this.pos = 3;
         const children = this.inner(3, this.src.length);
         this.pos = this.src.length;
-        return { type: 'inlineSubheader', children } as unknown as InlineNode;
+        return { type: 'inlineSubheader', children } as InlineNode;
       }
       const hM = /^(#{1,6}) (.+)/.exec(this.src);
       if (hM) {
@@ -104,16 +108,21 @@ class InlineParser {
         this.pos = hM[0].length;
         const children = this.inner(this.pos, this.src.length);
         this.pos = this.src.length;
-        return { type: 'inlineHeader', level: lvl as 1|2|3|4|5|6, children } as unknown as InlineNode;
+        return { type: 'inlineHeader', level: lvl as 1|2|3|4|5|6, children } as InlineNode;
       }
     }
 
     if (c === '\\') {
       const nx = this.peek(1);
-      if (/[*_@|`~<\\^\-:#>]/.test(nx)) {
+      if (nx && /[*_@|`~<\\^\-:#>&]/.test(nx)) {
+        let count = 1;
+        if (nx === '*' || nx === '_' || nx === '~')
+          while (this.src[p + 1 + count] === nx)
+            count++;
+        const escaped = this.src.slice(p + 1, p + 1 + count);
         this.deco('mds', p, p + 1);
-        this.eat(2);
-        return { type: 'text', content: nx };
+        this.eat(1 + count);
+        return { type: 'text', content: escaped };
       }
       const em = /^\p{Extended_Pictographic}\uFE0F?/u.exec(this.src.slice(p + 1));
       if (em) {
@@ -239,19 +248,18 @@ class InlineParser {
     const p = this.pos;
     const rest = this.rest();
 
-    // Color: <c:hex>...</c> or <color:hex>…</color>
-    const colorM = /^<(c|color):(?<hex>#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})|[a-zA-Z]{1,21})>/i.exec(rest);
+    const colorM = /^<(c|col|colou?r):(?<hex>#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})|[a-zA-Z]{1,21})>/i.exec(rest);
     if (colorM) {
       const { hex } = colorM.groups!;
       if (hex[0] === '#' || COLORS.includes(hex.toLowerCase())) {
-        const tag   = colorM[1].toLowerCase();
+        const tag = colorM[1].toLowerCase();
         const close = `</${tag}>`;
         const after = p + colorM[0].length;
-        const ci    = this.src.indexOf(close, after);
+        const ci = this.src.indexOf(close, after);
         if (ci !== -1) {
           this.deco('mds', p, after);
-          this.deco('color', after, ci,   { hex }     );
-          this.deco('mds', ci, ci + close.length );
+          this.deco('color', after, ci, { hex });
+          this.deco('mds', ci, ci + close.length);
           this.pos = after;
           const children = this.inner(this.pos, ci);
           this.pos = ci + close.length;
@@ -273,28 +281,28 @@ class InlineParser {
     const roleM = /^<@&(\d+)>/.exec(rest);
     if (roleM) {
       this.eat(roleM[0].length);
-      return { type: 'mention_role', id: Number(roleM[1]) };
+      return { type: 'mention-role', id: Number(roleM[1]) };
     }
 
     // User: <@N>
     const userM = /^<@(-?\d+)>/.exec(rest);
     if (userM) {
       this.eat(userM[0].length);
-      return { type: 'mention_user', id: Number(userM[1]) };
+      return { type: 'mention-user', id: Number(userM[1]) };
+    }
+
+    // Server: <#&N>
+    const srvM = /^<#&(-?\d+)>/.exec(rest);
+    if (srvM) {
+      this.eat(srvM[0].length);
+      return { type: 'mention-server', id: Number(srvM[1]) };
     }
 
     // Channel: <#N>
     const chanM = /^<#(-?\d+)>/.exec(rest);
     if (chanM) {
       this.eat(chanM[0].length);
-      return { type: 'mention_channel', id: Number(chanM[1]) };
-    }
-
-    // Server: <~N>
-    const srvM  = /^<~(-?\d+)>/.exec(rest);
-    if (srvM) {
-      this.eat(srvM[0].length);
-      return { type: 'mention_server', id: Number(srvM[1]) };
+      return { type: 'mention-channel', id: Number(chanM[1]) };
     }
 
     // Bracketed URL: <url>
@@ -312,7 +320,6 @@ class InlineParser {
   }
 
   // [label](url) or [label](<url>)
-  // Decoration: mds for [ and ]( and ), link for url ONLY, no deco for label
   private parseLink(): InlineNode | null {
     const rest = this.rest();
     const m = /^\[([^\]]*)\]\((?:<(https?:\/\/[^\s>]+)>|(https?:\/\/[^\s)]+))\)/.exec(rest);
@@ -331,8 +338,7 @@ class InlineParser {
     this.deco('link', urlBodyStart, urlBodyStart + url.length, { link: url });
     this.deco('mds', urlBodyStart + url.length, p + m[0].length);
 
-    // Parse label recursively (inner formatting like *bold label*)
-    const labelParser = new InlineParser(m[1], this.tokens, this.base + p + 1);
+    const labelParser = new InlineParser(m[1], this.tokens, this.base + p + 1, true);
     const label = labelParser.parse();
 
     this.eat(m[0].length);
@@ -344,7 +350,7 @@ class InlineParser {
     while (!this.done) {
       const node = this.parseOne();
       if (node === null) {
-        const ch   = this.eat(1);
+        const ch = this.eat(1);
         const last = nodes[nodes.length - 1];
         if (last?.type === 'text')
           (last as TextNode).content += ch;
@@ -386,13 +392,16 @@ export function parseDocument(text: string): DocumentAST {
       const lang = cbM[1].trim();
       const body: string[] = [];
       let j = i + 1;
-      // Accept closing fence with optional trailing whitespace
-      while (j < lines.length && lines[j].trim() !== '```') body.push(lines[j++]);
+      while (j < lines.length && lines[j].trim() !== '```')
+        body.push(lines[j++]);
       if (j < lines.length) {
         blocks.push({ type: 'codeBlock', ...(lang && { language: lang }), content: body.join('\n') });
         i = j + 1;
         continue;
       }
+      blocks.push({ type: 'codeBlock', ...(lang && { language: lang }), content: body.join('\n') });
+      i = lines.length;
+      continue;
     }
 
     // Heading: #{1,6} text
@@ -411,7 +420,7 @@ export function parseDocument(text: string): DocumentAST {
       continue;
     }
 
-    // Block quote: > text  (content parsed inline, allowing > -# text etc.)
+    // Block quote: > text
     const qM = /^> (.*)/.exec(line);
     if (qM) {
       blocks.push({ type: 'quote', children: parseInline(qM[1]) });

@@ -39,12 +39,11 @@ function applySettings(settings: UserSettings | null) {
   body.style.setProperty("--settings-text-scale", String(settings.textSize ?? 1));
   body.style.setProperty("--settings-saturation", String(settings.saturation ?? 1));
  
-  body.classList.toggle("compact-mode",       !!settings.compactMode);
-  body.classList.toggle("reduce-motion",      !!settings.reduceMotion);
-  body.classList.toggle("high-contrast",      !!settings.highContrastMode);
-  body.classList.toggle("dyslexia-font",      !!settings.dyslexiaFont);
+  body.classList.toggle("reduce-motion", !!settings.reduceMotion);
+  body.classList.toggle("high-contrast", !!settings.highContrastMode);
+  body.classList.toggle("dyslexia-font", !!settings.dyslexiaFont);
   body.classList.toggle("always-underline-links", !!settings.alwaysUnderlineLinks);
-  body.classList.toggle("hide-reactions",     !(settings.showReactions ?? true));
+  body.classList.toggle("hide-reactions", !(settings.showReactions ?? true));
   body.classList.toggle("hide-reaction-count",!(settings.showReactionCount ?? true));
   body.classList.toggle("no-mention-highlight", !(settings.highlightMentions ?? true));
  

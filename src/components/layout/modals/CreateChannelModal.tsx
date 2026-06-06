@@ -101,7 +101,7 @@ export default function CreateChannelModal({ open, serverId, onClose }: CreateCh
         <div className="modal-buttons">
           <button onClick={onClose}>Cancel</button>
           <button className="create-btn" onClick={handleCreate} disabled={loading}>
-            {loading ? "Creating…" : "Create Channel"}
+            {loading ? "Creating..." : "Create Channel"}
           </button>
         </div>
       </div>

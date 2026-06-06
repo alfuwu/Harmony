@@ -11,16 +11,18 @@ function currentBlock(editor: Editor): [any, number[]] | null {
 
 function isAtBlockStart(editor: Editor): boolean {
   const { selection } = editor;
-  if (!selection || !Range.isCollapsed(selection)) return false;
+  if (!selection || !Range.isCollapsed(selection))
+    return false;
   const b = currentBlock(editor);
-  if (!b) return false;
+  if (!b)
+    return false;
   const [, path] = b;
   return Editor.string(editor, { anchor: Editor.start(editor, path), focus: selection.anchor }) === '';
 }
 
 function clearToStart(editor: Editor, path: number[]) {
   const start = Editor.start(editor, path);
-  const end   = editor.selection!.anchor;
+  const end = editor.selection!.anchor;
   Transforms.select(editor, { anchor: start, focus: end });
   Transforms.delete(editor);
 }
@@ -59,8 +61,8 @@ export function withMarkdownBlocks(editor: Editor): Editor {
             return;
           }
           // ``` to code-block
-          if (before === '```' || /^```\S*$/.test(before)) {
-            const lang = before.slice(3);
+          if (before === '```' || /^```\s*$/.test(before)) {
+            const lang = before.slice(3).trim();
             clearToStart(editor, path);
             Transforms.setNodes(editor, { type: 'code-block', ...(lang && { language: lang }) } as any, { at: path });
             return;
@@ -82,7 +84,7 @@ export function withMarkdownBlocks(editor: Editor): Editor {
         const lang = blockText.slice(3).trim();
         Editor.withoutNormalizing(editor, () => {
           const start = Editor.start(editor, path);
-          const end   = Editor.end(editor, path);
+          const end = Editor.end(editor, path);
           Transforms.select(editor, { anchor: start, focus: end });
           Transforms.delete(editor);
           Transforms.setNodes(editor, { type: 'code-block', ...(lang && { language: lang }) } as any, { at: path });
@@ -102,14 +104,12 @@ export function withMarkdownBlocks(editor: Editor): Editor {
           Transforms.insertNodes(editor, { type: node.type, children: [{ text: '' }] } as any);
           return;
 
-        case 'numbered-list-item': {
+        case 'numbered-list-item':
           const nextNum = (node.number ?? 1) + 1;
           Transforms.insertNodes(editor, { type: 'numbered-list-item', number: nextNum, children: [{ text: '' }] } as any);
           return;
-        }
 
         case 'code-block':
-          // Enter inside a code block inserts a literal newline
           editor.insertText('\n');
           return;
       }
@@ -169,11 +169,14 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
         i = j + 1;
         continue;
       }
+      result.push({ type: 'code-block', ...(lang && { language: lang }), children: [{ text: body.join('\n') }] });
+      i = lines.length;
+      continue;
     }
 
     const qM = /^> (.*)/.exec(line);
     if (qM) {
-      result.push({ type: 'quote', children: [{ text: qM[1]  }] });
+      result.push({ type: 'quote', children: [{ text: qM[1] }] });
       i++;
       continue;
     }
@@ -212,34 +215,61 @@ export function withAutoFormatMentions(
   const { normalizeNode } = editor;
 
   const MENTION_PATTERNS = [
-    // Role must come before user (<@& vs <@)
     {
       re: /<@&(\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mention_role', id, children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mention-role', id, children: [{ text: raw }] }),
     },
     {
       re: /<@(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mention_user', id, user: getUser(id), children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mention-user', id, user: getUser(id), children: [{ text: raw }] }),
+    },
+    {
+      re: /<#&(-?\d+)>/,
+      build: (id: number, raw: string) => ({ type: 'mention-server', id, server: getServer(id), children: [{ text: raw }] }),
     },
     {
       re: /<#(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mention_channel', id, channel: getChannel(id), children: [{ text: raw }] }),
-    },
-    {
-      re: /<~(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mention_server', id, server: getServer(id), children: [{ text: raw }] }),
-    },
+      build: (id: number, raw: string) => ({ type: 'mention-channel', id, channel: getChannel(id), children: [{ text: raw }] }),
+    }
   ];
 
   editor.normalizeNode = (entry) => {
     const [node, path] = entry;
 
-    // Only process direct text children of block elements
     if (Text.isText(node) && path.length === 2) {
       const text = node.text;
 
-      // Find the earliest matching mention pattern
-      let best: { index: number; end: number; voidNode: any } | null = null;
+      const trailingBackslash =
+        text.length > 0 &&
+        text[text.length - 1] === '\\' &&
+        (text.length < 2 || text[text.length - 2] !== '\\');
+
+      if (trailingBackslash) {
+        try {
+          const parentPath = path.slice(0, -1);
+          const childIndex = path[path.length - 1];
+          const parent = Node.get(editor, parentPath) as any;
+          const nextSib = parent.children?.[childIndex + 1];
+
+          if (nextSib && editor.isVoid(nextSib)) {
+            const rawText = Node.string(nextSib);
+            const sibPath = [...parentPath, childIndex + 1] as any;
+
+            Editor.withoutNormalizing(editor, () => {
+              Transforms.removeNodes(editor, { at: sibPath });
+              Transforms.insertText(editor, rawText, { at: { path, offset: text.length } });
+              const newOffset = text.length + rawText.length;
+              Transforms.select(editor, {
+                anchor: { path, offset: newOffset },
+                focus: { path, offset: newOffset },
+              });
+            });
+            return;
+          }
+        } catch { /* ignore transient path errors */ }
+      }
+
+      let best: { index: number; end: number; voidNode: any; focus?: number; } | null = null;
 
       for (const { re, build } of MENTION_PATTERNS) {
         const m = re.exec(text);
@@ -256,12 +286,13 @@ export function withAutoFormatMentions(
       const usernameM = /@([\p{L}\p{Nd}_\-\.~]{2,})(?:#(\d{4}))?\s/ui.exec(text);
       if (usernameM) {
         if (!best || usernameM.index < best.index) {
-          const user = getUserFromName(usernameM[1], Number(usernameM[2]) || 0)
+          const user = getUserFromName(usernameM[1], Number(usernameM[2]) || 0);
           if (user)
             best = {
               index: usernameM.index,
               end: usernameM.index + usernameM[0].length - 1,
-              voidNode: { type: 'mention_user', id: user.id, user, children: [{ text: `<@${user.id}>` }] }
+              focus: usernameM.index + usernameM[0].length,
+              voidNode: { type: 'mention-user', id: user.id, user, children: [{ text: `<@${user.id}>` }] }
             };
         }
       }
@@ -288,10 +319,23 @@ export function withAutoFormatMentions(
           };
       }
 
+      if (best && best.index > 0 && text[best.index - 1] === '\\' && text[best.index - 2] !== '\\')
+        best = null;
+
       if (best) {
-        const { index: start, end, voidNode } = best;
+        const { index: start, end, voidNode, focus } = best;
         const before = text.slice(0, start);
         const after  = text.slice(end);
+
+        let origOffset: number | null = null;
+        {
+          const sel = editor.selection;
+          if (sel && Range.isCollapsed(sel)) {
+            const { path: ap, offset: ao } = sel.anchor;
+            if (ap.length === path.length && ap.every((v, i) => v === path[i]))
+              origOffset = ao;
+          }
+        }
 
         Editor.withoutNormalizing(editor, () => {
           Transforms.removeNodes(editor, { at: path });
@@ -300,11 +344,31 @@ export function withAutoFormatMentions(
           if (before)
             toInsert.push({ text: before });
           toInsert.push(voidNode);
-          toInsert.push({ text: after }); // trailing empty text keeps block valid
+          toInsert.push({ text: after });
           Transforms.insertNodes(editor, toInsert, { at: path });
+
+          const parentPath = path.slice(0, -1);
+          const index = path[path.length - 1];
+          const afterPath = [...parentPath, index + (before ? 2 : 1)];
+
+          let targetOffset: number;
+
+          if (focus !== undefined)
+            targetOffset = focus - end;
+          else if (origOffset !== null && origOffset > end)
+            targetOffset = origOffset - end;
+          else
+            targetOffset = 0;
+
+          targetOffset = Math.max(0, Math.min(targetOffset, after.length));
+
+          Transforms.select(editor, {
+            anchor: { path: afterPath, offset: targetOffset },
+            focus: { path: afterPath, offset: targetOffset },
+          });
         });
 
-        return; // let engine re-normalize the new nodes
+        return;
       }
     }
 
