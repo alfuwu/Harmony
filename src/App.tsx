@@ -1,4 +1,5 @@
 import "./App.css";
+import 'katex/dist/katex.min.css';
 import { createRef, useEffect, useState } from "react";
 import { api } from "./lib/api/http";
 import LoginScreen from "./components/auth/LoginScreen";
@@ -26,9 +27,8 @@ export const rootRef = createRef<HTMLDivElement>();
 
 window.addEventListener("keydown", function (e) {
   // disable CTRL + F
-  if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+  if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70))
     e.preventDefault();
-  }
 });
 
 function applySettings(settings: UserSettings | null) {

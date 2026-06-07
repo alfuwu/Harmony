@@ -11,20 +11,26 @@ export type SubscriptNode       = { type: 'subscript';        children: InlineNo
 export type ColorNode           = { type: 'color';            hex: string; children: InlineNode[] };
 export type LinkNode            = { type: 'link';             url: string; label?: InlineNode[] };
 export type TimestampNode       = { type: 'timestamp';        timestamp: number; style: string };
-export type MentionUserNode     = { type: 'mention-user';     id: number };
-export type MentionEveryoneNode = { type: 'mention_everyone'; subtype: 'everyone' | 'here' };
-export type MentionRoleNode     = { type: 'mention-role';     id: number };
-export type MentionChannelNode  = { type: 'mention-channel';  id: number };
-export type MentionServerNode   = { type: 'mention-server';   id: number };
+export type MentionUserNode     = { type: 'mentionUser';      id: number };
+export type MentionEveryoneNode = { type: 'mentionEveryone';  subtype: 'everyone' | 'here' };
+export type MentionRoleNode     = { type: 'mentionRole';      id: number };
+export type MentionChannelNode  = { type: 'mentionChannel';   id: number };
+export type MentionServerNode   = { type: 'mentionServer';    id: number };
 export type EmojiNode           = { type: 'emoji';            native: string };
 export type InlineSubheader     = { type: 'inlineSubheader';  children: InlineNode[] };
 export type InlineHeader        = { type: 'inlineHeader';     level: 1|2|3|4|5|6; children: InlineNode[] };
+export type InlineMathNode      = { type: 'inlineMath';       content: string };
+export type HighlightNode       = { type: 'highlight';        children: InlineNode[] };
+export type LowlightNode        = { type: 'lowlight';         children: InlineNode[] };
+export type HexColorNode        = { type: 'hexColor';         content: string };
 
 export type InlineNode =
   | TextNode | BoldNode | ItalicNode | BoldItalicNode | UnderlineNode
   | StrikethroughNode | SpoilerNode | CodeNode | SuperscriptNode | SubscriptNode
   | ColorNode | LinkNode | TimestampNode | MentionUserNode | MentionEveryoneNode
-  | MentionRoleNode | MentionChannelNode | MentionServerNode | EmojiNode | InlineSubheader | InlineHeader;
+  | MentionRoleNode | MentionChannelNode | MentionServerNode | EmojiNode
+  | InlineSubheader | InlineHeader | InlineMathNode | HighlightNode | LowlightNode
+  | HexColorNode;
 
 export type ParagraphNode         = { type: 'paragraph';         children: InlineNode[] };
 export type HeaderNode            = { type: 'header';            level: 1|2|3|4|5|6; children: InlineNode[] };
@@ -33,10 +39,15 @@ export type QuoteNode             = { type: 'quote';             children: Inlin
 export type ListItemNode          = { type: 'listItem';          children: InlineNode[] };
 export type NumberedListItemNode  = { type: 'numberedListItem';  number: number; children: InlineNode[] };
 export type CodeBlockNode         = { type: 'codeBlock';         language?: string; content: string };
+export type MathBlockNode         = { type: 'mathBlock';         content: string };
+export type TableCellNode         = { type: 'tableCell';         header: boolean; align: 'left' | 'center' | 'right' | null; children: InlineNode[] };
+export type TableRowNode          = { type: 'tableRow';          cells: TableCellNode[] };
+export type TableNode             = { type: 'table';             rows: TableRowNode[] };
 
 export type BlockNode =
   | ParagraphNode | HeaderNode | SubheaderNode | QuoteNode
-  | ListItemNode | NumberedListItemNode | CodeBlockNode;
+  | ListItemNode | NumberedListItemNode | CodeBlockNode
+  | MathBlockNode | TableNode;
 
 export type DocumentAST = BlockNode[];
 

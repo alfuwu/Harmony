@@ -2,6 +2,7 @@ import React, { useState, useCallback, useMemo, JSX, useEffect } from 'react';
 import type {
   DocumentAST, BlockNode, InlineNode,
   TextNode, ListItemNode, NumberedListItemNode,
+  TableNode,
 } from './MarkdownAST';
 import { parseDocument, isBigEmoji } from './MarkdownParser';
 import { getDisplayName, getRoleColor } from './UserUtils';
@@ -15,6 +16,7 @@ import Twemoji from 'react-twemoji';
 import ShikiHighlighter from 'react-shiki';
 import { getIcon } from './ServerUtils';
 import { ModelOperations } from '@vscode/vscode-languagedetection';
+import katex from 'katex';
 
 const modelOperations = new ModelOperations(
   {
@@ -240,6 +242,24 @@ function rin(
       );
     }
 
+    case 'inlineMath': {
+      try {
+        const html = katex.renderToString(node.content, { throwOnError: false, displayMode: false });
+        return <span key={k()} className="math-inline" dangerouslySetInnerHTML={{ __html: html }} />;
+      } catch {
+        return <code key={k()}>${node.content}$</code>;
+      }
+    }
+
+    case 'highlight':
+      return <span key={k()} className="highlight">{ch(node.children)}</span>;
+
+    case 'lowlight':
+      return <span key={k()} className="lowlight">{ch(node.children)}</span>;
+
+    case 'hexColor':
+      return <span key={k()} className="hex-color" style={{ '--color': node.content } as any}>{node.content}</span>;
+
     case 'code':
       return <code key={k()}>{node.content}</code>;
 
@@ -256,12 +276,12 @@ function rin(
     }
 
     case 'timestamp':
-      return <span key={k()} className="timestamp-render">{formatTimestamp(node.timestamp * 1000, node.style)}</span>;
+      return <span key={k()} className="timestamp-render">{formatTimestamp(node.timestamp, node.style)}</span>;
 
-    case 'mention_everyone':
+    case 'mentionEveryone':
       return <span key={k()} className="mention int" onDoubleClick={e => e.stopPropagation()}>@{node.subtype}</span>;
 
-    case 'mention-user': {
+    case 'mentionUser': {
       const us = ctx.userState;
       const ss = ctx.serverState;
       const u = us?.users.find((x: User) => x.id === node.id);
@@ -284,7 +304,7 @@ function rin(
       );
     }
 
-    case 'mention-role': {
+    case 'mentionRole': {
       const ss = ctx.serverState;
       const s = ss?.currentServer;
       const r = s?.roles.find((x: any) => x.id === node.id);
@@ -302,7 +322,7 @@ function rin(
       );
     }
 
-    case 'mention-channel': {
+    case 'mentionChannel': {
       const cs = ctx.channelState;
       const ch2 = cs?.channels.find((x: AbstractChannel) => x.id === node.id) as AbstractChannel | undefined;
       const name = ch2?.name ?? `<#${node.id}>`;
@@ -318,7 +338,7 @@ function rin(
       );
     }
 
-    case 'mention-server': {
+    case 'mentionServer': {
       const ss = ctx.serverState;
       const srv = ss?.servers.find((x: Server) => x.id === node.id);
       const name = srv?.name ? `${srv.name}` : `<#&${node.id}>`;
@@ -361,6 +381,42 @@ function renderBlocks(
 
   while (i < ast.length) {
     const block = ast[i];
+
+    if (block.type === 'table') {
+      const tbl = block as TableNode;
+      const [headerRow, ...bodyRows] = tbl.rows;
+      out.push(
+        <div key={k()} className="md-table-wrapper">
+          <table className="md-table">
+            {headerRow && (
+              <thead>
+                <tr>
+                  {headerRow.cells.map((cell, ci) => (
+                    <th key={ci} style={{ textAlign: cell.align ?? undefined }}>
+                      {ri(cell.children, ctx, sm, sc, kc)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody>
+              {bodyRows.map((row, rowIdx) => (
+                <tr key={rowIdx}>
+                  {row.cells.map((cell, ci) => (
+                    <td key={ci} style={{ textAlign: cell.align ?? undefined }}>
+                      {ri(cell.children, ctx, sm, sc, kc)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      prevWasInline = false;
+      i++;
+      continue;
+    }
 
     if (block.type === 'listItem') {
       const items: ListItemNode[] = [];
@@ -446,6 +502,15 @@ function renderBlock(
 
     case 'subheader':
       return <span key={k()} className="subheader">{ch(block.children)}</span>;
+
+    case 'mathBlock': {
+      try {
+        const html = katex.renderToString(block.content, { throwOnError: false, displayMode: true });
+        return <div key={k()} className="math-block" dangerouslySetInnerHTML={{ __html: html }} />;
+      } catch {
+        return <pre key={k()} className="math-block math-error">{'$$\n' + block.content + '\n$$'}</pre>;
+      }
+    }
 
     case 'quote':
       return (

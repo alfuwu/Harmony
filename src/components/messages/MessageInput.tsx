@@ -34,6 +34,8 @@ import { init, SearchIndex } from "emoji-mart";
 import { connection } from "../../lib/api/signalrClient";
 import { getIcon } from "../../lib/utils/ServerUtils";
 
+import katex from 'katex';
+
 init({ data });
 
 const withMentions = (editor: Editor) => {
@@ -85,10 +87,12 @@ function serializeFragmentToText(nodes: any[]): string {
     .map(block => {
       const content = ((block.children ?? []) as any[]).map(serializeInlineNode).join("");
       switch (block.type) {
-        case "quote":              return `> ${content}`;
-        case "list-item":          return `- ${content}`;
+        case "quote": return `> ${content}`;
+        case "list-item": return `- ${content}`;
         case "numbered-list-item": return `${block.number ?? 1}. ${content}`;
-        default:                   return content;
+        case "math-block": return `$$\n${content}\n$$`;
+        // code blocks purposefully omitted bc they dont paste well
+        default: return content;
       }
     })
     .join("\n");
@@ -261,7 +265,7 @@ const MessageInput = forwardRef(function MessageInput({
       block = Node.get(editor, [path[0]]);
     } catch { return []; }
 
-    if (block?.type === 'code-block')
+    if (['code-block', 'math-block'].includes(block?.type))
       return [];
 
     const blockText = Node.string(block);
@@ -322,13 +326,21 @@ const MessageInput = forwardRef(function MessageInput({
     if (leaf.link)
       rendered = <a>{rendered}</a>;
     if (leaf.timestamp)
-      rendered = <span className="timestamp-edit" title={formatTimestamp(Number(leaf.timestamp) * 1000, leaf.style)}>{rendered}</span>;
-    if (leaf.mention_everyone)
+      rendered = <span className="timestamp-edit" title={formatTimestamp(Number(leaf.timestamp), leaf.style)}>{rendered}</span>;
+    if (leaf.mentionEveryone)
       rendered = <span className="mention int">{rendered}</span>;
     if (leaf.header)
       rendered = <span className={`h${leaf.size}`}>{rendered}</span>;
     if (leaf.subheader)
       rendered = <span className="subheader">{rendered}</span>;
+    if (leaf.math)
+      rendered = <span className="math-edit">{rendered}</span>;
+    if (leaf.highlight)
+      rendered = <span className="highlight">{rendered}</span>
+    if (leaf.lowlight)
+      rendered = <span className="lowlight">{rendered}</span>
+    if (leaf.hexColor)
+      rendered = <span className="hex-color" style={{ '--color': leaf.content } as any}>{rendered}</span>
     if (leaf.mds)
       rendered = <span className="mds">{rendered}</span>;
 
@@ -404,6 +416,26 @@ const MessageInput = forwardRef(function MessageInput({
       case "code-block": {
         return (
           <div {...attributes} className="editor-code-block">
+            <div spellCheck={false}>{children}</div>
+          </div>
+        );
+      }
+
+      case "math-block": {
+        const rawLatex = Node.string(element);
+        let mathHtml = '';
+        try {
+          mathHtml = katex.renderToString(rawLatex, { throwOnError: false, displayMode: true });
+        } catch { /* invalid LaTeX while typing */ }
+        return (
+          <div {...attributes} className="editor-math-block">
+            {mathHtml && (
+              <div
+                contentEditable={false}
+                className="math-block-preview"
+                dangerouslySetInnerHTML={{ __html: mathHtml }}
+              />
+            )}
             <div spellCheck={false}>{children}</div>
           </div>
         );
@@ -713,10 +745,19 @@ const MessageInput = forwardRef(function MessageInput({
           if (e.key === "Enter") {
             const blockType = getCurrentBlockType();
             if (e.shiftKey) {
-              if (['quote', 'list-item', 'numbered-list-item', 'code-block'].includes(blockType ?? '')) {
+              if (['quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block'].includes(blockType ?? '')) {
                 e.preventDefault();
                 editor.insertBreak();
                 return;
+              }
+
+              if (blockType === 'paragraph') {
+                const blockEntry = Editor.above(editor, { match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any) });
+                if (blockEntry && /^```(.*)$/.test(Node.string(blockEntry[0]))) {
+                  e.preventDefault();
+                  editor.insertBreak();
+                  return;
+                }
               }
             } else {
               if (!e.ctrlKey && blockType === 'code-block') {
@@ -753,7 +794,7 @@ const MessageInput = forwardRef(function MessageInput({
             }
           }
 
-          if (e.key === "ArrowDown" && getCurrentBlockType() === 'code-block') {
+          if (e.key === "ArrowDown" && ['code-block', 'math-block'].includes(getCurrentBlockType() ?? '')) {
             const sel = editor.selection;
             if (sel && Range.isCollapsed(sel)) {
               const path = Editor.path(editor, sel);

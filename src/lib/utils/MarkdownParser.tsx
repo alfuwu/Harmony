@@ -1,5 +1,5 @@
 import { COLORS } from './MarkdownAST';
-import type { InlineNode, BlockNode, DocumentAST, DecoToken, TextNode } from './MarkdownAST';
+import type { InlineNode, BlockNode, DocumentAST, DecoToken, TextNode, TableRowNode, TableCellNode } from './MarkdownAST';
 
 class InlineParser {
   private pos = 0;
@@ -86,7 +86,8 @@ class InlineParser {
   }
 
   private parseOne(): InlineNode | null {
-    if (this.done) return null;
+    if (this.done)
+      return null;
     const c = this.peek();
     const p = this.pos;
 
@@ -114,7 +115,7 @@ class InlineParser {
 
     if (c === '\\') {
       const nx = this.peek(1);
-      if (nx && /[*_@|`~<\\^\-:#>&]/.test(nx)) {
+      if (nx && /[*_@|`~<\\^\-:#>&=#]/.test(nx)) {
         let count = 1;
         if (nx === '*' || nx === '_' || nx === '~')
           while (this.src[p + 1 + count] === nx)
@@ -205,6 +206,47 @@ class InlineParser {
         return n;
     }
 
+    if (c === '$') {
+      if (this.at('$$')) {
+        const e = this.src.indexOf('$$', p + 2);
+        if (e !== -1) {
+          const content = this.src.slice(p + 2, e);
+          if (content.length > 0 && !content.includes('\n')) {
+            this.deco('mds', p, p + 2);
+            this.deco('math', p + 2, e);
+            this.deco('mds', e, e + 2);
+            this.pos = e + 2;
+            return { type: 'inlineMath', content };
+          }
+        }
+      } else {
+        const e = this.src.indexOf('$', p + 1);
+        if (e !== -1) {
+          const content = this.src.slice(p + 1, e);
+          if (content.length > 0 && !content.includes('\n') &&
+              content[0] !== ' ' && content[content.length - 1] !== ' ') {
+            this.deco('mds', p, p + 1);
+            this.deco('math', p + 1, e);
+            this.deco('mds', e, e + 1);
+            this.pos = e + 1;
+            return { type: 'inlineMath', content };
+          }
+        }
+      }
+    }
+
+    if (this.at('==')) {
+      const n = this.trySpan('==', 'highlight');
+      if (n)
+        return n;
+    }
+
+    if (c === '=' && !this.at('==')) {
+      const n = this.trySpan('=', 'lowlight');
+      if (n)
+        return n;
+    }
+
     if (c === '<') {
       const n = this.parseAngle();
       if (n)
@@ -215,10 +257,38 @@ class InlineParser {
       for (const sub of ['everyone', 'here'] as const) {
         const tag = `@${sub}`;
         if (this.at(tag) && !/\w/.test(this.peek(tag.length))) {
-          this.deco('mention_everyone', p, p + tag.length);
+          this.deco('mentionEveryone', p, p + tag.length);
           this.eat(tag.length);
-          return { type: 'mention_everyone', subtype: sub };
+          return { type: 'mentionEveryone', subtype: sub };
         }
+      }
+
+      // Human-readable timestamp: @t[YYYY-mm-dd HH:MM:SS[ |: style]]
+      const tsM = /^@t\[(?:(?:(\d{4}|)[-\/ ](\d{2})[-\/ ](\d{2})|(?:(\d{2})[-\/ ](\d{2})[-\/ ](\d{4}|\d{2})))(?:\s(\d{2})[: ](\d{2})(?:[: ](\d{2})(?:[\., ](\d{3}))?)?)?|(\d{2})[: ](\d{2})(?:[: ](\d{2})(?:[\., ](\d{3}))?)?)(?:\s?[|:]\s?([tTdDfFR]))?\]/.exec(this.rest());
+      if (tsM) {
+        const current = new Date();
+        const year = Number(tsM[1] || tsM[6] || current.getFullYear());
+        // todo: check if american english and if so swap tsM[5] and tsM[4] around
+        const month = Number(tsM[2] || tsM[5] || current.getMonth() + 1);
+        const day = Number(tsM[3] || tsM[4] || current.getDate());
+        const hour = Number(tsM[7] || tsM[11] || 0);
+        const minute = Number(tsM[8] || tsM[12] || 0);
+        const second = Number(tsM[9] || tsM[13] || 0);
+        const ms = Number(tsM[10] || tsM[14] || 0);
+        const ts = Date.UTC(year, month - 1, day, hour, minute, second, ms);
+        const style = tsM[15] ?? 'f';
+        this.deco('timestamp', p, p + tsM[0].length, { timestamp: ts, style });
+        this.eat(tsM[0].length);
+        return { type: 'timestamp', timestamp: ts, style };
+      }
+    }
+
+    if (c === '#') {
+      const hex = /^#[A-Fa-f0-9]{6}/.exec(this.rest());
+      if (hex) {
+        this.deco('hexColor', p, p + 7, { content: hex[0] });
+        this.eat(7);
+        return { type: 'hexColor', content: hex[0] };
       }
     }
 
@@ -271,8 +341,9 @@ class InlineParser {
     // Timestamp: <t:N[:style]>
     const tsM = /^<t:(\d+)(?::([tTdDfFR]))?>/.exec(rest);
     if (tsM) {
-      const ts = Number(tsM[1]), style = tsM[2] ?? 'f';
-      this.deco('timestamp', p, p + tsM[0].length, { timestamp: tsM[1], style });
+      const ts = Number(tsM[1]) * 1000;
+      const style = tsM[2] ?? 'f';
+      this.deco('timestamp', p, p + tsM[0].length, { timestamp: ts, style });
       this.eat(tsM[0].length);
       return { type: 'timestamp', timestamp: ts, style };
     }
@@ -281,28 +352,28 @@ class InlineParser {
     const roleM = /^<@&(\d+)>/.exec(rest);
     if (roleM) {
       this.eat(roleM[0].length);
-      return { type: 'mention-role', id: Number(roleM[1]) };
+      return { type: 'mentionRole', id: Number(roleM[1]) };
     }
 
     // User: <@N>
     const userM = /^<@(-?\d+)>/.exec(rest);
     if (userM) {
       this.eat(userM[0].length);
-      return { type: 'mention-user', id: Number(userM[1]) };
+      return { type: 'mentionUser', id: Number(userM[1]) };
     }
 
     // Server: <#&N>
     const srvM = /^<#&(-?\d+)>/.exec(rest);
     if (srvM) {
       this.eat(srvM[0].length);
-      return { type: 'mention-server', id: Number(srvM[1]) };
+      return { type: 'mentionServer', id: Number(srvM[1]) };
     }
 
     // Channel: <#N>
     const chanM = /^<#(-?\d+)>/.exec(rest);
     if (chanM) {
       this.eat(chanM[0].length);
-      return { type: 'mention-channel', id: Number(chanM[1]) };
+      return { type: 'mentionChannel', id: Number(chanM[1]) };
     }
 
     // Bracketed URL: <url>
@@ -404,6 +475,25 @@ export function parseDocument(text: string): DocumentAST {
       continue;
     }
 
+    // Display math block: $$ on its own line opens a fenced block
+    if (line.trim() === '$$') {
+      const body: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== '$$')
+        body.push(lines[j++]);
+      blocks.push({ type: 'mathBlock', content: body.join('\n') });
+      i = j < lines.length ? j + 1 : lines.length;
+      continue;
+    }
+
+    // Single-line display math: $$expr$$
+    const slMathM = /^\$\$(.+)\$\$$/.exec(line.trim());
+    if (slMathM) {
+      blocks.push({ type: 'mathBlock', content: slMathM[1] });
+      i++;
+      continue;
+    }
+
     // Heading: #{1,6} text
     const hM = /^(#{1,6}) (.*)/.exec(line);
     if (hM) {
@@ -443,6 +533,18 @@ export function parseDocument(text: string): DocumentAST {
       continue;
     }
 
+    // GFM-style pipe table
+    if (line.startsWith('|') && i + 1 < lines.length && /^\|[\s\-:|]+\|/.test(lines[i + 1])) {
+      const aligns = parseTableAlignments(lines[i + 1]);
+      const rows: TableRowNode[] = [{ type: 'tableRow', cells: parseTableCells(lines[i], true, aligns) }];
+      let j = i + 2;
+      while (j < lines.length && lines[j].startsWith('|'))
+        rows.push({ type: 'tableRow', cells: parseTableCells(lines[j++], false, aligns) });
+      blocks.push({ type: 'table', rows });
+      i = j;
+      continue;
+    }
+
     blocks.push({ type: 'paragraph', children: parseInline(line) });
     i++;
   }
@@ -458,4 +560,36 @@ export function isBigEmoji(ast: DocumentAST): boolean {
     n.type === 'emoji' ||
     (n.type === 'text' && /^\s+$/.test((n as TextNode).content)),
   );
+}
+
+function parseTableAlignments(line: string): ('left' | 'center' | 'right' | null)[] {
+  return line
+    .replace(/^\||\|$/g, '')
+    .split('|')
+    .map(cell => {
+      const c = cell.trim();
+      if (c.startsWith(':') && c.endsWith(':'))
+        return 'center';
+      if (c.endsWith(':'))
+        return 'right';
+      if (c.startsWith(':'))
+        return 'left';
+      return null;
+    });
+}
+
+function parseTableCells(
+  line: string,
+  header: boolean,
+  aligns: ('left' | 'center' | 'right' | null)[],
+): TableCellNode[] {
+  return line
+    .replace(/^\||\|$/g, '')
+    .split('|')
+    .map((cell, idx) => ({
+      type: 'tableCell' as const,
+      header,
+      align: aligns[idx] ?? null,
+      children: parseInline(cell.trim()),
+    }));
 }

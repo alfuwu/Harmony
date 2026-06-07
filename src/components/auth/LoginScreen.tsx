@@ -175,7 +175,6 @@ export default function LoginScreen() {
       <div className="login-screen">
         <div className="login-modal">
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🔐</div>
             <h2 style={{ margin: "0 0 4px" }}>Two-Factor Authentication</h2>
             <p style={{ margin: "0 0 20px", color: "var(--text-5)", fontSize: 13 }}>
               {useRecovery
@@ -234,7 +233,6 @@ export default function LoginScreen() {
     return (
       <div className="login-screen">
         <div className="login-modal" style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 8 }}>✉️</div>
           <h2 style={{ margin: "0 0 8px" }}>Check your email</h2>
           <p style={{ color: "var(--text-4)", fontSize: 14, margin: "0 0 16px" }}>
             We sent a verification link to{" "}

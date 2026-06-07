@@ -80,7 +80,7 @@ export function withMarkdownBlocks(editor: Editor): Editor {
       const blockText = Node.string(node);
 
       // ``` paragraph + Enter to code-block conversion
-      if ((node as any).type === 'paragraph' && /^```(.*)$/.test(blockText)) {
+      if (node.type === 'paragraph' && /^```(.*)$/.test(blockText)) {
         const lang = blockText.slice(3).trim();
         Editor.withoutNormalizing(editor, () => {
           const start = Editor.start(editor, path);
@@ -91,9 +91,18 @@ export function withMarkdownBlocks(editor: Editor): Editor {
         });
         return;
       }
+      
+      if ((node as any).type === 'paragraph' && blockText.trim() === '$$') {
+        Editor.withoutNormalizing(editor, () => {
+          Transforms.select(editor, { anchor: Editor.start(editor, path), focus: Editor.end(editor, path) });
+          Transforms.delete(editor);
+          Transforms.setNodes(editor, { type: 'math-block' } as any, { at: path });
+        });
+        return;
+      }
 
       // Empty continuation block to revert to paragraph
-      if (blockText === '' && ['quote', 'list-item', 'numbered-list-item', 'code-block'].includes(node.type)) {
+      if (blockText === '' && ['quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block'].includes(node.type)) {
         Transforms.setNodes(editor, { type: 'paragraph' } as any, { at: path });
         return;
       }
@@ -110,6 +119,10 @@ export function withMarkdownBlocks(editor: Editor): Editor {
           return;
 
         case 'code-block':
+          editor.insertText('\n');
+          return;
+
+        case 'math-block':
           editor.insertText('\n');
           return;
       }
@@ -143,6 +156,7 @@ function serializeBlock(block: any): string {
     case 'list-item': return `- ${text}`;
     case 'numbered-list-item': return `${block.number ?? 1}. ${text}`;
     case 'code-block': return `\`\`\`${block.language ?? ''}\n${text}\n\`\`\``;
+    case 'math-block': return `$$\n${text}\n$$`;
     default: return text;
   }
 }
@@ -156,6 +170,23 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
 
   while (i < lines.length) {
     const line = lines[i];
+
+    if (line.trim() === '$$') {
+      const body: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== '$$')
+        body.push(lines[j++]);
+      result.push({ type: 'math-block', children: [{ text: body.join('\n') }] });
+      i = j < lines.length ? j + 1 : lines.length;
+      continue;
+    }
+
+    const slMathM = /^\$\$(.+)\$\$$/.exec(line.trim());
+    if (slMathM) {
+      result.push({ type: 'math-block', children: [{ text: slMathM[1] }] });
+      i++;
+      continue;
+    }
 
     const cbM = /^```(.*)$/.exec(line);
     if (cbM) {
@@ -217,19 +248,19 @@ export function withAutoFormatMentions(
   const MENTION_PATTERNS = [
     {
       re: /<@&(\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mention-role', id, children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mentionRole', id, children: [{ text: raw }] }),
     },
     {
       re: /<@(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mention-user', id, user: getUser(id), children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mentionUser', id, user: getUser(id), children: [{ text: raw }] }),
     },
     {
       re: /<#&(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mention-server', id, server: getServer(id), children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mentionServer', id, server: getServer(id), children: [{ text: raw }] }),
     },
     {
       re: /<#(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mention-channel', id, channel: getChannel(id), children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mentionChannel', id, channel: getChannel(id), children: [{ text: raw }] }),
     }
   ];
 
@@ -292,7 +323,7 @@ export function withAutoFormatMentions(
               index: usernameM.index,
               end: usernameM.index + usernameM[0].length - 1,
               focus: usernameM.index + usernameM[0].length,
-              voidNode: { type: 'mention-user', id: user.id, user, children: [{ text: `<@${user.id}>` }] }
+              voidNode: { type: 'mentionUser', id: user.id, user, children: [{ text: `<@${user.id}>` }] }
             };
         }
       }

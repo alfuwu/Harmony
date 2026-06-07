@@ -364,21 +364,25 @@ textarea,
   flex: 1 1 1px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .valign-ungreedy {
   flex-shrink: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .halign {
   flex: 1 1 1px;
   display: flex;
   flex-direction: row;
+  min-width: 0;
 }
 .halign-ungreedy {
   flex-shrink: 1;
   display: flex;
   flex-direction: row;
+  min-width: 0;
 }
 
 /* overflows */
@@ -803,6 +807,8 @@ textarea,
 .message-list {
   padding: 0 6px 0 8px;
   max-height: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 .message:last-of-type {
   margin-bottom: 26px;
@@ -1446,8 +1452,16 @@ code {
   font-size: 0.875rem;
   line-height: 1.6;
   color: #e6edf3;
-  overflow-x: auto;   /* horizontal scrollbar for long lines */
+  overflow-x: auto; /* horizontal scrollbar for long lines */
   tab-size: 2;
+  scrollbar-width: 5px;
+}
+.multiline-code::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.multiline-code::-webkit-scrollbar-thumb {
+  height: 5px;
 }
 /* Reset <code> elements that may appear inside the Shiki output. */
 .multiline-code code {
@@ -1497,6 +1511,94 @@ code {
   color: var(--color);
 }
 
+.highlight {
+  background-color: #fff4aa99;
+}
+.lowlight {
+  color: color-mix(in hsl, currentColor, transparent 50%);
+  background-color: #00000033;
+}
+
+.hex-color {
+  position: relative;
+  background: color-mix(in hsl, var(--color), transparent 90%);
+  border: 1px solid color-mix(in hsl, var(--color), transparent 75%);
+  border-radius: 3px;
+  padding: 0.05em 0.35em 0.05em 1.5em;
+  font-size: 0.9em;
+  color: var(--color);
+  font-family: 'Fira Code', Consolas, monospace;
+}
+.hex-color::before {
+  content: "";
+  position: absolute;
+  left: 0.15em;
+  top: 2px;
+  width: 0.9em;
+  height: 0.9em;
+  border-radius: 50%;
+  border: 1px solid white;
+  background-color: var(--color);
+}
+
+.slate-table-wrapper {
+  position: relative;
+  margin: 6px 0;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  background: var(--surface-raised, #2a2a3e);
+  border: 1px solid var(--border, rgba(255,255,255,.12));
+  border-radius: 6px 6px 0 0;
+  flex-wrap: wrap;
+}
+
+.table-toolbar button {
+  background: none;
+  border: 1px solid var(--border, rgba(255,255,255,.15));
+  border-radius: 4px;
+  color: var(--text, #cdd6f4);
+  cursor: pointer;
+  font-size: .72rem;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.table-toolbar button:hover { background: var(--accent, #7c6af7); border-color: transparent; color: #fff; }
+
+.ttb-sep { width: 1px; height: 16px; background: var(--border, rgba(255,255,255,.15)); margin: 0 2px; }
+.ttb-group { display: flex; gap: 3px; }
+
+.slate-table-scroll { overflow-x: auto; }
+
+.slate-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: .9rem;
+}
+
+.slate-table td,
+.slate-table th {
+  border: 1px solid var(--border, rgba(255,255,255,.2));
+  padding: 5px 10px;
+  min-width: 60px;
+  vertical-align: top;
+}
+
+.slate-cell-header {
+  background: var(--surface-raised, rgba(255,255,255,.06));
+  font-weight: 600;
+}
+
+.slate-table-wrapper.is-active .slate-table td:focus-within,
+.slate-table-wrapper.is-active .slate-table th:focus-within {
+  outline: 2px solid var(--accent, #7c6af7);
+  outline-offset: -2px;
+}
+
 .timestamp-render {
   background: rgba(88, 101, 242, 0.15);
   border: 1px solid rgba(88, 101, 242, 0.3);
@@ -1514,7 +1616,6 @@ code {
   font-size: 0.9em;
   color: #9ba8f0;
   font-family: 'Fira Code', Consolas, monospace;
-  cursor: help;
 }
 
 .quote {
@@ -1596,6 +1697,27 @@ ul li {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* Inline math rendered by KaTeX */
+.math-inline .katex { font-size: 1em; }
+
+/* Block display math */
+.math-block { text-align: center; padding: 0.5rem 0; overflow-x: hidden; }
+.math-block.math-error { color: var(--error); font-family: monospace; }
+
+/* Editor: live preview pane above the raw LaTeX input */
+.editor-math-block { border-left: 3px solid var(--accent); padding: 4px 8px; }
+.math-block-preview { padding: 4px 0 8px; }
+
+/* Editor: $...$ inline decoration */
+.math-edit { color: var(--accent); font-family: monospace; }
+
+/* Tables */
+.md-table-wrapper { overflow-x: auto; margin: 4px 0; }
+.md-table { border-collapse: collapse; }
+.md-table th,
+.md-table td { border: 1px solid var(--border); padding: 4px 10px; }
+.md-table thead { background: var(--surface-raised); font-weight: 600; }
 
 .inline-img, .inline-audio, .inline-video, .file-preview-frame, .inline-embed {
   display: block;
