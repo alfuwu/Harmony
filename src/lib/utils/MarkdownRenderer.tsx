@@ -1,8 +1,11 @@
-import React, { useState, useCallback, useMemo, JSX, useEffect } from 'react';
+import React, { useState, useCallback, JSX, useEffect } from 'react';
 import type {
   DocumentAST, BlockNode, InlineNode,
   TextNode, ListItemNode, NumberedListItemNode,
   TableNode,
+  CollapsibleNode, NestedQuoteNode,
+  QuoteListItemNode, QuoteNumberedListItemNode,
+  ListItemQuoteNode, NumberedListItemQuoteNode
 } from './MarkdownAST';
 import { parseDocument, isBigEmoji } from './MarkdownParser';
 import { getDisplayName, getRoleColor } from './UserUtils';
@@ -13,7 +16,7 @@ import type { UserState } from '../state/Users';
 import type { ServerState } from '../state/Servers';
 import type { ChannelState } from '../state/Channels';
 import Twemoji from 'react-twemoji';
-import ShikiHighlighter from 'react-shiki';
+import { useShikiHighlighter } from 'react-shiki';
 import { getIcon } from './ServerUtils';
 import { ModelOperations } from '@vscode/vscode-languagedetection';
 import katex from 'katex';
@@ -116,6 +119,7 @@ export interface RenderContext {
   onChannelClick?: (ch: AbstractChannel, e: React.MouseEvent) => void;
   onServerClick?: (srv: Server, e: React.MouseEvent) => void;
   onEmojiClick?: (emoji: string, e: React.MouseEvent) => void;
+  onToggleDetails?: () => void;
 }
 
 function SpoilerSpan({ children, stateMap, id, showAlways }: {
@@ -125,18 +129,28 @@ function SpoilerSpan({ children, stateMap, id, showAlways }: {
   showAlways: boolean;
 }) {
   const [shown, setShown] = useState(() => stateMap?.current.get(id) ?? false);
-  const toggle = useCallback((e: React.MouseEvent) => {
+  const reveal = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    setShown(prev => { const next = !prev; stateMap?.current.set(id, next); return next; });
+    setShown(prev => {
+      const next = !prev;
+      stateMap?.current.set(id, next);
+      return next;
+    });
   }, [id, stateMap]);
+
   return (
-    <span className={`spoiler${shown || showAlways ? ' shown' : ''}`} onClick={toggle} onDoubleClick={e => e.stopPropagation()}>
+    <span
+      className={`spoiler${shown || showAlways ? ' shown' : ''}`}
+      onClickCapture={shown || showAlways ? undefined : reveal}
+      onClick={shown ? reveal : undefined}
+      onDoubleClick={e => e.stopPropagation()}
+    >
       {children}
     </span>
   );
 }
 
-const CodeBlock = React.memo(function CodeBlock({ content, language }: { content: string; language?: string }) {
+const CodeBlock = React.memo(function CodeBlock({ content, language, showLineNumbers }: { content: string; language?: string; showLineNumbers?: boolean }) {
   const [copied, setCopied] = useState(false);
   const [detectedLanguage, setDetectedLanguage] = useState<string | undefined>(undefined);
 
@@ -169,16 +183,21 @@ const CodeBlock = React.memo(function CodeBlock({ content, language }: { content
 
   const effectiveLanguage = language || detectedLanguage || 'text';
 
-  // 1.5692em is abt one line at font-size 0.875rem / line-height 1.6
-  const lineCount = useMemo(() => content.split('\n').length, [content]);
-  const scrollStyle = useMemo(() => ({ minHeight: `calc(${lineCount * 1.5692}em + 40px)` }), [lineCount]);
-
   const copy = useCallback(() => {
     navigator.clipboard.writeText(content).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   }, [content]);
+
+  const highlighter = useShikiHighlighter(
+    content,
+    effectiveLanguage,
+    "github-dark",
+    {
+      showLineNumbers: showLineNumbers
+    }
+  );
 
   return (
     <div className="code-block-wrapper">
@@ -188,14 +207,52 @@ const CodeBlock = React.memo(function CodeBlock({ content, language }: { content
           {copied ? '✓ Copied' : 'Copy'}
         </button>
       </div>
-      <div className="multiline-code" style={scrollStyle}>
-        <ShikiHighlighter className="shiki" language={effectiveLanguage} theme="github-dark">
-          {content}
-        </ShikiHighlighter>
+      <div className="multiline-code">
+        <div data-testid="shiki-container" data-slot="container" className="rs-root not-prose rs-default-styles shiki">
+          {highlighter ?? (
+            // fallback to manually created output that mimicks useShikiHighlighter
+            <pre className="shiki github-dark" tabIndex={0} style={{backgroundColor: "rgb(36, 41, 46)", color: "rgb(225, 228, 232)"}}>
+              <code className={showLineNumbers ? "rs-has-line-numbers" : undefined}>
+                {content.split('\n').map(line => <span className={"line" + (showLineNumbers ? " rs-line-number" : "")}><span>{line + '\n'}</span></span>)}
+              </code>
+            </pre>
+          )}
+        </div>
       </div>
     </div>
   );
 });
+
+function LiveTimestampSpan({ ts, style }: { ts: number; style: string }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (style !== 'R')
+      return;
+
+    const diff = Math.abs(Date.now() - ts);
+    // Update every 1s for recent times, every minute for older ones.
+    const interval = diff < 3_600_000 ? 1_00 : 60_000;
+    const id = setInterval(() => tick(n => n + 1), interval);
+    return () => clearInterval(id);
+  }, [ts, style]);
+
+  return (
+    <span className="timestamp-render" title={new Date(ts).toLocaleString()}>
+      {formatTimestamp(ts, style)}
+    </span>
+  );
+}
+
+function ProgressBarInline({ value, label }: { value: number; label: string }) {
+  return (
+    <span className="progress-bar-inline" title={`${Math.round(value)}%`}>
+      <span className="progress-bar-track">
+        <span className="progress-bar-fill" style={{ width: `${value}%` }} />
+      </span>
+      <span className="progress-bar-label">{label}</span>
+    </span>
+  );
+}
 
 function ri(
   nodes: InlineNode[],
@@ -276,7 +333,10 @@ function rin(
     }
 
     case 'timestamp':
-      return <span key={k()} className="timestamp-render">{formatTimestamp(node.timestamp, node.style)}</span>;
+      return <LiveTimestampSpan key={k()} ts={node.timestamp} style={node.style} />;
+
+    case 'progressBar':
+      return <ProgressBarInline key={k()} value={node.value} label={node.label} />;
 
     case 'mentionEveryone':
       return <span key={k()} className="mention int" onDoubleClick={e => e.stopPropagation()}>@{node.subtype}</span>;
@@ -418,31 +478,43 @@ function renderBlocks(
       continue;
     }
 
-    if (block.type === 'listItem') {
-      const items: ListItemNode[] = [];
-      while (i < ast.length && ast[i].type === 'listItem') {
-        items.push(ast[i] as ListItemNode);
+    if (block.type === 'listItem' || block.type === 'listItemQuote') {
+      const items: (ListItemNode | ListItemQuoteNode)[] = [];
+      while (i < ast.length && (ast[i].type === 'listItem' || ast[i].type === 'listItemQuote')) {
+        items.push(ast[i] as ListItemNode | ListItemQuoteNode);
         i++;
       }
       out.push(
         <ul key={k()}>
-          {items.map(it => <li key={k()}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
+          {items.map(it => (
+            <li key={k()}>
+              {it.type === 'listItemQuote'
+                ? <span className="quote">{ri((it as ListItemQuoteNode).children, ctx, sm, sc, kc)}</span>
+                : ri((it as ListItemNode).children, ctx, sm, sc, kc)
+              }
+            </li>
+          ))}
         </ul>,
       );
       prevWasInline = false;
       continue;
     }
 
-    if (block.type === 'numberedListItem') {
-      const items: NumberedListItemNode[] = [];
-      while (i < ast.length && ast[i].type === 'numberedListItem') {
-        items.push(ast[i] as NumberedListItemNode);
+    if (block.type === 'numberedListItem' || block.type === 'numberedListItemQuote') {
+      const items: (NumberedListItemNode | NumberedListItemQuoteNode)[] = [];
+      while (i < ast.length && (ast[i].type === 'numberedListItem' || ast[i].type === 'numberedListItemQuote')) {
+        items.push(ast[i] as NumberedListItemNode | NumberedListItemQuoteNode);
         i++;
       }
       out.push(
         <ol key={k()}>
           {items.map(it => (
-            <li key={k()} value={it.number}>{ri(it.children, ctx, sm, sc, kc)}</li>
+            <li key={k()} value={(it as any).number}>
+              {it.type === 'numberedListItemQuote'
+                ? <span className="quote">{ri((it as NumberedListItemQuoteNode).children, ctx, sm, sc, kc)}</span>
+                : ri((it as NumberedListItemNode).children, ctx, sm, sc, kc)
+              }
+            </li>
           ))}
         </ol>,
       );
@@ -450,9 +522,80 @@ function renderBlocks(
       continue;
     }
 
+    if (block.type === 'collapsible') {
+      const cb = block as CollapsibleNode;
+      out.push(
+        <details key={k()} className="collapsible-block" onToggle={ctx.onToggleDetails} onDoubleClick={e => e.stopPropagation()}>
+          <summary className="collapsible-title uno">{ri(cb.title, ctx, sm, sc, kc)}</summary>
+          <div className="collapsible-body">
+            {renderBlocks(cb.children, ctx, sm, sc, kc, false)}
+          </div>
+        </details>
+      );
+      prevWasInline = false;
+      i++;
+      continue;
+    }
+
+    if (block.type === 'nestedQuote') {
+      const items: NestedQuoteNode[] = [];
+      while (i < ast.length && ast[i].type === 'nestedQuote') {
+        items.push(ast[i] as NestedQuoteNode);
+        i++;
+      }
+      out.push(
+        <span key={k()} className="quote">
+          <span className="quote nested-quote">
+            {items.map((it, idx) => (
+              <React.Fragment key={idx}>
+                {idx > 0 && <br />}
+                {ri(it.children, ctx, sm, sc, kc)}
+              </React.Fragment>
+            ))}
+          </span>
+        </span>
+      );
+      prevWasInline = false;
+      continue;
+    }
+
+    if (block.type === 'quoteListItem') {
+      const items: QuoteListItemNode[] = [];
+      while (i < ast.length && ast[i].type === 'quoteListItem') {
+        items.push(ast[i] as QuoteListItemNode);
+        i++;
+      }
+      out.push(
+        <span key={k()} className="quote">
+          <ul className="quote-list">
+            {items.map(it => <li key={k()}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
+          </ul>
+        </span>
+      );
+      prevWasInline = false;
+      continue;
+    }
+
+    if (block.type === 'quoteNumberedListItem') {
+      const items: QuoteNumberedListItemNode[] = [];
+      while (i < ast.length && ast[i].type === 'quoteNumberedListItem') {
+        items.push(ast[i] as QuoteNumberedListItemNode);
+        i++;
+      }
+      out.push(
+        <span key={k()} className="quote">
+          <ol className="quote-list">
+            {items.map(it => <li key={k()} value={it.number}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
+          </ol>
+        </span>
+      );
+      prevWasInline = false;
+      continue;
+    }
+
     if (block.type === 'codeBlock') {
       out.push(
-        <CodeBlock key={k()} content={block.content} language={block.language} />
+        <CodeBlock key={k()} content={block.content} language={block.language} showLineNumbers={ctx.userSettings?.showLineNumbers} />
       );
       prevWasInline = false;
       i++;

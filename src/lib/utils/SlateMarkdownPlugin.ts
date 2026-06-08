@@ -233,7 +233,32 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
 }
 
 function getEmojiNative(name: string): string | null {
-  return (data as any).emojis?.[name]?.skins?.[0]?.native ?? null;
+  const d = data as any;
+
+  const candidates = [
+    name,
+    name.replace(/_/g, '-'),
+    name.replace(/-/g, '_')
+  ];
+
+  for (const c of candidates) {
+    const n = d.emojis?.[c]?.skins?.[0]?.native;
+    if (n)
+      return n;
+  }
+
+  for (const c of candidates) {
+    const aliasId = d.aliases?.[c];
+    if (aliasId) {
+      for (const ac of [aliasId, aliasId.replace(/_/g, '-'), aliasId.replace(/-/g, '_')]) {
+        const n = d.emojis?.[ac]?.skins?.[0]?.native;
+        if (n)
+          return n;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function withAutoFormatMentions(
@@ -340,7 +365,7 @@ export function withAutoFormatMentions(
           };
       }
 
-      const emojiM2 = /(\p{Extended_Pictographic})\uFE0F?/u.exec(text);
+      const emojiM2 = /([\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}\uFE0F?)/u.exec(text);
       if (emojiM2) {
         if (!best || emojiM2.index < best.index)
           best = {
@@ -371,7 +396,7 @@ export function withAutoFormatMentions(
         Editor.withoutNormalizing(editor, () => {
           Transforms.removeNodes(editor, { at: path });
 
-          const toInsert: any[] = [];
+          const toInsert = [];
           if (before)
             toInsert.push({ text: before });
           toInsert.push(voidNode);
@@ -395,7 +420,7 @@ export function withAutoFormatMentions(
 
           Transforms.select(editor, {
             anchor: { path: afterPath, offset: targetOffset },
-            focus: { path: afterPath, offset: targetOffset },
+            focus: { path: afterPath, offset: targetOffset }
           });
         });
 

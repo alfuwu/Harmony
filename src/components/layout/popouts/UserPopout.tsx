@@ -140,7 +140,7 @@ function XpBar({ label, level, totalXp, accentVar = "var(--accent-1)" }: {
           padding: "1px 7px",
           flexShrink: 0,
         }}>
-          Lvl {level}
+          LV. {level}
         </span>
         <div style={{
           flex: 1,

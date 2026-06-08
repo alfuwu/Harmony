@@ -1069,6 +1069,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
         </Group>
         <Group title="Layout">
           <Row label="Message Density"><VisualSel value={(rd("compactMode",false)) as boolean ? 1:0} onChange={v=>wr("compactMode",v===1)} options={COMPACT_VISUAL} /></Row>
+          <Row label="Show Line Numbers"><Toggle value={(rd("showLineNumbers",false)) as boolean} onChange={v=>wr("showLineNumbers",v)} /></Row>
         </Group>
         <Group title="Icon Shapes">
           <Row label="Server Icon Shape"><VisualSel value={(rd("serverIconDisplayType",1)) as number} onChange={v=>wr("serverIconDisplayType",v)} options={AVATAR_SHAPE_VISUAL} /></Row>
@@ -1218,7 +1219,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
 
   const tabs = {
     "USER SETTINGS": ["My Account", "Profiles", "Privacy & Safety"],
-    "APP SETTINGS":  ["Appearance", "Accessibility", "Voice & Video", "Chat", "Notifications", "Language", "Advanced"],
+    "APP SETTINGS":  ["Appearance", "Accessibility", "Voice & Video", "Chat", "Notifications", "Language", "Advanced"]
   };
 
   return (
@@ -1272,7 +1273,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
                 padding: "8px 12px",
                 background: "color-mix(in hsl, var(--red-2), transparent 85%)",
                 border: "1px solid color-mix(in hsl, var(--red-2), transparent 60%)",
-                borderRadius: 6,
+                borderRadius: 6
               }}>
                 {saveError}
               </div>

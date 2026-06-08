@@ -1,3 +1,28 @@
+import Prism from 'prismjs';
+import 'prismjs/components/prism-markup';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-tsx';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-rust';
+import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-java';
+import 'prismjs/components/prism-c';
+import 'prismjs/components/prism-cpp';
+import 'prismjs/components/prism-csharp';
+import 'prismjs/components/prism-ruby';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-diff';
+import 'prismjs/components/prism-kotlin';
+import 'prismjs/components/prism-swift';
+import 'prismjs/components/prism-php';
+
 import {
   useState, useMemo, useEffect, useRef,
   forwardRef, useImperativeHandle, CSSProperties,
@@ -38,6 +63,18 @@ import katex from 'katex';
 
 init({ data });
 
+const REGIONAL_INDICATOR_LETTERS = 'abcdefghijklmnopqrstuvwxyz'.split('').map((c, i) => ({
+  id: `regional_indicator_letter_${c}`,
+  type: 'emoji' as const,
+  skins: [{ native: String.fromCodePoint(0x1F1E6 + i) }],
+}));
+
+function isFlag(native: string): boolean {
+  if (!native) return false;
+  const pts = [...native].map(c => c.codePointAt(0) ?? 0);
+  return pts.length === 2 && pts.every(p => p >= 0x1F1E6 && p <= 0x1F1FF);
+}
+
 const withMentions = (editor: Editor) => {
   const { isInline, isVoid, markableVoid } = editor;
   const isSpecial = (el: any) => el.type?.startsWith("mention") || el.type === "emoji";
@@ -53,13 +90,13 @@ const ins = (editor: Editor, node: any) => {
 };
 
 const insertUserMention = (editor: Editor, user: User) =>
-  ins(editor, { type: "mention-user", id: user.id, user, children: [{ text: `<@${user.id}>` }] });
+  ins(editor, { type: 'mentionUser', id: user.id, user, children: [{ text: `<@${user.id}>` }] });
 const insertChannelMention = (editor: Editor, ch: AbstractChannel) =>
-  ins(editor, { type: "mention-channel", id: ch.id, channel: ch, children: [{ text: `<#${ch.id}>` }] });
+  ins(editor, { type: 'mentionChannel', id: ch.id, channel: ch, children: [{ text: `<#${ch.id}>` }] });
 const insertServerMention  = (editor: Editor, srv: Server) =>
-  ins(editor, { type: "mention-server", id: srv.id, server: srv, children: [{ text: `<#&${srv.id}>` }] });
+  ins(editor, { type: 'mentionServer', id: srv.id, server: srv, children: [{ text: `<#&${srv.id}>` }] });
 const insertRoleMention = (editor: Editor, role: Role) =>
-  ins(editor, { type: "mention-role", id: role.id, role, children: [{ text: `<@&${role.id}>` }] });
+  ins(editor, { type: 'mentionRole', id: role.id, role, children: [{ text: `<@&${role.id}>` }] });
 const insertEmoji = (editor: Editor, emoji: Emoji) => {
   // @ts-expect-error
   const native = emoji.native ?? emoji.skins?.[0]?.native ?? "";
@@ -70,11 +107,11 @@ function serializeInlineNode(node: any): string {
   if (node.text !== undefined)
     return node.text as string;
   switch (node.type) {
-    case "mention-user":    return `<@${node.id}>`;
-    case "mention-channel": return `<#${node.id}>`;
-    case "mention-server":  return `<#&${node.id}>`;
-    case "mention-role":    return `<@&${node.id}>`;
-    case "emoji":           return (node.emoji as string) ?? "";
+    case 'mentionUser':    return `<@${node.id}>`;
+    case 'mentionChannel': return `<#${node.id}>`;
+    case 'mentionServer':  return `<#&${node.id}>`;
+    case 'mentionRole':    return `<@&${node.id}>`;
+    case "emoji":          return (node.emoji as string) ?? "";
     default:
       if (node.children)
         return (node.children as any[]).map(serializeInlineNode).join("");
@@ -82,20 +119,112 @@ function serializeInlineNode(node: any): string {
   }
 }
 
-function serializeFragmentToText(nodes: any[]): string {
+function serializeFragmentToText(
+  nodes: any[],
+  startsAtFirstBlock = true,
+  endsAtLastBlock = true
+): string {
   return nodes
-    .map(block => {
-      const content = ((block.children ?? []) as any[]).map(serializeInlineNode).join("");
+    .map((block, i) => {
+      const isFirst = i === 0;
+      const isLast  = i === nodes.length - 1;
+      const content = ((block.children ?? []) as any[]).map(serializeInlineNode).join('');
+ 
+      const partialStart = isFirst && !startsAtFirstBlock;
+      const partialEnd   = isLast  && !endsAtLastBlock;
+ 
       switch (block.type) {
-        case "quote": return `> ${content}`;
-        case "list-item": return `- ${content}`;
-        case "numbered-list-item": return `${block.number ?? 1}. ${content}`;
-        case "math-block": return `$$\n${content}\n$$`;
-        // code blocks purposefully omitted bc they dont paste well
-        default: return content;
+        case 'quote':
+          return partialStart ? content : `> ${content}`;
+        case 'list-item':
+          return partialStart ? content : `- ${content}`;
+        case 'numbered-list-item':
+          return partialStart ? content : `${block.number ?? 1}. ${content}`;
+        case 'math-block':
+          return (partialStart || partialEnd) ? content : `$$\n${content}\n$$`;
+        case 'code-block':
+          // Only wrap in fences when both ends of the block are selected
+          return (partialStart || partialEnd)
+            ? content
+            : `\`\`\`${block.language ?? ''}\n${content}\n\`\`\``;
+        default:
+          return content;
       }
     })
-    .join("\n");
+    .join('\n');
+}
+
+function selectionAtBlockBoundary(
+  editor: Editor,
+  point: ReturnType<typeof Range.edges>[0],
+  boundary: 'start' | 'end'
+): boolean {
+  try {
+    const blockPath = [point.path[0]];
+    const ref = boundary === 'start'
+      ? Editor.start(editor, blockPath)
+      : Editor.end(editor, blockPath);
+    return ref.path.every((v, i) => v === point.path[i]) && point.offset === ref.offset;
+  } catch {
+    return false;
+  }
+}
+
+function getPrismGrammar(lang?: string): Prism.Grammar | null {
+  if (!lang)
+    return null;
+  const l = lang.toLowerCase();
+  const aliases: Record<string, string> = {
+    js: 'javascript', ts: 'typescript',
+    py: 'python', rb: 'ruby',
+    sh: 'bash', shell: 'bash', zsh: 'bash',
+    'c++': 'cpp', 'c#': 'csharp', 'f#': 'fsharp',
+    html: 'markup', xml: 'markup', svg: 'markup',
+    yml: 'yaml', md: 'markdown',
+    rs: 'rust', kt: 'kotlin', kts: 'kotlin'
+  };
+  const name = aliases[l] ?? l;
+  return (Prism.languages[name] as Prism.Grammar) ?? null;
+}
+ 
+function flattenPrismTokens(
+  toks: Array<string | Prism.Token>,
+  path: any[],
+  offset: number,
+  ranges: any[],
+  inherited?: string
+): number {
+  for (const tok of toks) {
+    if (typeof tok === 'string') {
+      if (inherited && tok.length > 0) {
+        ranges.push({
+          prismToken: inherited,
+          anchor: { path, offset },
+          focus:  { path, offset: offset + tok.length },
+        });
+      }
+      offset += tok.length;
+    } else {
+      const start   = offset;
+      const content = tok.content;
+      if (typeof content === 'string') {
+        if (content.length > 0)
+          ranges.push({
+            prismToken: tok.type,
+            anchor: { path, offset: start },
+            focus:  { path, offset: start + content.length },
+          });
+        offset += content.length;
+      } else {
+        // Array of tokens or a single nested Token
+        const arr: Array<string | Prism.Token> = Array.isArray(content)
+          ? content
+          : [content as Prism.Token];
+        offset = flattenPrismTokens(arr, path, offset, ranges, tok.type);
+      }
+    }
+  }
+  return offset;
 }
 
 export type MessageInputHandle = {
@@ -116,7 +245,7 @@ const MessageInput = forwardRef(function MessageInput({
   channelState,
   messageState,
   userState,
-  serverState,
+  serverState
 }: {
   isChannel?: boolean;
   placeholderText?: string;
@@ -202,7 +331,8 @@ const MessageInput = forwardRef(function MessageInput({
         return;
       if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter")
         return;
-      editableRef.current?.focus();
+      Transforms.collapse(editor, { edge: "focus" });
+      ReactEditor.focus(editor);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -241,7 +371,7 @@ const MessageInput = forwardRef(function MessageInput({
         } catch { /* DOM not ready or editor empty */ }
       }
       editableRef.current?.focus({ preventScroll });
-    },
+    }
   }));
 
   const getMarkdown = () => serializeSlateToMarkdown(editor.children);
@@ -265,8 +395,19 @@ const MessageInput = forwardRef(function MessageInput({
       block = Node.get(editor, [path[0]]);
     } catch { return []; }
 
-    if (['code-block', 'math-block'].includes(block?.type))
+    if (block?.type === 'math-block')
       return [];
+ 
+    if (block?.type === 'code-block') {
+      const grammar = getPrismGrammar(block.language);
+      if (!grammar)
+        return [];
+      const code = Node.string(node);
+      const tokens = Prism.tokenize(code, grammar);
+      const ranges: any[] = [];
+      flattenPrismTokens(tokens, path, 0, ranges);
+      return ranges;
+    }
 
     const blockText = Node.string(block);
     const childIndex = path[1];
@@ -300,6 +441,9 @@ const MessageInput = forwardRef(function MessageInput({
 
   const Leaf = ({ attributes, children, leaf }: any) => {
     let rendered = children;
+
+    if (leaf.prismToken)
+      rendered = <span className={`token ${leaf.prismToken}`}>{rendered}</span>;
 
     if (leaf.boldItalic) {
       rendered = <b><i>{rendered}</i></b>;
@@ -350,7 +494,7 @@ const MessageInput = forwardRef(function MessageInput({
   const renderElement = (props: any) => {
     const { element, attributes, children } = props;
     switch (element.type) {
-      case "mention-user": {
+      case 'mentionUser': {
         const m = getMember(element.user?.id, currentServer?.id);
         return (
           <span
@@ -366,7 +510,8 @@ const MessageInput = forwardRef(function MessageInput({
           </span>
         );
       }
-      case "mention-role":
+
+      case 'mentionRole':
         return (
           <span
             {...attributes}
@@ -377,18 +522,21 @@ const MessageInput = forwardRef(function MessageInput({
             @{element.role?.name}
           </span>
         );
-      case "mention-channel":
+
+      case 'mentionChannel':
         return (
           <span {...attributes} contentEditable={false} className="mention int">
             {getChannelIcon(element.channel, { className: "icon" })}{element.channel?.name}
           </span>
         );
-      case "mention-server":
+
+      case 'mentionServer':
         return (
           <span {...attributes} contentEditable={false} className="mention int">
             <img src={getIcon(element.server)} className="server-icon2" />{element.server?.name}
           </span>
         );
+
       case "emoji":
         return (
           <span {...attributes} contentEditable={false}>
@@ -475,19 +623,14 @@ const MessageInput = forwardRef(function MessageInput({
         .filter((u: User) => u?.displayName?.toLowerCase()?.startsWith(q1) || u.username.toLowerCase().startsWith(q1))
         .slice(0, 10)
         .map((u: User) => ({ ...u, type: "user" }));
-    if (s.startsWith(":"))
-      return emojiResults;
+    if (s.startsWith(":")) {
+      const riQuery = s.slice(1);
+      const riMatches = REGIONAL_INDICATOR_LETTERS
+        .filter(r => r.id.startsWith(riQuery))
+        .slice(0, 5);
+      return [...emojiResults, ...riMatches].slice(0, 10);
+    }
     return [];
-  };
-
-  const skipMention = (reverse: boolean) => {
-    const sel = editor.selection;
-    if (!sel || !Range.isCollapsed(sel))
-      return;
-    const [node] = Editor.fragment(editor, sel.anchor.path);
-    // @ts-expect-error
-    if (node.children?.[0]?.type?.startsWith("mention") || node.children?.[0]?.type === "emoji")
-      Transforms.move(editor, { reverse });
   };
 
   const initialValue = useMemo(() => slateFromMarkdown(initialText), []);
@@ -629,18 +772,23 @@ const MessageInput = forwardRef(function MessageInput({
                 }
                 case "emoji": {
                   const e = item as Emoji;
+                  const native: string = e.skins?.[0]?.native ?? '';
+                  let displayId: string = (e.id as string).replace(/-/g, '_');
+                  if (isFlag(native) && !displayId.startsWith('flag_') && !displayId.startsWith('regional_'))
+                    displayId = `flag_${displayId}`;
+
                   return (
                     <div key={item.id} className={`mention-item int ${i === index ? "active" : ""}`}
                       onMouseDown={ev => { ev.preventDefault(); Transforms.select(editor, target!); insertEmoji(editor, e); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
-                      <span>{renderEmoji(userSettings, e.skins[0].native)} :{item.id}:</span>
+                      <span>{renderEmoji(userSettings, native)} :{displayId}:</span>
                     </div>
                   );
                 }
               }
             })}
           </div>,
-          rootRef.current ?? document.body,
+          rootRef.current ?? document.body
         )}
 
       <Editable
@@ -657,11 +805,34 @@ const MessageInput = forwardRef(function MessageInput({
         renderLeaf={Leaf}
         renderElement={renderElement}
         style={style}
+        spellCheck
         // Suppress Slate's built-in scroll-cursor-into-view behaviour.
         // For the channel input this is a no-op (it's always visible at the
         // bottom).  For inline message editing it prevents the message list
         // from jumping when focus() is called.
         scrollSelectionIntoView={() => {}}
+
+        onMouseDown={e => {
+          const target = e.target as HTMLElement;
+          const voidEl = target.closest?.('[contenteditable="false"]') as HTMLElement | null;
+          if (!voidEl || !editableRef.current?.contains(voidEl))
+            return;
+          try {
+            const slateNode = ReactEditor.toSlateNode(editor, voidEl);
+            if (!editor.isVoid(slateNode as any) || !editor.isInline(slateNode as any))
+              return;
+            e.preventDefault();
+            const path = ReactEditor.findPath(editor, slateNode);
+            const rect = voidEl.getBoundingClientRect();
+            const dest = e.clientX < rect.left + rect.width / 2
+              ? Editor.before(editor, path)
+              : Editor.after(editor, path);
+            if (dest) {
+              Transforms.select(editor, dest);
+              ReactEditor.focus(editor);
+            }
+          } catch {}
+        }}
 
         onCopy={e => {
           const { selection } = editor;
@@ -669,20 +840,26 @@ const MessageInput = forwardRef(function MessageInput({
             return;
           e.preventDefault();
           const fragment = Editor.fragment(editor, selection);
-          const text = serializeFragmentToText(fragment);
+          const [start, end] = Range.edges(selection);
+          const startsAtBlock = selectionAtBlockBoundary(editor, start, 'start');
+          const endsAtBlock = selectionAtBlockBoundary(editor, end, 'end');
+          const text = serializeFragmentToText(fragment, startsAtBlock, endsAtBlock);
           e.clipboardData.setData("text/plain", text);
           try {
             const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
             e.clipboardData.setData("application/x-slate-fragment", encoded);
-          } catch { /* btoa can fail on certain unicode in rare cases */ }
+          } catch { /* btoa can fail on certain unicode */ }
         }}
         onCut={e => {
           const { selection } = editor;
-          if (!selection || Range.isCollapsed(selection))
+          if (!selection || Range.isCollapsed(editor.selection!))
             return;
           e.preventDefault();
           const fragment = Editor.fragment(editor, selection);
-          const text = serializeFragmentToText(fragment);
+          const [start, end] = Range.edges(selection);
+          const startsAtBlock = selectionAtBlockBoundary(editor, start, 'start');
+          const endsAtBlock = selectionAtBlockBoundary(editor, end, 'end');
+          const text = serializeFragmentToText(fragment, startsAtBlock, endsAtBlock);
           e.clipboardData.setData("text/plain", text);
           try {
             const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
@@ -694,6 +871,164 @@ const MessageInput = forwardRef(function MessageInput({
         onKeyDown={e => {
           if (onKey && onKey(e))
             return;
+
+          if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.metaKey) {
+            const { selection } = editor;
+            if (selection) {
+              const isForward = e.key === 'ArrowRight';
+              const isExpanding = e.shiftKey;
+              const isWordJump = e.ctrlKey || e.altKey;
+
+              const isVoidInline = (n: Node): boolean =>
+                !Editor.isEditor(n) && editor.isInline(n as any) && editor.isVoid(n as any);
+
+              const applyDest = (dest: ReturnType<typeof Editor.after>) => {
+                if (!dest)
+                  return;
+                isExpanding
+                  ? Transforms.select(editor, { anchor: selection.anchor, focus: dest })
+                  : Transforms.select(editor, dest);
+              };
+
+              if (isWordJump) {
+                e.preventDefault();
+                const startPoint = isExpanding
+                  ? selection.focus
+                  : isForward
+                    ? Range.end(selection)
+                    : Range.start(selection);
+
+                const blockIdx = startPoint.path[0];
+                let cur = startPoint;
+
+                try {
+                  const trapped = Editor.above(editor, { at: cur, match: isVoidInline, voids: true });
+                  if (trapped) {
+                    const out = isForward
+                      ? Editor.after(editor, trapped[1])
+                      : Editor.before(editor, trapped[1]);
+                    if (out && out.path[0] === blockIdx) cur = out;
+                  }
+                } catch {}
+
+                const nextStep = (p: typeof startPoint) => {
+                  try {
+                    const adj = isForward
+                      ? Editor.after(editor, p, { voids: true })
+                      : Editor.before(editor, p, { voids: true });
+                    if (!adj || adj.path[0] !== blockIdx)
+                      return null;
+
+                    const voidEntry = Editor.above(editor, { at: adj, match: isVoidInline, voids: true });
+                    if (voidEntry) {
+                      const pastVoid = isForward
+                        ? Editor.after(editor, voidEntry[1])
+                        : Editor.before(editor, voidEntry[1]);
+                      if (!pastVoid || pastVoid.path[0] !== blockIdx)
+                        return null;
+                      return { dest: pastVoid, char: '\x01', isVoid: true };
+                    }
+
+                    const range = isForward
+                      ? Editor.range(editor, p, adj)
+                      : Editor.range(editor, adj, p);
+                    return { dest: adj, char: Editor.string(editor, range), isVoid: false };
+                  } catch { return null; }
+                };
+
+                let phase: 'skipSpaces' | 'skipWord' = isForward ? 'skipSpaces' : 'skipWord';
+                let moved = false;
+
+                for (let i = 0; i < 500; i++) {
+                  const step = nextStep(cur);
+                  if (!step)
+                    break;
+                  const isSpace = !step.isVoid && /\s/.test(step.char);
+
+                  if (isForward) {
+                    if (phase === 'skipSpaces') {
+                      if (isSpace) {
+                        cur = step.dest;
+                      } else {
+                        phase = 'skipWord';
+                        cur = step.dest;
+                        moved = true;
+                        if (step.isVoid)
+                          break;
+                        }
+                    } else {
+                      if (isSpace)
+                        break;
+                      cur = step.dest; moved = true;
+                      if (step.isVoid)
+                        break;
+                    }
+                  } else {
+                    if (phase === 'skipWord') {
+                      if (isSpace) {
+                        if (!moved) {
+                          phase = 'skipSpaces';
+                          cur = step.dest;
+                        } else break;
+                      } else if (step.isVoid) {
+                        if (!moved) {
+                          cur = step.dest;
+                          moved = true;
+                        }
+                        break;
+                      } else {
+                        cur = step.dest;
+                        moved = true;
+                      }
+                    } else {
+                      if (isSpace) {
+                        cur = step.dest;
+                      } else if (step.isVoid) {
+                        cur = step.dest;
+                        break;
+                      } else {
+                        phase = 'skipWord';
+                        cur = step.dest;
+                        moved = true;
+                      }
+                    }
+                  }
+                }
+
+                applyDest(cur);
+                return;
+              }
+
+              const movingPoint = isExpanding
+                ? selection.focus
+                : isForward
+                  ? Range.end(selection)
+                  : Range.start(selection);
+
+              try {
+                const trapped = Editor.above(editor, { at: movingPoint, match: isVoidInline, voids: true });
+                if (trapped) {
+                  e.preventDefault();
+                  applyDest(isForward ? Editor.after(editor, trapped[1]) : Editor.before(editor, trapped[1]));
+                  return;
+                }
+
+                const peek = isForward
+                  ? Editor.after(editor, movingPoint, { voids: true })
+                  : Editor.before(editor, movingPoint, { voids: true });
+
+                if (peek) {
+                  const adjacent = Editor.above(editor, { at: peek, match: isVoidInline, voids: true });
+                  if (adjacent) {
+                    e.preventDefault();
+                    applyDest(isForward ? Editor.after(editor, adjacent[1]) : Editor.before(editor, adjacent[1]));
+                    return;
+                  }
+                }
+              } catch {}
+            }
+          }
+
           const t = target;
           const results = mentionResults();
 
@@ -734,6 +1069,18 @@ const MessageInput = forwardRef(function MessageInput({
               case "Escape":
                 setTarget(null);
                 return;
+            }
+          }
+
+          if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            const blockType = getCurrentBlockType();
+            if (['code-block', 'math-block'].includes(blockType ?? '')) {
+              e.preventDefault();
+              Transforms.select(editor, {
+                anchor: Editor.start(editor, []),
+                focus: Editor.end(editor, [])
+              });
+              return;
             }
           }
 
@@ -794,16 +1141,18 @@ const MessageInput = forwardRef(function MessageInput({
             }
           }
 
-          if (e.key === "ArrowDown" && ['code-block', 'math-block'].includes(getCurrentBlockType() ?? '')) {
+          // allow escaping block elements via arrow keys either at the start of the block or the end
+          if (["ArrowDown", "ArrowUp"].includes(e.key) && ['code-block', 'math-block'].includes(getCurrentBlockType() ?? '')) {
             const sel = editor.selection;
             if (sel && Range.isCollapsed(sel)) {
               const path = Editor.path(editor, sel);
-              if (Editor.isEnd(editor, sel.anchor, path)) {
-                const end = Editor.end(editor, path);
-                const next = Editor.after(editor, end);
+              const down = e.key === "ArrowDown";
+              if (down && Editor.isEnd(editor, sel.anchor, path) || !down && Editor.isStart(editor, sel.anchor, path)) {
+                const end = down ? Editor.end(editor, path) : Editor.start(editor, path);
+                const next = down ? Editor.after(editor, end) : Editor.before(editor, end);
                 if (!next) {
                   Editor.withoutNormalizing(editor, () => {
-                    const nextPath = [path[0] + 1] as [number];
+                    const nextPath = [path[0] + (down ? 1 : 0)] as [number];
                     Transforms.insertNodes(editor, { type: 'paragraph', children: [{ text: '' }] } as any, { at: nextPath });
                     Transforms.select(editor, Editor.start(editor, nextPath));
                   });
@@ -812,14 +1161,12 @@ const MessageInput = forwardRef(function MessageInput({
               }
             }
           }
-
-          queueMicrotask(() => skipMention(e.key === "ArrowLeft"));
         }}
-        onKeyUp={e => skipMention(e.key === "ArrowLeft")}
 
         onPaste={e => {
           const text = e.clipboardData.getData("text/plain");
-          if (!text) return;
+          if (!text)
+            return;
           e.preventDefault();
 
           if (editor.selection && !Range.isCollapsed(editor.selection))
@@ -832,22 +1179,22 @@ const MessageInput = forwardRef(function MessageInput({
             return;
           }
 
-          const fragment = slateFromMarkdown(text) as any[];
-          const hasComplexBlocks = fragment.some((b: any) => b.type !== "paragraph");
+          const fragment = slateFromMarkdown(text);
+          const hasComplexBlocks = fragment.some(b => b.type !== "paragraph");
 
           if (hasComplexBlocks) {
             const blockEntry = Editor.above(editor, {
-              match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any),
+              match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any)
             });
             if (blockEntry) {
-              const [bNode, bPath] = blockEntry as any;
+              const [bNode, bPath] = blockEntry;
               if (Node.string(bNode) === "") {
                 Editor.withoutNormalizing(editor, () => {
                   Transforms.removeNodes(editor, { at: bPath });
                   Transforms.insertNodes(editor, fragment, { at: bPath });
                 });
                 try {
-                  const lastIdx = (bPath[0] as number) + fragment.length - 1;
+                  const lastIdx = bPath[0] + fragment.length - 1;
                   Transforms.select(editor, Editor.end(editor, [lastIdx]));
                 } catch {}
                 return;

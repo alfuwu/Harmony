@@ -68,9 +68,7 @@ export default function MessageList() {
     setEditContent(msg.content);
     
     if (useAnimationFrame) {
-      requestAnimationFrame(() => {
-        inputRef.current?.focus(true, true);
-      });
+      requestAnimationFrame(() => inputRef.current?.focus(true, true));
     } else {
       inputRef.current?.focus(true, true);
     }
@@ -119,7 +117,7 @@ export default function MessageList() {
     if (!container.current)
       return;
 
-    if (editingId !== null && wasAtBottomRef.current) {
+    if (wasAtBottomRef.current) {
       const el = container.current;
       el.scrollTop = el.scrollHeight;
       wasAtBottomRef.current = true;
@@ -346,6 +344,16 @@ export default function MessageList() {
         options: {}
       });
     },
+    onToggleDetails: () => {
+      if (!container.current)
+        return;
+
+      if (wasAtBottomRef.current) {
+        const el = container.current;
+        el.scrollTop = el.scrollHeight;
+        wasAtBottomRef.current = true;
+      }
+    }
   };
 
   const typingIds = ((currentChan && channelState.getTyping(currentChan.id)) ?? []).filter(id => id !== user?.id);

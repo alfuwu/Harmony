@@ -23,6 +23,7 @@ export type InlineMathNode      = { type: 'inlineMath';       content: string };
 export type HighlightNode       = { type: 'highlight';        children: InlineNode[] };
 export type LowlightNode        = { type: 'lowlight';         children: InlineNode[] };
 export type HexColorNode        = { type: 'hexColor';         content: string };
+export type ProgressBarNode     = { type: 'progressBar';      value: number; label: string };
 
 export type InlineNode =
   | TextNode | BoldNode | ItalicNode | BoldItalicNode | UnderlineNode
@@ -30,7 +31,7 @@ export type InlineNode =
   | ColorNode | LinkNode | TimestampNode | MentionUserNode | MentionEveryoneNode
   | MentionRoleNode | MentionChannelNode | MentionServerNode | EmojiNode
   | InlineSubheader | InlineHeader | InlineMathNode | HighlightNode | LowlightNode
-  | HexColorNode;
+  | HexColorNode | ProgressBarNode;
 
 export type ParagraphNode         = { type: 'paragraph';         children: InlineNode[] };
 export type HeaderNode            = { type: 'header';            level: 1|2|3|4|5|6; children: InlineNode[] };
@@ -44,10 +45,26 @@ export type TableCellNode         = { type: 'tableCell';         header: boolean
 export type TableRowNode          = { type: 'tableRow';          cells: TableCellNode[] };
 export type TableNode             = { type: 'table';             rows: TableRowNode[] };
 
+/** Collapsible section: >+ Title ...body... >- */
+export type CollapsibleNode            = { type: 'collapsible';            title: InlineNode[]; children: DocumentAST };
+/** Double blockquote: > > text */
+export type NestedQuoteNode            = { type: 'nestedQuote';            children: InlineNode[] };
+/** Unordered list item inside a blockquote: > - text */
+export type QuoteListItemNode          = { type: 'quoteListItem';          children: InlineNode[] };
+/** Ordered list item inside a blockquote: > N. text */
+export type QuoteNumberedListItemNode  = { type: 'quoteNumberedListItem';  number: number; children: InlineNode[] };
+/** Blockquote inside an unordered list item: - > text */
+export type ListItemQuoteNode          = { type: 'listItemQuote';          children: InlineNode[] };
+/** Blockquote inside a numbered list item: N. > text */
+export type NumberedListItemQuoteNode  = { type: 'numberedListItemQuote';  number: number; children: InlineNode[] };
+
 export type BlockNode =
   | ParagraphNode | HeaderNode | SubheaderNode | QuoteNode
   | ListItemNode | NumberedListItemNode | CodeBlockNode
-  | MathBlockNode | TableNode;
+  | MathBlockNode | TableNode
+  | CollapsibleNode | NestedQuoteNode
+  | QuoteListItemNode | QuoteNumberedListItemNode
+  | ListItemQuoteNode | NumberedListItemQuoteNode;
 
 export type DocumentAST = BlockNode[];
 
@@ -59,7 +76,7 @@ export interface DecoToken {
 }
 
 export const COLORS = [
-  "red", "orange", "yellow", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
+  "red", "orange", "yellow", "green", "blue", "indigo", "violet", "purple", "pink", "gray", "grey", "white", "black",
   "brown", "lavender", "teal", "magenta", "lime", "navy", "silver", "maroon", "fuchsia", "olive", "aqua",
   "aliceblue", "antiquewhite", "aquamarine", "azure", "beige", "bisque", "blanchedalmond", "blueviolet",
   "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue", "cornsilk", "crimson",

@@ -8,7 +8,8 @@ class InlineParser {
     private readonly src: string,
     private readonly tokens: DecoToken[],
     private readonly base: number = 0,
-    private readonly nested: boolean = false, // true when called from inner() — disables block-level constructs
+    private readonly nested: boolean = false,
+    private readonly noFullHeaders: boolean = false
   ) {}
 
   private get done() {
@@ -71,8 +72,20 @@ class InlineParser {
     return child.parse();
   }
 
+  private isLeftFlanking(delimLen: number): boolean {
+    const p = this.pos;
+    if (p === 0) return true;
+    const before = this.src[p - 1];
+    const after  = this.src[p + delimLen] ?? '';
+    if (/\S/.test(before) && /[\s]/.test(after))
+      return false;
+    return true;
+  }
+
   private trySpan(delim: string, style: string, noTrail = false): InlineNode | null {
     const p = this.pos, len = delim.length;
+    if (!this.isLeftFlanking(len))
+      return null;
     const e = this.findClose(delim, p + len, noTrail);
     if (e === -1)
       return null;
@@ -101,15 +114,17 @@ class InlineParser {
         this.pos = this.src.length;
         return { type: 'inlineSubheader', children } as InlineNode;
       }
-      const hM = /^(#{1,6}) (.+)/.exec(this.src);
-      if (hM) {
-        const lvl = hM[1].length;
-        this.deco('mds', 0, lvl);
-        this.deco('header', 0, this.src.length, { size: lvl });
-        this.pos = hM[0].length;
-        const children = this.inner(this.pos, this.src.length);
-        this.pos = this.src.length;
-        return { type: 'inlineHeader', level: lvl as 1|2|3|4|5|6, children } as InlineNode;
+      if (!this.noFullHeaders) {
+        const hM = /^(#{1,6}) (.+)/.exec(this.src);
+        if (hM) {
+          const lvl = hM[1].length;
+          this.deco('mds', 0, lvl);
+          this.deco('header', 0, this.src.length, { size: lvl });
+          this.pos = 2;
+          const children = this.inner(this.pos, this.src.length);
+          this.pos = this.src.length;
+          return { type: 'inlineHeader', level: lvl as 1|2|3|4|5|6, children } as InlineNode;
+        }
       }
     }
 
@@ -125,7 +140,7 @@ class InlineParser {
         this.eat(1 + count);
         return { type: 'text', content: escaped };
       }
-      const em = /^\p{Extended_Pictographic}\uFE0F?/u.exec(this.src.slice(p + 1));
+      const em = /^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}\uFE0F?)/u.exec(this.src.slice(p + 1));
       if (em) {
         this.deco('mds', p, p + 1);
         this.eat(1 + em[0].length);
@@ -135,7 +150,7 @@ class InlineParser {
 
     if (c === '`' && !this.at('``')) {
       const e = this.src.indexOf('`', p + 1);
-      if (e !== -1) {
+      if (e !== -1 && this.isLeftFlanking(3)) {
         this.deco('mds', p, p + 1);
         this.deco('code', p + 1, e);
         this.deco('mds', e, e + 1);
@@ -235,14 +250,14 @@ class InlineParser {
       }
     }
 
-    if (this.at('==')) {
-      const n = this.trySpan('==', 'highlight');
+    if (this.at('===')) {
+      const n = this.trySpan('===', 'lowlight');
       if (n)
         return n;
     }
 
-    if (c === '=' && !this.at('==')) {
-      const n = this.trySpan('=', 'lowlight');
+    if (this.at('==')) {
+      const n = this.trySpan('==', 'highlight');
       if (n)
         return n;
     }
@@ -263,7 +278,7 @@ class InlineParser {
         }
       }
 
-      // Human-readable timestamp: @t[YYYY-mm-dd HH:MM:SS[ |: style]]
+      // Human-readable timestamp: @t[YYYY-mm-dd HH:MM:SS.fff[ |: style]]
       const tsM = /^@t\[(?:(?:(\d{4}|)[-\/ ](\d{2})[-\/ ](\d{2})|(?:(\d{2})[-\/ ](\d{2})[-\/ ](\d{4}|\d{2})))(?:\s(\d{2})[: ](\d{2})(?:[: ](\d{2})(?:[\., ](\d{3}))?)?)?|(\d{2})[: ](\d{2})(?:[: ](\d{2})(?:[\., ](\d{3}))?)?)(?:\s?[|:]\s?([tTdDfFR]))?\]/.exec(this.rest());
       if (tsM) {
         const current = new Date();
@@ -293,6 +308,23 @@ class InlineParser {
     }
 
     if (c === '[') {
+      // Progress bar: [progress: 69%] or [progress 20/30]
+      const pctM = /^\[progress[: ]+(\d+(?:\.\d+)?)%\]/.exec(this.rest());
+      if (pctM) {
+        const value = Math.min(100, Math.max(0, parseFloat(pctM[1])));
+        this.deco('progressBar', p, p + pctM[0].length);
+        this.eat(pctM[0].length);
+        return { type: 'progressBar', value, label: `${pctM[1]}%` };
+      }
+      const fracM = /^\[progress[: ]+(\d+)\/(\d+)\]/.exec(this.rest());
+      if (fracM) {
+        const num = parseInt(fracM[1]);
+        const den = parseInt(fracM[2]);
+        const value = den > 0 ? Math.min(100, (num / den) * 100) : 0;
+        this.deco('progressBar', p, p + fracM[0].length);
+        this.eat(fracM[0].length);
+        return { type: 'progressBar', value, label: `${fracM[1]}/${fracM[2]}` };
+      }
       const n = this.parseLink();
       if (n)
         return n;
@@ -305,7 +337,7 @@ class InlineParser {
       return { type: 'link', url: urlM[0] };
     }
 
-    const emojiM = /^\p{Extended_Pictographic}\uFE0F?/u.exec(this.rest());
+    const emojiM = /^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}\uFE0F?)/u.exec(this.rest());
     if (emojiM) {
       this.eat(emojiM[0].length);
       return { type: 'emoji', native: emojiM[0] };
@@ -439,8 +471,8 @@ class InlineParser {
   }
 }
 
-export function parseInline(text: string): InlineNode[] {
-  return new InlineParser(text, []).parse();
+export function parseInline(text: string, noFullHeaders = false): InlineNode[] {
+  return new InlineParser(text, [], 0, false, noFullHeaders).parse();
 }
 
 export function tokenizeInline(text: string): DecoToken[] {
@@ -495,7 +527,7 @@ export function parseDocument(text: string): DocumentAST {
     }
 
     // Heading: #{1,6} text
-    const hM = /^(#{1,6}) (.*)/.exec(line);
+    const hM = /^(#{1,6}) (.+)/.exec(line);
     if (hM) {
       blocks.push({ type: 'header', level: hM[1].length as 1|2|3|4|5|6, children: parseInline(hM[2]) });
       i++;
@@ -510,17 +542,51 @@ export function parseDocument(text: string): DocumentAST {
       continue;
     }
 
+    // Collapsible section: >+ Title ... >-
+    if (line.startsWith('>+ ')) {
+      const title = line.slice(3).trim();
+      const bodyLines: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== '>-')
+        bodyLines.push(lines[j++]);
+      blocks.push({ type: 'collapsible', title: parseInline(title), children: parseDocument(bodyLines.join('\n')) });
+      i = j < lines.length ? j + 1 : lines.length;
+      continue;
+    }
+
     // Block quote: > text
     const qM = /^> (.*)/.exec(line);
     if (qM) {
-      blocks.push({ type: 'quote', children: parseInline(qM[1]) });
+      const inner = qM[1];
+      if (inner.startsWith('> ')) {
+        // Nested quote: > > text
+        blocks.push({ type: 'nestedQuote', children: parseInline(inner.slice(2)) });
+      } else if ((inner[0] === '-' || inner[0] === '*') && inner[1] === ' ') {
+        // Quote containing unordered list item: > - text  (headers disabled inside)
+        blocks.push({ type: 'quoteListItem', children: parseInline(inner.slice(2), true) });
+      } else {
+        const qnlM = /^(\d+)\. (.*)/.exec(inner);
+        if (qnlM) {
+          // Quote containing numbered list item: > 1. text  (headers disabled inside)
+          blocks.push({ type: 'quoteNumberedListItem', number: parseInt(qnlM[1]), children: parseInline(qnlM[2], true) });
+        } else {
+          blocks.push({ type: 'quote', children: parseInline(inner) });
+        }
+      }
       i++;
       continue;
     }
 
     // Unordered list: "- " or "* "
     if ((line[0] === '-' || line[0] === '*') && line[1] === ' ') {
-      blocks.push({ type: 'listItem', children: parseInline(line.slice(2)) });
+      const content = line.slice(2);
+      if (content.startsWith('> ')) {
+        // List item containing a blockquote: - > text
+        blocks.push({ type: 'listItemQuote', children: parseInline(content.slice(2)) });
+      } else {
+        // Regular list item — disable full headers (#), allow subheaders (-#)
+        blocks.push({ type: 'listItem', children: parseInline(content, true) });
+      }
       i++;
       continue;
     }
@@ -528,17 +594,30 @@ export function parseDocument(text: string): DocumentAST {
     // Ordered list: N. text
     const nlM = /^(\d+)\. (.+)/.exec(line);
     if (nlM) {
-      blocks.push({ type: 'numberedListItem', number: parseInt(nlM[1]), children: parseInline(nlM[2]) });
+      const content = nlM[2];
+      if (content.startsWith('> ')) {
+        // Numbered list item containing a blockquote: N. > text
+        blocks.push({ type: 'numberedListItemQuote', number: parseInt(nlM[1]), children: parseInline(content.slice(2)) });
+      } else {
+        // Regular numbered list item — disable full headers, allow subheaders
+        blocks.push({ type: 'numberedListItem', number: parseInt(nlM[1]), children: parseInline(content, true) });
+      }
       i++;
       continue;
     }
 
     // GFM-style pipe table
-    if (line.startsWith('|') && i + 1 < lines.length && /^\|[\s\-:|]+\|/.test(lines[i + 1])) {
+    if (
+      line.startsWith('|') &&
+      !line.startsWith('||') &&
+      i + 1 < lines.length &&
+      /^\|[\s\-:|]+\|/.test(lines[i + 1]) &&
+      !lines[i + 1].startsWith('||')
+    ) {
       const aligns = parseTableAlignments(lines[i + 1]);
       const rows: TableRowNode[] = [{ type: 'tableRow', cells: parseTableCells(lines[i], true, aligns) }];
       let j = i + 2;
-      while (j < lines.length && lines[j].startsWith('|'))
+      while (j < lines.length && lines[j].startsWith('|') && !lines[j].startsWith('||'))
         rows.push({ type: 'tableRow', cells: parseTableCells(lines[j++], false, aligns) });
       blocks.push({ type: 'table', rows });
       i = j;
@@ -578,18 +657,42 @@ function parseTableAlignments(line: string): ('left' | 'center' | 'right' | null
     });
 }
 
+function splitTableRow(line: string): string[] {
+  const content = line.replace(/^\||\|$/g, '');
+  const cells: string[] = [];
+  let cur = '';
+  let i = 0;
+  while (i < content.length) {
+    if (content[i] === '|') {
+      if (content[i + 1] === '|') {
+        const close = content.indexOf('||', i + 2);
+        if (close !== -1) {
+          cur += content.slice(i, close + 2);
+          i = close + 2;
+          continue;
+        }
+      }
+      cells.push(cur);
+      cur = '';
+      i++;
+      continue;
+    }
+    cur += content[i];
+    i++;
+  }
+  cells.push(cur);
+  return cells;
+}
+
 function parseTableCells(
   line: string,
   header: boolean,
   aligns: ('left' | 'center' | 'right' | null)[],
 ): TableCellNode[] {
-  return line
-    .replace(/^\||\|$/g, '')
-    .split('|')
-    .map((cell, idx) => ({
-      type: 'tableCell' as const,
-      header,
-      align: aligns[idx] ?? null,
-      children: parseInline(cell.trim()),
-    }));
+  return splitTableRow(line).map((cell, idx) => ({
+    type: 'tableCell' as const,
+    header,
+    align: aligns[idx] ?? null,
+    children: parseInline(cell.trim())
+  }));
 }
