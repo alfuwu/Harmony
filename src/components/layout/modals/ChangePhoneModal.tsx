@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { sendPhoneVerification, verifyPhone } from "../../../lib/api/authApi";
+import { t } from "../../../lib/i18n";
 
 type Step = "enter" | "verify";
 
@@ -40,7 +41,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
   async function handleSendCode() {
     const trimmed = phone.trim();
     if (!trimmed) {
-        setError("Enter a phone number first.");
+        setError("error.phone.required");
         return;
     }
     setLoading(true);
@@ -50,7 +51,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
       setStep("verify");
       startCooldown(60);
     } catch (e: any) {
-      setError(e.message ?? "Failed to send code");
+      setError(e.message ?? "error.phone.send");
     } finally {
       setLoading(false);
     }
@@ -65,7 +66,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
       await sendPhoneVerification(phone.trim(), opts);
       startCooldown(60);
     } catch (e: any) {
-      setError(e.message ?? "Failed to resend");
+      setError(e.message ?? "error.phone.resend");
     } finally {
       setLoading(false);
     }
@@ -74,7 +75,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
   async function handleVerify() {
     const trimmedCode = code.trim();
     if (trimmedCode.length !== 6) {
-        setError("Enter the 6-digit code.");
+        setError("error.phone.code_length");
         return;
     }
     setLoading(true);
@@ -84,7 +85,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
       onSaved(phone.trim());
       onClose();
     } catch (e: any) {
-      setError(e.message ?? "Invalid code");
+      setError(e.message ?? "error.invalid_code");
     } finally {
       setLoading(false);
     }
@@ -118,14 +119,14 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
 
         {step === "enter" && (
           <>
-            <h2 style={{ margin: 0 }}>{currentPhone ? "Change Phone Number" : "Add Phone Number"}</h2>
+            <h2 style={{ margin: 0 }}>{t(currentPhone ? "change_phone.title" : "add_phone.title")}</h2>
             <p style={{ margin: 0, color: "var(--text-5)", fontSize: 13 }}>
-              Enter your number in E.164 format, e.g. <code>+12125551234</code>.
-              A 6-digit verification code will be sent via SMS.
+              {t("change_phone.desc.1")} <code>+12125551234</code>.{" "}
+              {t("change_phone.desc.2")}
             </p>
 
             <div className="form-group">
-              <label>Phone number</label>
+              <label>{t("phone")}</label>
               <input
                 autoFocus
                 type="tel"
@@ -139,13 +140,13 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
             {errorBanner}
 
             <div className="modal-buttons">
-              <button onClick={onClose}>Cancel</button>
+              <button onClick={onClose}>{t("cancel")}</button>
               <button
                 className="create-btn"
                 onClick={handleSendCode}
                 disabled={loading || !phone.trim()}
               >
-                {loading ? "Sending..." : "Send Code"}
+                {loading ? t("sending") : t("send_code")}
               </button>
             </div>
           </>
@@ -153,14 +154,15 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
 
         {step === "verify" && (
           <>
-            <h2 style={{ margin: 0 }}>Enter Verification Code</h2>
+            <h2 style={{ margin: 0 }}>{t("verify_phone.title")}</h2>
             <p style={{ margin: 0, color: "var(--text-5)", fontSize: 13 }}>
-              We sent a 6-digit code to <strong style={{ color: "var(--text-3)" }}>{phone}</strong>.
-              It expires in 10 minutes.
+              {t("verify_phone.sent")}{" "}
+              <strong style={{ color: "var(--text-3)" }}>{phone}</strong>.{" "}
+              {t("verify_phone.expiry")}
             </p>
 
             <div className="form-group">
-              <label>Verification code</label>
+              <label>{t("verify_phone.code")}</label>
               <input
                 autoFocus
                 placeholder="000000"
@@ -168,7 +170,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 onKeyDown={handleKeyEnter}
                 maxLength={6}
-                style={{ letterSpacing: 6, textAlign: "center", fontSize: 22 }}
+                style={{ letterSpacing: 6, textIndent: 6, textAlign: "center", fontSize: 22 }}
               />
             </div>
 
@@ -185,18 +187,20 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
                   fontSize: 13, padding: 0,
                 }}
               >
-                {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+                {cooldown > 0
+                  ? t("resend_in", { seconds: cooldown })
+                  : t("resend_code")}
               </button>
 
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { setStep("enter"); setCode(""); setError(""); }}>Back</button>
+                <button onClick={() => { setStep("enter"); setCode(""); setError(""); }}>{t("back")}</button>
                 <button
                   className="create-btn"
                   onClick={handleVerify}
                   disabled={loading || code.length !== 6}
                   style={{ opacity: code.length === 6 ? 1 : 0.5 }}
                 >
-                  {loading ? "Verifying..." : "Verify"}
+                  {loading ? t("verifying") : t("verify")}
                 </button>
               </div>
             </div>

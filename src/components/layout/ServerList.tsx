@@ -5,12 +5,14 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useServerState } from "../../lib/state/Servers";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
+import { useLoadingState } from "../../lib/state/Loading";
+import { SkeletonServerList } from "./Skeleton";
 import CreateServerModal from "./modals/CreateSeverModal";
 import ContextMenu, { ContextMenuItem } from "./ContextMenu";
 import { joinServer } from "../../lib/api/signalrClient";
 import { hostUrl } from "../../App";
 import { getIcon } from "../../lib/utils/ServerUtils";
- 
+
 interface Props {
   onDmClick: () => void;
   showDms: boolean;
@@ -19,47 +21,85 @@ interface Props {
 export default function ServerList({ onDmClick, showDms }: Props) {
   const { token } = useAuthState();
   const { servers, currentServer, setCurrentServer, removeServer } = useServerState();
+  const { serversLoading, setChannelsLoading, setMembersLoading, setMessagesLoading } =
+    useLoadingState();
+
   const [modalOpen, setModalOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; serverId: number } | null>(null);
+
   const channelState = useChannelState();
   const userState = useUserState();
   const messageState = useMessageState();
 
   async function handleSelectServer(s: any) {
-    await loadServer(s, channelState, userState, messageState, token!);
+    setChannelsLoading(true);
+    setMembersLoading(true);
+    setMessagesLoading(true);
+
+    try {
+      await loadServer(s, channelState, userState, messageState, token!);
+    } finally {
+      setChannelsLoading(false);
+      setMembersLoading(false);
+      setMessagesLoading(false);
+    }
+
     setCurrentServer(s);
     channelState.setCurrentChannel(null);
     localStorage.setItem("currentServerId", String(s.id));
     joinServer(s.id);
   }
- 
+
   async function handleLeaveServer(serverId: number) {
     try {
       await leaveServer(serverId, { headers: { Authorization: `Bearer ${token}` } });
       removeServer(serverId);
-      if (currentServer?.id === serverId)
-        setCurrentServer(null); channelState.setCurrentChannel(null);
-    } catch (e) { console.error(e); }
+      if (currentServer?.id === serverId) {
+        setCurrentServer(null);
+        channelState.setCurrentChannel(null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   }
- 
+
   function openCtx(e: React.MouseEvent, serverId: number) {
-    e.preventDefault(); e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
     setCtxMenu({ x: e.clientX, y: e.clientY, serverId });
   }
- 
+
   function buildCtxItems(serverId: number): ContextMenuItem[] {
-    const server = servers.find(s => s.id === serverId);
-    if (!server)
-      return [];
-    
+    const server = servers.find((s) => s.id === serverId);
+    if (!server) return [];
+
     const items: ContextMenuItem[] = [
-      { label: "Copy Server ID", icon: "🆔", onClick: () => navigator.clipboard.writeText(String(serverId)) },
+      {
+        label: "Copy Server ID",
+        icon: "🆔",
+        onClick: () => navigator.clipboard.writeText(String(serverId)),
+      },
     ];
+
     if (server.inviteUrls?.[0]) {
-      items.push({ label: "Copy Invite Link", icon: "🔗", onClick: () => navigator.clipboard.writeText(`${hostUrl}/invite/${server.inviteUrls![0]}`) });
+      items.push({
+        label: "Copy Invite Link",
+        icon: "🔗",
+        onClick: () =>
+          navigator.clipboard.writeText(
+            `${hostUrl}/invite/${server.inviteUrls![0]}`
+          ),
+      });
     }
+
     items.push({ label: "", onClick: () => {}, divider: true });
-    items.push({ label: "Leave Server", icon: "🚪", danger: true, onClick: () => handleLeaveServer(serverId) });
+    items.push({
+      label: "Leave Server",
+      icon: "🚪",
+      danger: true,
+      onClick: () => handleLeaveServer(serverId),
+    });
+
     return items;
   }
 
@@ -71,25 +111,50 @@ export default function ServerList({ onDmClick, showDms }: Props) {
         onClick={onDmClick}
         style={{ cursor: "pointer" }}
       >
-        <div style={{
-          width: 50, height: 50, borderRadius: "33%",
-          background: showDms && !currentServer ? "var(--accent-3)" : "var(--bg-2)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 22, transition: "border-radius 150ms",
-        }}>💬</div>
+        <div
+          style={{
+            width: 50,
+            height: 50,
+            borderRadius: "33%",
+            background:
+              showDms && !currentServer ? "var(--accent-3)" : "var(--bg-2)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 22,
+            transition: "border-radius 150ms",
+          }}
+        >
+          💬
+        </div>
       </div>
 
       <hr />
-      {servers.map(s => (
-        <div
-          key={s.id}
-          className={"server uno" + (currentServer && currentServer.id === s.id ? " selected" : "")}
-          onContextMenu={e => openCtx(e, s.id)}
-        >
-          <img onClick={() => handleSelectServer(s)} className="server-icon" src={getIcon(s)} alt={s.name || "server"} />
-        </div>
-      ))}
+
+      {serversLoading ? (
+        <SkeletonServerList count={4} />
+      ) : (
+        servers.map((s) => (
+          <div
+            key={s.id}
+            className={
+              "server uno" +
+              (currentServer && currentServer.id === s.id ? " selected" : "")
+            }
+            onContextMenu={(e) => openCtx(e, s.id)}
+          >
+            <img
+              onClick={() => handleSelectServer(s)}
+              className="server-icon"
+              src={getIcon(s)}
+              alt={s.name || "server"}
+            />
+          </div>
+        ))
+      )}
+
       <hr />
+
       <div className="uno create-server">
         <svg
           className="create-server"
@@ -105,10 +170,19 @@ export default function ServerList({ onDmClick, showDms }: Props) {
           <path d="M 45 90 C 20.187 90 0 69.813 0 45 C 0 20.187 20.187 0 45 0 c 24.813 0 45 20.187 45 45 C 90 69.813 69.813 90 45 90 z M 45 6 C 23.495 6 6 23.495 6 45 s 17.495 39 39 39 s 39 -17.495 39 -39 S 66.505 6 45 6 z" stroke="none" strokeWidth="1" strokeDasharray="none" strokeLinejoin="miter" strokeMiterlimit="10" fill="currentColor" fillRule="nonzero" opacity="1" transform="matrix(1 0 0 1 0 0)" strokeLinecap="round"/>
         </svg>
       </div>
-      
-      <CreateServerModal className="modal" open={modalOpen} onClose={() => setModalOpen(false)} />
+
+      <CreateServerModal
+        className="modal"
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
+
       {ctxMenu && (
-        <ContextMenu items={buildCtxItems(ctxMenu.serverId)} position={{ x: ctxMenu.x, y: ctxMenu.y }} onClose={() => setCtxMenu(null)} />
+        <ContextMenu
+          items={buildCtxItems(ctxMenu.serverId)}
+          position={{ x: ctxMenu.x, y: ctxMenu.y }}
+          onClose={() => setCtxMenu(null)}
+        />
       )}
     </div>
   );

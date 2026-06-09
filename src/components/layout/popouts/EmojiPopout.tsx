@@ -1,6 +1,19 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { renderEmoji } from "../../../lib/utils/MarkdownRenderer";
 import { UserSettings } from "../../../lib/utils/userSettings";
+import { t } from "../../../lib/i18n";
+
+function isFlag(native: string): boolean {
+  const pts = [...(native ?? "")].map(c => c.codePointAt(0) ?? 0);
+  return pts.length === 2 && pts.every(p => p >= 0x1f1e6 && p <= 0x1f1ff);
+}
+
+function normalizeEmojiId(id: string, native?: string): string {
+  let n = (id ?? "").replace(/-/g, "_");
+  if (native && isFlag(native) && !n.startsWith("flag_") && !n.startsWith("regional_"))
+    n = `flag_${n}`;
+  return n;
+}
 
 interface EmojiPopoutProps {
   emoji: string;
@@ -13,6 +26,8 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [copied, setCopied] = useState(false);
+
+  const displayName = normalizeEmojiId(emojiName, emoji);
 
   useLayoutEffect(() => {
     if (ref.current) {
@@ -30,7 +45,7 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
   const clampedTop = Math.max(8, Math.min(position.top, window.innerHeight - size.height - 8));
 
   function copyShortcode() {
-    navigator.clipboard.writeText(`:${emojiName}:`);
+    navigator.clipboard.writeText(`:${displayName}:`);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -82,7 +97,7 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}>
-            :{emojiName}:
+            :{displayName}:
           </span>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
             <span style={{
@@ -96,7 +111,7 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
               letterSpacing: "0.04em",
               textTransform: "uppercase",
             }}>
-              Standard
+              {t("emoji.standard")}
             </span>
           </div>
         </div>
@@ -111,7 +126,7 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
           color: "var(--text-5)",
           marginBottom: "5px",
         }}>
-          Shortcode
+          {t("emoji.shortcode")}
         </div>
         <div style={{
           display: "flex",
@@ -134,10 +149,10 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
           }}>
-            :{emojiName}:
+            :{displayName}:
           </code>
           <button
-            title={copied ? "Copied!" : "Copy shortcode"}
+            title={copied ? t("emoji.copied_title") : t("emoji.copy_shortcode")}
             onClick={copyShortcode}
             style={{
               background: copied
@@ -158,7 +173,7 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
               whiteSpace: "nowrap",
             }}
           >
-            {copied ? "✓ Copied" : "Copy"}
+            {copied ? t("copied") : t("copy")}
           </button>
         </div>
 
@@ -168,14 +183,20 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
           color: "var(--text-5)",
           lineHeight: 1.4,
         }}>
-          Type <code style={{
-            fontSize: "11px",
-            background: "var(--bg-1)",
-            border: "1px solid var(--border)",
-            borderRadius: "3px",
-            padding: "0 3px",
-            color: "var(--text-4)",
-          }}>:{emojiName.slice(0, 3)}</code> in chat to find this emoji.
+          {t("emoji.find_hint.prefix")}{" "}
+          <code
+            style={{
+              fontSize: "11px",
+              background: "var(--bg-1)",
+              border: "1px solid var(--border)",
+              borderRadius: "3px",
+              padding: "0 3px",
+              color: "var(--text-4)",
+            }}
+          >
+            :{displayName.slice(0, 3)}
+          </code>{" "}
+          {t("emoji.find_hint.suffix")}
         </div>
       </div>
     </div>

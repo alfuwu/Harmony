@@ -45,7 +45,7 @@ export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
         onClick={e => e.stopPropagation()}
         style={{ width: 520, maxHeight: "70vh", display: "flex", flexDirection: "column" }}
       >
-        <h2 style={{ margin: 0 }}>📖 Quotebook</h2>
+        <h2 style={{ margin: 0 }}>Quotebook</h2>
         <p style={{ color: "var(--text-4)", margin: "4px 0 12px", fontSize: 13 }}>
           Messages you've saved for yourself.
         </p>

@@ -4,6 +4,8 @@ import {
   twoFactorConfirmSetup,
   twoFactorDisable,
 } from "../../../lib/api/authApi";
+import { t } from "../../../lib/i18n";
+import { TranslationKeys } from "../../../lib/i18n/schema";
 
 type SetupStep = "loading" | "secret" | "confirm" | "recovery";
 
@@ -47,7 +49,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
           setSetupStep("secret");
         })
         .catch((e) => {
-          setError(e.message ?? "Failed to start setup");
+          setError(e.message ?? "error.2fa_start");
           setSetupStep("secret");
         });
     }
@@ -66,7 +68,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
       setRecoveryCodes(result.recoveryCodes);
       setSetupStep("recovery");
     } catch (e: any) {
-      setError(e.message ?? "Invalid code — check your authenticator app and try again");
+      setError(e.message ?? "error.2fa_invalid_setup");
     } finally {
       setLoading(false);
     }
@@ -82,7 +84,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
       onSuccess();
       onClose();
     } catch (e: any) {
-      setError(e.message ?? "Invalid code");
+      setError(e.message ?? "error.invalid_code");
     } finally {
       setLoading(false);
     }
@@ -112,7 +114,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
     maxWidth: "90vw",
     display: "flex",
     flexDirection: "column",
-    gap: 16,
+    gap: 16
   };
 
   if (mode === "disable") {
@@ -120,14 +122,14 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
       <div className="modal-backdrop open" onClick={onClose}>
         <div style={base} onClick={(e) => e.stopPropagation()}>
           <div>
-            <h2 style={{ margin: 0 }}>Disable Two-Factor Authentication</h2>
+            <h2 style={{ margin: 0 }}>{t("2fa.disable.title")}</h2>
             <p style={{ margin: "6px 0 0", color: "var(--text-5)", fontSize: 13 }}>
-              Enter your current authenticator code or a recovery code to confirm.
+              {t("2fa.disable.desc")}
             </p>
           </div>
 
           <div className="form-group">
-            <label>{useRecovery ? "Recovery code" : "Authenticator code"}</label>
+            <label>{useRecovery ? t("2fa.recovery_code") : t("2fa.auth_code")}</label>
             <input
               autoFocus
               placeholder={useRecovery ? "xxxx-xxxx-xxxx" : "000000"}
@@ -147,10 +149,10 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
                 padding: "8px 12px",
                 background: "color-mix(in hsl, var(--red-2), transparent 85%)",
                 border: "1px solid color-mix(in hsl, var(--red-2), transparent 60%)",
-                borderRadius: 6,
+                borderRadius: 6
               }}
             >
-              {error}
+              {t(error as TranslationKeys)}
             </div>
           )}
 
@@ -159,7 +161,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
               onClick={() => { setUseRecovery((r) => !r); setCode(""); setError(""); }}
               style={{ fontSize: 12, color: "var(--text-4)", background: "none", border: "none", boxShadow: "none", cursor: "pointer", padding: "4px 8px" }}
             >
-              {useRecovery ? "Use authenticator code" : "Use recovery code instead"}
+              {useRecovery ? t("2fa.use_auth") : t("2fa.use_recovery")}
             </button>
             <button onClick={onClose}>Cancel</button>
             <button
@@ -167,7 +169,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
               disabled={loading || !code.trim()}
               style={{ background: "color-mix(in hsl, var(--red-3), transparent 20%)", color: "var(--red-1)", border: "1px solid color-mix(in hsl, var(--red-3), transparent 40%)" }}
             >
-              {loading ? "Disabling..." : "Disable 2FA"}
+              {loading ? t("disabling") : t("2fa.disable")}
             </button>
           </div>
         </div>
@@ -180,12 +182,11 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
       <div className="modal-backdrop open">
         <div style={{ ...base, maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
           <div>
-            <h2 style={{ margin: 0 }}>Two-Factor Authentication Enabled</h2>
-            <p style={{ margin: "6px 0 0", color: "var(--text-5)", fontSize: 13 }}>
-              Save these recovery codes somewhere safe. Each code can only be used once to log in
-              if you lose access to your authenticator app.{" "}
-              <strong style={{ color: "var(--red-2)" }}>They will not be shown again.</strong>
-            </p>
+            <h2 style={{ margin: 0 }}>{t("2fa.enabled.title")}</h2>
+            {t("2fa.enabled.desc")}{" "}
+            <strong style={{ color: "var(--red-2)" }}>
+              {t("2fa.enabled.warning")}
+            </strong>
           </div>
 
           <div
@@ -196,7 +197,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
               padding: "14px 18px",
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
-              gap: "6px 24px",
+              gap: "6px 24px"
             }}
           >
             {recoveryCodes.map((rc, i) => (
@@ -215,7 +216,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
               style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }}
             />
             <label htmlFor="2fa-ack" style={{ fontSize: 13, color: "var(--text-4)", cursor: "pointer" }}>
-              I have saved my recovery codes in a safe place.
+              {t("2fa.recovery_saved")}
             </label>
           </div>
 
@@ -226,7 +227,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
                 navigator.clipboard.writeText(text);
               }}
             >
-              Copy All
+              {t("2fa.copy_all")}
             </button>
             <button
               onClick={() => {
@@ -237,10 +238,10 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
               style={{
                 background: recoveryAcknowledged ? "var(--accent-3)" : undefined,
                 color: recoveryAcknowledged ? "var(--text-0)" : undefined,
-                opacity: recoveryAcknowledged ? 1 : 0.5,
+                opacity: recoveryAcknowledged ? 1 : 0.5
               }}
             >
-              Done
+              {t("done")}
             </button>
           </div>
         </div>
@@ -252,7 +253,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
     return (
       <div className="modal-backdrop open" onClick={onClose}>
         <div style={{ ...base, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-          <p style={{ color: "var(--text-4)" }}>Loading setup...</p>
+          <p style={{ color: "var(--text-4)" }}>{t("2fa.loading")}</p>
         </div>
       </div>
     );
@@ -262,16 +263,15 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
     <div className="modal-backdrop open" onClick={onClose}>
       <div style={{ ...base, maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
         <div>
-          <h2 style={{ margin: 0 }}>Set Up Two-Factor Authentication</h2>
+          <h2 style={{ margin: 0 }}>{t("2fa.setup.title")}</h2>
           <p style={{ margin: "6px 0 0", color: "var(--text-5)", fontSize: 13 }}>
-            Open your authenticator app (Google Authenticator, Authy, 1Password, etc.) and add
-            a new account using the secret key below.
+            {t("2fa.setup.desc")}
           </p>
         </div>
 
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-5)", marginBottom: 6 }}>
-            Secret Key
+            {t("2fa.secret_key")}
           </div>
           <div
             style={{
@@ -281,7 +281,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
               background: "var(--bg-1)",
               border: "1px solid var(--border)",
               borderRadius: 8,
-              padding: "10px 14px",
+              padding: "10px 14px"
             }}
           >
             <code
@@ -291,7 +291,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
                 fontSize: 15,
                 letterSpacing: 2,
                 color: "var(--accent-1)",
-                wordBreak: "break-all",
+                wordBreak: "break-all"
               }}
             >
               {secret}
@@ -307,20 +307,21 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
                   : "var(--bg-2)",
                 color: secretCopied ? "var(--green-1)" : "var(--text-4)",
                 border: `1px solid ${secretCopied ? "color-mix(in hsl, var(--green-2), transparent 45%)" : "var(--button-border)"}`,
-                borderRadius: 6,
+                borderRadius: 6
               }}
             >
-              {secretCopied ? "✓ Copied" : "Copy"}
+              {secretCopied ? t("copied") : t("copy")}
             </button>
           </div>
           <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-5)" }}>
-            In your app, choose <em>Enter setup key manually</em> and paste the key above.
-            Set the account name to anything (e.g. Harmony) and leave type as Time-based.
+            {t("2fa.manual_setup.prefix")}{" "}
+            <em>{t("2fa.manual_setup.option")}</em>{" "}
+            {t("2fa.manual_setup.suffix")}
           </div>
         </div>
 
         <div className="form-group">
-          <label style={{ fontWeight: 600 }}>Confirm with a code from your app</label>
+          <label style={{ fontWeight: 600 }}>{t("2fa.confirm")}</label>
           <input
             autoFocus
             placeholder="000000"
@@ -331,7 +332,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
             style={{ letterSpacing: 6, textAlign: "center", fontSize: 22 }}
           />
           <div style={{ fontSize: 12, color: "var(--text-5)", marginTop: 3 }}>
-            Enter the 6-digit code shown in your authenticator app to verify the setup.
+            {t("2fa.confirm.desc")}
           </div>
         </div>
 
@@ -343,25 +344,25 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
               padding: "8px 12px",
               background: "color-mix(in hsl, var(--red-2), transparent 85%)",
               border: "1px solid color-mix(in hsl, var(--red-2), transparent 60%)",
-              borderRadius: 6,
+              borderRadius: 6
             }}
           >
-            {error}
+            {t(error as TranslationKeys)}
           </div>
         )}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={onClose}>Cancel</button>
+          <button onClick={onClose}>{t("cancel")}</button>
           <button
             onClick={handleConfirmSetup}
             disabled={loading || code.length !== 6}
             style={{
               background: code.length === 6 ? "var(--accent-3)" : undefined,
               color: code.length === 6 ? "var(--text-0)" : undefined,
-              opacity: code.length === 6 ? 1 : 0.5,
+              opacity: code.length === 6 ? 1 : 0.5
             }}
           >
-            {loading ? "Verifying..." : "Enable 2FA"}
+            {loading ? t("verifying") : t("2fa.enable")}
           </button>
         </div>
       </div>

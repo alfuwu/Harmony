@@ -1,7 +1,7 @@
 import { Emoji, Message } from "../utils/types";
 import { api } from "./http";
 
-export async function sendMessage(channelId: number, content: string, nonce: number, options: RequestInit = {}): Promise<Message> {
+export async function sendMessage(channelId: number, content: string, nonce: number, references: number[], options: RequestInit = {}): Promise<Message> {
   return {
     ...await api(`/channels/${channelId}/messages`, {
       ...options,
@@ -12,6 +12,7 @@ export async function sendMessage(channelId: number, content: string, nonce: num
         mentions: [...content.matchAll(/<@(-?\d+)>/g)].map(m => Number(m[1])),
         mentionsRoles: [...content.matchAll(/<@&(-?\d+)>/g)].map(m => Number(m[1])),
         mentionsEveryone: content.includes("@everyone") || content.includes("@here"),
+        references
       }),
     }),
     sending: false,

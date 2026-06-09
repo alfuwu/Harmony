@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, useEffect, useCallback } from "react";
+import { useLayoutEffect, useRef, useState, useEffect } from "react";
 import { AbstractChannel, Member, OnlineStatus, Review, Server, User } from "../../../lib/utils/types";
 import {
   getAvatar,
@@ -7,7 +7,6 @@ import {
   getDisplayName,
   getHandle,
   getPronouns,
-  getRoleColor,
 } from "../../../lib/utils/UserUtils";
 import { ServerState } from "../../../lib/state/Servers";
 import { ChannelState } from "../../../lib/state/Channels";
@@ -25,9 +24,11 @@ import {
   BadgeLabels,
   BadgeIcons,
 } from "../../../lib/api/socialApi";
-import { deleteReview, getReviews, submitReview, updateReview } from "../../../lib/api/userApi";
-import MessageInput, { MessageInputHandle } from "../../messages/MessageInput";
-import { AuthState } from "../../../lib/state/Auth";
+import { getReviews } from "../../../lib/api/userApi";
+import { t } from "../../../lib/i18n";
+import { Divider, Name, SectionLabel } from "../Generic";
+import ReviewsModal, { reviewsCache } from "../modals/ReviewsModal";
+import { formatDate, intToHex, roleToStyle } from "../../../lib/utils/funcs";
 
 interface UserPopoutProps {
   user: User;
@@ -45,8 +46,6 @@ interface UserPopoutProps {
   position: { top: number; left?: number; right?: number };
 }
 
-const reviewsCache = new Map<number, Review[]>();
-
 const STATUS_META: Record<OnlineStatus, { label: string; color: string; dot: string }> = {
   [OnlineStatus.Online]:   { label: "Online",         color: "var(--online)",  dot: "●" },
   [OnlineStatus.Idle]:     { label: "Idle",           color: "var(--idle)",    dot: "◐" },
@@ -54,16 +53,6 @@ const STATUS_META: Record<OnlineStatus, { label: string; color: string; dot: str
   [OnlineStatus.DND]:      { label: "Do Not Disturb", color: "var(--dnd)",     dot: "⊖" },
   [OnlineStatus.Offline]:  { label: "Offline",        color: "var(--offline)", dot: "○" },
 };
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: "numeric", month: "short", day: "numeric",
-  });
-}
-
-function intToHex(n: number) {
-  return `#${(n >>> 0).toString(16).padStart(6, "0")}`;
-}
 
 function xpProgress(totalXp: number, level: number): [number, number, number] {
   let spent = 0;
@@ -95,27 +84,6 @@ function StatusDot({ status, size = 12 }: { status?: OnlineStatus; size?: number
       {dot}
     </span>
   );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontSize: 10,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        color: "var(--text-5)",
-        marginBottom: 4,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Divider() {
-  return <div style={{ height: 1, background: "var(--border)", margin: "10px 0" }} />;
 }
 
 function XpBar({ label, level, totalXp, accentVar = "var(--accent-1)" }: {
@@ -169,345 +137,48 @@ function XpBar({ label, level, totalXp, accentVar = "var(--accent-1)" }: {
   );
 }
 
-interface ReviewsModalProps {
-  user: User;
-  currentUser: User | null;
-  serverState: ServerState;
-  channelState: ChannelState;
-  messageState: MessageState;
-  userState: UserState;
-  authState: { token: string | null, userSettings: UserSettings | null, user: User | null };
-  spoilerState: React.MutableRefObject<Map<number, boolean>>;
-  markdownData: RenderContext;
-  opts: RequestInit;
-  onClose: () => void;
-}
-
-function ReviewsModal({
-  user,
-  currentUser,
-  serverState,
-  channelState,
-  messageState,
-  userState,
-  authState,
-  spoilerState,
-  markdownData,
-  opts,
-  onClose
-}: ReviewsModalProps) {
-  const [reviews, setReviews] = useState<Review[]>(reviewsCache.get(user.id) ?? []);
-  const [loading, setLoading] = useState(!reviewsCache.has(user.id));
-  const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<string | null | undefined>("");
-  const [submitting, setSubmitting] = useState(false);
-  const { getUser } = userState;
-  
-  const inputRef = useRef<MessageInputHandle>(null);
-  const myReview = reviews.find(r => r.authorId === currentUser?.id);
-
-  useEffect(() => {
-    if (myReview)
-      setDraft(myReview.content);
-  }, [myReview?.content]);
-
-  useEffect(() => {
-    if (reviewsCache.has(user.id))
-      return;
-    let cancelled = false;
-    setLoading(true);
-    getReviews(user, opts)
-      .then(data => {
-        if (cancelled)
-          return;
-        reviewsCache.set(user.id, data);
-        setReviews(data);
-      })
-      .catch(() => {
-        if (!cancelled)
-          setError("Failed to load reviews.");
-        })
-      .finally(() => {
-        if (!cancelled)
-          setLoading(false);
-        });
-    return () => { cancelled = true; };
-  }, [user.id]);
-
-  const handleSubmit = useCallback(async () => {
-    if (!draft || !draft.trim() || submitting)
-      return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      if (myReview)
-        await updateReview(user, draft.trim(), opts);
-      else
-        await submitReview(user, draft.trim(), opts);
-      reviewsCache.delete(user.id);
-      const fresh = await getReviews(user, opts);
-      reviewsCache.set(user.id, fresh);
-      setReviews(fresh);
-      setDraft("");
-      inputRef.current?.setText("");
-    } catch {
-      setError("Failed to submit review.");
-    } finally {
-      setSubmitting(false);
-    }
-  }, [draft, myReview, submitting, user]);
-
-  const handleDelete = useCallback(async () => {
-    if (submitting)
-      return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      await deleteReview(user, opts);
-      reviewsCache.delete(user.id);
-      const fresh = await getReviews(user, opts);
-      reviewsCache.set(user.id, fresh);
-      setReviews(fresh);
-      setDraft("");
-    } catch {
-      setError("Failed to delete review.");
-    } finally {
-      setSubmitting(false);
-    }
-  }, [submitting, user]);
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1100,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          position: "relative",
-          zIndex: 1101,
-          width: 400,
-          maxWidth: "calc(100vw - 32px)",
-          maxHeight: "80vh",
-          borderRadius: 14,
-          background: "var(--bg-3)",
-          border: "1px solid var(--border)",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
-          display: "flex",
-          flexDirection: "column",
-          animation: "popout-in 160ms cubic-bezier(0.2,0,0,1.4) both",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "14px 16px 10px",
-          borderBottom: "1px solid var(--border)",
-          flexShrink: 0,
-        }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)" }}>Reviews</div>
-            <div style={{ fontSize: 12, color: "var(--text-5)", marginTop: 1 }}>
-              {getDisplayName(user)} · {reviews.length} review{reviews.length !== 1 ? "s" : ""}
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 24, height: 24, padding: 0, borderRadius: 5, border: "none",
-              background: "rgba(255,255,255,0.07)", color: "var(--text-4)",
-              fontSize: 13, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >✕</button>
-        </div>
-
-        <div
-          className="ovy-auto"
-          style={{ flex: 1, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}
-        >
-          {loading && (
-            <div style={{ color: "var(--text-5)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>
-              Loading reviews...
-            </div>
-          )}
-          {!loading && reviews.length === 0 && (
-            <div style={{ color: "var(--text-5)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>
-              No reviews yet. Be the first!
-            </div>
-          )}
-          {reviews.map(review => {
-            const isMine = review.authorId === currentUser?.id;
-            const rUser = getUser(review.authorId) ?? null;
-            const name = getDisplayName(rUser);
-            return (
-              <div
-                key={review.authorId ?? review.content}
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  padding: "9px 10px",
-                  borderRadius: 8,
-                  background: isMine
-                    ? "color-mix(in hsl, var(--accent-2), transparent 82%)"
-                    : "color-mix(in hsl, var(--bg-4), transparent 40%)",
-                  border: isMine
-                    ? "1px solid color-mix(in hsl, var(--accent-2), transparent 55%)"
-                    : "1px solid var(--border-light)",
-                }}
-              >
-                <img
-                  src={getAvatar(rUser)}
-                  alt={name}
-                  style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", flexShrink: 0, marginTop: 1 }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-2)" }}>
-                      {name}
-                    </span>
-                    {isMine && (
-                      <span style={{ fontSize: 10, color: "var(--accent-1)", fontWeight: 600 }}>YOU</span>
-                    )}
-                    {review.createdAt && (
-                      <span style={{ fontSize: 11, color: "var(--text-5)", marginLeft: "auto", flexShrink: 0 }}>
-                        {formatDate(review.createdAt)}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-3)", lineHeight: 1.45, wordBreak: "break-word" }}>
-                    {RenderMarkdown({ content: review.content, spoilerStateRef: spoilerState, ...markdownData })}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {currentUser && (
-          <div style={{
-            padding: "10px 14px 14px",
-            borderTop: "1px solid var(--border)",
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: 7,
-          }}>
-            <SectionLabel>{myReview ? "Edit your review" : "Write a review"}</SectionLabel>
-            <div style={{
-              resize: "none", width: "100%", padding: "7px 9px", borderRadius: 7,
-              background: "var(--bg-1)", border: "1px solid var(--border)",
-              color: "var(--text-2)", fontSize: 13, lineHeight: 1.45, outline: "none",
-              boxSizing: "border-box", fontFamily: "inherit",
-            }}>
-              <MessageInput
-                isChannel={false}
-                initialText={draft}
-                placeholderText={`Say something about ${getDisplayName(user)}...`}
-                setText={setDraft}
-                authState={authState as AuthState}
-                serverState={serverState}
-                channelState={channelState}
-                messageState={messageState}
-                userState={userState}
-                onEnter={() => handleSubmit()}
-                ref={inputRef}
-              />
-            </div>
-            {error && <div style={{ fontSize: 12, color: "var(--red-2)" }}>{error}</div>}
-            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-              {myReview && (
-                <button
-                  onClick={handleDelete}
-                  disabled={submitting}
-                  style={{
-                    padding: "5px 13px", borderRadius: 6, border: "none",
-                    background: "color-mix(in hsl, var(--red-2), transparent 80%)",
-                    color: "var(--red-2)", fontSize: 12, fontWeight: 600,
-                    cursor: submitting ? "not-allowed" : "pointer",
-                    opacity: submitting ? 0.6 : 1,
-                  }}
-                >
-                  Delete
-                </button>
-              )}
-              <button
-                onClick={handleSubmit}
-                disabled={!draft || !draft.trim() || submitting}
-                style={{
-                  padding: "5px 16px", borderRadius: 6, border: "none",
-                  background: "var(--accent-1)", color: "#fff",
-                  fontSize: 12, fontWeight: 600,
-                  cursor: (!draft || !draft.trim() || submitting) ? "not-allowed" : "pointer",
-                  opacity: (!draft || !draft.trim() || submitting) ? 0.5 : 1,
-                }}
-              >
-                {submitting ? "Saving..." : myReview ? "Update" : "Submit"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 interface ReviewsButtonProps {
   user: User;
+  member?: Member,
   currentUser: User | null;
-  serverState: ServerState;
-  channelState: ChannelState;
+  ctx: RenderContext;
   messageState: MessageState;
-  userState: UserState;
   token: string | null;
   userSettings: UserSettings | null;
   spoilerState: React.MutableRefObject<Map<number, boolean>>;
-  markdownData: RenderContext;
   open: (popout: Popout) => void;
   close: (id: string) => void;
 }
 
 function ReviewsButton({
   user,
+  member,
   currentUser,
-  serverState,
-  channelState,
+  ctx,
   messageState,
-  userState,
   token,
   userSettings,
   spoilerState,
-  markdownData,
   open,
   close
 }: ReviewsButtonProps) {
   const opts = { headers: { Authorization: `Bearer ${token}` } };
   const [previews, setPreviews] = useState<Review[]>(
-    reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.slice(0, 4) : [],
+    reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.slice(0, 4) : []
   );
   const [count, setCount] = useState(
-    reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.length : 0,
+    reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.length : 0
   );
-  const { getUser } = userState;
+  const { getUser } = ctx.userState!;
 
   useEffect(() => {
-    if (reviewsCache.has(user.id)) return;
+    if (reviewsCache.has(user.id))
+      return;
     getReviews(user, opts)
       .then(data => {
         reviewsCache.set(user.id, data);
         const sorted = [...data].sort(
-          (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+          (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
         );
         setPreviews(sorted.slice(0, 4));
         setCount(data.length);
@@ -516,7 +187,7 @@ function ReviewsButton({
   }, [user.id]);
 
   const sortedPreviews = [...previews].sort(
-    (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime(),
+    (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
   );
 
   return (
@@ -525,25 +196,25 @@ function ReviewsButton({
         id: "user-reviews",
         element: <ReviewsModal
           user={user}
+          member={member}
           currentUser={currentUser}
-          serverState={serverState}
-          channelState={channelState}
+          ctx={ctx}
           messageState={messageState}
-          userState={userState}
           authState={{ token, userSettings, user: currentUser }}
           spoilerState={spoilerState}
-          markdownData={markdownData}
           opts={opts}
+          setPreviews={setPreviews}
+          setCount={setCount}
           onClose={() => close("user-reviews")}
         />,
-        options: {},
-        closeWhenClickOutside: false,
+        options: {}
       })}
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
         width: "100%",
+        minHeight: 40,
         padding: "7px 10px",
         borderRadius: 8,
         border: "1px solid var(--border)",
@@ -552,18 +223,18 @@ function ReviewsButton({
         fontSize: 12,
         fontWeight: 600,
         cursor: "pointer",
-        gap: 8,
+        gap: 8
       }}
     >
       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span>Reviews</span>
+        <span>{t("user.reviews")}</span>
         {count > 0 && (
           <span style={{
             fontSize: 10, fontWeight: 700,
             background: "color-mix(in hsl, var(--accent-2), transparent 70%)",
             color: "var(--accent-1)", borderRadius: 10, padding: "1px 6px",
           }}>
-            {count}
+            {count.toLocaleString()}
           </span>
         )}
       </span>
@@ -581,7 +252,7 @@ function ReviewsButton({
                   width: 20, height: 20, borderRadius: "50%", objectFit: "cover",
                   border: "2px solid var(--bg-3)",
                   marginLeft: i === sortedPreviews.length - 1 ? 0 : -6,
-                  flexShrink: 0,
+                  flexShrink: 0
                 }}
               />
             );
@@ -605,15 +276,13 @@ export default function UserPopout({
   close,
   onClose,
   token,
-  position,
+  position
 }: UserPopoutProps) {
   const name = getDisplayName(user, member);
   const avatar = getAvatar(user, member);
-  const roleColor = serverState ? getRoleColor(serverState, user, member, true) : undefined;
   const resolvedBannerUrl = getBanner(user, member);
   const resolvedBio = getBio(user, member);
   const resolvedPronouns = getPronouns(user, member);
-  const resolvedNameFont = member?.nameFont ?? user.nameFont;
 
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -664,7 +333,7 @@ export default function UserPopout({
           timeZone: tz,
           hour: "numeric",
           minute: "2-digit",
-          timeZoneName: "short",
+          timeZoneName: "short"
         }).format(new Date());
         tzDisplay = time;
       }
@@ -759,7 +428,7 @@ export default function UserPopout({
           boxShadow: "0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
           display: "flex",
           flexDirection: "column",
-          animation: "popout-in 150ms cubic-bezier(0.2,0,0,1.4) both",
+          animation: "popout-in 150ms cubic-bezier(0.2,0,0,1.4) both"
         }}
       >
         <div
@@ -771,7 +440,7 @@ export default function UserPopout({
             backgroundSize: "cover",
             backgroundPosition: "center",
             position: "relative",
-            flexShrink: 0,
+            flexShrink: 0
           }}
         >
           <button
@@ -782,9 +451,9 @@ export default function UserPopout({
               width: 22, height: 22, padding: 0, borderRadius: 4,
               background: "rgba(0,0,0,0.45)", border: "none", color: "#fff",
               fontSize: 13, lineHeight: 1, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
+              display: "flex", alignItems: "center", justifyContent: "center"
             }}
-            title="Close"
+            title={t("close")}
           >✕</button>
         </div>
 
@@ -798,7 +467,7 @@ export default function UserPopout({
               background: "var(--bg-3)",
               padding: 3,
               boxSizing: "border-box",
-              boxShadow: `0 0 0 3px ${statusMeta.color}`,
+              boxShadow: `0 0 0 3px ${statusMeta.color}`
             }}
           >
             <img
@@ -814,7 +483,7 @@ export default function UserPopout({
           <div style={{
             display: "flex", flexWrap: "wrap", gap: 3,
             justifyContent: "flex-end",
-            paddingTop: 6, minHeight: 28,
+            paddingTop: 6, minHeight: 28
           }}>
             {badges.map(b => (
               <span
@@ -824,7 +493,7 @@ export default function UserPopout({
                   fontSize: 15,
                   lineHeight: 1,
                   cursor: "default",
-                  filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))",
+                  filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))"
                 }}
               >
                 {BadgeIcons[b.type] ?? "🏅"}
@@ -840,24 +509,23 @@ export default function UserPopout({
             display: "flex",
             flexDirection: "column",
             gap: 0,
-            maxHeight: "calc(90vh - 160px)",
+            maxHeight: "calc(90vh - 160px)"
           }}
         >
           <div style={{ marginBottom: 2 }}>
-            <div
+            <Name
+              user={user}
+              member={member}
+              serverState={serverState}
+              md={markdownData}
+              spoilerState={spoilerState}
               style={{
-                fontFamily: resolvedNameFont
-                  ? `"${resolvedNameFont}", Inter, Avenir, Helvetica, Arial, sans-serif`
-                  : "inherit",
                 fontSize: 18,
                 fontWeight: 700,
-                color: roleColor ?? "var(--text-2)",
                 lineHeight: 1.2,
-                wordBreak: "break-word",
+                wordBreak: "break-word"
               }}
-            >
-              {name}
-            </div>
+            />
             <div style={{
               fontSize: 13, color: "var(--text-5)", fontWeight: 500,
               display: "flex", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap",
@@ -987,7 +655,7 @@ export default function UserPopout({
               </div>
             ) : (
               <XpBar
-                label={member ? "Server level" : "Level"}
+                label={member ? "Server level" : "Global Level"}
                 level={hasMemberLevel ? memberLevel : globalLevel}
                 totalXp={hasMemberLevel ? memberXp : globalXp}
                 accentVar="var(--accent-1)"
@@ -1000,15 +668,13 @@ export default function UserPopout({
           <div style={{ marginBottom: 8 }}>
             <ReviewsButton
               user={user}
+              member={member}
               currentUser={currentUser}
-              serverState={serverState}
-              channelState={channelState}
+              ctx={markdownData}
               messageState={messageState}
-              userState={userState}
               token={token}
               userSettings={userSettings}
               spoilerState={spoilerState}
-              markdownData={markdownData}
               open={open}
               close={close}
             />
@@ -1021,23 +687,25 @@ export default function UserPopout({
                 <SectionLabel>Roles — {member.roles.length}</SectionLabel>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                   {member.roles.map(roleId => {
-                    const role  = serverState?.get(member.serverId)?.roles.find((r: any) => r.id === roleId);
-                    const color = role?.color ? intToHex(role.color) : "var(--text-4)";
+                    const role = serverState?.get(member.serverId)?.roles.find(r => r.id === roleId);
+                    const roleStyle = role ? roleToStyle(role, false) : {};
+
                     return (
                       <span
                         key={roleId}
+                        className="uno"
                         style={{
                           display: "inline-flex", alignItems: "center", gap: 4,
-                          padding: "2px 7px", borderRadius: 4,
+                          padding: "0 7px", borderRadius: 1,
                           fontSize: 12, fontWeight: 600,
-                          background: "color-mix(in hsl, var(--bg-1), transparent 30%)",
-                          border: `1px solid color-mix(in hsl, ${color}, transparent 60%)`,
-                          color,
+                          background: "color-mix(in hsl, var(--bg-1), transparent 60%)",
+                          border: `2px solid color-mix(in hsl, var(--bg-1), transparent 10%)`,
+                          color: "var(--text-4)"
                         }}
                       >
                         <span style={{
-                          width: 8, height: 8, borderRadius: "50%",
-                          background: color, flexShrink: 0, display: "inline-block",
+                          width: 12, height: 12, borderRadius: "50%",
+                          flexShrink: 0, display: "inline-block", transform: "translateY(-1px) translateX(-2px)", ...roleStyle
                         }} />
                         {role?.name ?? `Role ${roleId}`}
                       </span>

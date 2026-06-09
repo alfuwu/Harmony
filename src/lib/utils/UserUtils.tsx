@@ -60,17 +60,6 @@ export function getDisplayRole(serverState: ServerState, member: Member, require
     return undefined;
 }
 
-export function getRoleColor(serverState: ServerState, user: User, member: Member | undefined = undefined, dms: boolean = false): string | undefined {
-    if (dms && user.dmColor)
-        return "#" + user.dmColor.toString(16).padStart(6, "0");
-    else if (member) {
-        const r = getDisplayRole(serverState, member, true);
-        if (r)
-            return "#" + r.color!.toString(16).padStart(6, "0");
-    }
-    return undefined;
-}
-
 export function mentionedIn(message: Message, user: User, member: Member | undefined = undefined): boolean {
     if (message.mentions && message.mentions.includes(user.id))
         return true;

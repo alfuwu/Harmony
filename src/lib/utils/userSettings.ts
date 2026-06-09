@@ -224,6 +224,19 @@ export interface UserSettings {
 
     // privacy & safety
     showReadReceipts: boolean;
+ 
+    // notifications
+    muteAllNotifications: boolean;
+    enableDesktopNotifications: boolean;
+    enableSoundNotifications: boolean;
+    notificationVolume: number;
+    notifyWhenUnfocused: boolean;
+    showNotificationPreview: boolean;
+    notifyOnMention: boolean;
+    notifyOnDirectMessage: boolean;
+    notifyOnFriendRequest: boolean;
+    notifyOnReply: boolean;
+    notifyOnReaction: boolean;
 
     // language
     language: Language;

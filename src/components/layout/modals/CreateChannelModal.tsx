@@ -32,7 +32,10 @@ export default function CreateChannelModal({ open, serverId, onClose }: CreateCh
   const [loading, setLoading] = useState(false);
 
   async function handleCreate() {
-    if (!name.trim()) { setError("Name is required"); return; }
+    if (!name.trim()) {
+      setError("Name is required");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -46,7 +49,9 @@ export default function CreateChannelModal({ open, serverId, onClose }: CreateCh
       joinChannel(channel.id);
       connection?.invoke("JoinChannel", channel.id).catch(() => {});
       setCurrentChannel(channel);
-      setName(""); setDescription(""); setType(ChannelType.Text);
+      setName("");
+      setDescription("");
+      setType(ChannelType.Text);
       onClose();
     } catch (e: any) {
       setError(e.message ?? "Failed to create channel");
@@ -55,7 +60,8 @@ export default function CreateChannelModal({ open, serverId, onClose }: CreateCh
     }
   }
 
-  if (!open) return null;
+  if (!open)
+    return null;
 
   return (
     <div className="modal-backdrop open" onClick={onClose}>

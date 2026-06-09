@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { checkUsernameAvailability, UsernameAvailability } from "../../../lib/api/authApi";
 import { updateMe } from "../../../lib/api/userApi";
+import { t } from "../../../lib/i18n";
+import { TranslationKeys } from "../../../lib/i18n/schema";
 
 interface Props {
   open: boolean;
@@ -70,7 +72,7 @@ export default function ChangeUsernameModal({
       onSaved(trimmed, disc);
       onClose();
     } catch (e: any) {
-      setError(e.message ?? "Failed to change username");
+      setError(e.message ?? "error.un_change");
     } finally {
       setLoading(false);
     }
@@ -84,13 +86,13 @@ export default function ChangeUsernameModal({
   return (
     <div className="modal-backdrop open" onClick={onClose}>
       <div className="modal-container" onClick={(e) => e.stopPropagation()} style={{ width: 400 }}>
-        <h2 style={{ margin: 0 }}>Change Username</h2>
+        <h2 style={{ margin: 0 }}>{t("change_un.title")}</h2>
         <p style={{ margin: 0, color: "var(--text-5)", fontSize: 13 }}>
-          Your username is how others find and mention you.
+          {t("change_un.desc")}
         </p>
 
         <div className="form-group">
-          <label>New username</label>
+          <label>{t("change_un.new_un")}</label>
           <input
             autoFocus
             value={username}
@@ -101,14 +103,19 @@ export default function ChangeUsernameModal({
           />
           <div style={{ fontSize: 12, marginTop: 4, minHeight: 28 }}>
             {unchanged && (
-              <span style={{ color: "var(--text-5)" }}>Same as current username.</span>
+              <span style={{ color: "var(--text-5)" }}>
+                {t("change_un.same")}
+              </span>
             )}
+
             {!unchanged && checking && (
-              <span style={{ color: "var(--text-5)" }}>Checking availability...</span>
+              <span style={{ color: "var(--text-5)" }}>
+                {t("change_un.checking")}
+              </span>
             )}
             {!unchanged && !checking && availability?.pomelo && (
               <span style={{ color: "var(--green-2)" }}>
-                ✓ <strong>@{trimmed}</strong> is available as a unique handle.
+                ✓ <strong>@{trimmed}</strong> {t("change_un.available.prefix")}
               </span>
             )}
             {!unchanged && !checking && availability && !availability.pomelo && (
@@ -122,8 +129,8 @@ export default function ChangeUsernameModal({
                   lineHeight: 1.5,
                 }}
               >
-                ⚠️ <strong>@{trimmed}</strong> is taken. You'll be assigned{" "}
-                <strong>@{trimmed}{discPreview}</strong> instead.
+                ⚠️ <strong>@{trimmed}</strong> {t("change_un.taken.prefix")}{" "}
+                <strong>@{trimmed}{discPreview}</strong> {t("change_un.taken.suffix")}
               </div>
             )}
           </div>
@@ -138,19 +145,19 @@ export default function ChangeUsernameModal({
               borderRadius: 6,
             }}
           >
-            {error}
+            {t(error as TranslationKeys)}
           </div>
         )}
 
         <div className="modal-buttons">
-          <button onClick={onClose}>Cancel</button>
+          <button onClick={onClose}>{t("cancel")}</button>
           <button
             className="create-btn"
             onClick={handleSave}
             disabled={!canSave}
             style={{ opacity: canSave ? 1 : 0.5 }}
           >
-            {loading ? "Saving..." : "Save"}
+            {loading ? t("saving") : t("save")}
           </button>
         </div>
       </div>

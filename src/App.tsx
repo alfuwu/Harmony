@@ -20,6 +20,7 @@ import { getAvatar } from "./lib/utils/UserUtils";
 import UserSettingsModal from "./components/layout/modals/UserSettingsModal";
 import TypingIndicator from "./components/messages/TypingIndicator";
 import { Theme, UserSettings } from "./lib/utils/userSettings";
+import PendingRepliesBar from "./components/messages/PendingRepliesBar";
 
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
 export const hostUrl = "http://localhost:5000";
@@ -74,7 +75,7 @@ function AppInner() {
   //const { open, close } = usePopoutState();
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [quotebookOpen, setQuotebookOpen] = useState(false);
+  //const [quotebookOpen, setQuotebookOpen] = useState(false);
   const [showDms, setShowDms] = useState(false);
 
   syncSignalRRefs(messageState, channelState, serverState, userState);
@@ -118,18 +119,13 @@ function AppInner() {
 
   if (IS_DEVELOPMENT) {
     useEffect(() => {
-      // @ts-expect-error
-      window.servers = serverState.servers;
-      // @ts-expect-error
-      window.channels = channelState.channels;
-      // @ts-expect-error
-      window.members = userState.members;
-      // @ts-expect-error
-      window.messages = messageState.messages;
-      // @ts-expect-error
-      window.users = userState.users;
-      // @ts-expect-error
-      window.userSettings = userSettings;
+      const w = window as any;
+      w.servers = serverState.servers;
+      w.channels = channelState.channels;
+      w.members = userState.members;
+      w.messages = messageState.messages;
+      w.users = userState.users;
+      w.userSettings = userSettings;
     }, [serverState.servers, channelState.channels, userState.members, messageState.messages, userState.users, userSettings]);
   }
 
@@ -209,6 +205,7 @@ function AppInner() {
                   channelId={channelState.currentChannel?.id}
                   currentUserId={user.id}
                 />
+                <PendingRepliesBar />
                 <div className="real-wrap">
                   <div className="msg-wrap">
                     <MessageInput />

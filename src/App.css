@@ -814,7 +814,7 @@ textarea,
   margin-bottom: 26px;
 }
 .message-list.typing > .message:last-of-type {
-  margin-bottom: 12px;
+  margin-bottom: 2px;
 }
 
 .channel {
@@ -970,7 +970,7 @@ textarea,
   bottom: 2px;
   width: 0%;
   height: 2px;
-  background: currentColor;
+  background: var(--author-hover);
   transition: left 150ms ease-out, width 150ms ease-out;
 }
 .author:hover::after, .mention:hover::after {
@@ -1056,6 +1056,7 @@ em-emoji-picker {
   margin-left: 52px;
   min-height: 16px;
   min-width: 0;
+  word-wrap: break-word;
 }
 .content-container > .timestamp {
   position: absolute;
@@ -1173,6 +1174,11 @@ em-emoji-picker {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+.window-buttons.login {
+  justify-content: right;
+  align-items: end;
+  margin-right: 75px;
 }
 
 .window-buttons button {
@@ -1295,6 +1301,120 @@ em-emoji-picker {
 .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
 .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
+.typing-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pending-replies-bar {
+  margin: 0 8px 4px;
+  padding: 6px 10px 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.pending-replies-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: var(--accent-1);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.pending-replies-header > button {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0 2px;
+  line-height: 1;
+  color: var(--text-5);
+  font-size: 14px;
+}
+.pending-replies-header > button:hover {
+  color: var(--text-3);
+  background: none;
+  border-color: transparent;
+}
+
+.pending-replies-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pending-reply-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px 3px 8px;
+  font-size: 12px;
+  max-width: 280px;
+  min-width: 0;
+}
+
+.pending-reply-author {
+  color: var(--accent-1);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pending-reply-content {
+  color: var(--text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.pending-reply-item > button {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0 2px;
+  line-height: 1;
+  color: var(--text-5);
+  font-size: 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.pending-reply-item > button:hover {
+  color: var(--text-3);
+  background: none;
+  border-color: transparent;
+}
+
+/* ── Message reply-queued indicator ─────────────────────────────────────── */
+.message.pending-reply {
+  background: color-mix(in hsl, var(--accent-2), transparent 88%) !important;
+}
+.message.pending-reply.hover {
+  background: color-mix(in hsl, var(--accent-2), transparent 82%) !important;
+}
+/* Right-side accent bar mirrors the left-side mention bar */
+.message.pending-reply::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background-color: var(--accent-2);
+  border-radius: 12px;
+}
+
 /* login screen layout */
 .login-screen {
   display: flex;
@@ -1409,7 +1529,7 @@ code {
 .code-block-wrapper {
   border-radius: 8px;
   overflow: hidden;
-  max-width: max(90%, 300px);
+  max-width: min(max(90%, 300px), 100%);
   min-width: 0;
   font-size: 0.875rem;
   margin: 10px 0;
@@ -1454,7 +1574,6 @@ code {
   font-size: 0.875rem;
   line-height: 1.6;
   color: #e6edf3;
-  overflow-x: auto; /* horizontal scrollbar for long lines */
   tab-size: 2;
   scrollbar-width: 5px;
 }
@@ -1542,6 +1661,8 @@ code {
 .editor-code-block .token.important { font-weight: bold; }
 .editor-code-block .token.italic    { font-style: italic; }
 .editor-code-block .token.entity    { cursor: help; }
+
+.editor-code-block .token.unknown   { color: rgb(253, 174, 183); font-style: italic; }
 
 .mds {
   font-weight: 500 !important;
@@ -1679,7 +1800,7 @@ code {
 .quote:has(> .subheader) {
   border-left-color: #555;
 }
-.quote::after, .editor-block-quote::after {
+.quote::before, .editor-block-quote::before {
   position: absolute;
   left: 1px;
   content: "";
@@ -1689,16 +1810,23 @@ code {
   width: 4px;
   border-radius: 4px;
 }
-.quote + br + .quote::after {
-  top: -12px;
+.quote + br + .quote::before {
+  top: -12px !important;
+}
+.quote-list {
+  display: inline-block;
 }
 .editor-block-quote {
   position: relative;
   padding-left: 1.3em;
   color: #aaa;
 }
-.editor-block-quote::after {
+.editor-block-quote::before {
   top: 0;
+}
+div.quote::before {
+  top: 3px;
+  bottom: -6px;
 }
 
 ol {

@@ -1,28 +1,3 @@
-import Prism from 'prismjs';
-import 'prismjs/components/prism-markup';
-import 'prismjs/components/prism-css';
-import 'prismjs/components/prism-javascript';
-import 'prismjs/components/prism-typescript';
-import 'prismjs/components/prism-jsx';
-import 'prismjs/components/prism-tsx';
-import 'prismjs/components/prism-python';
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-yaml';
-import 'prismjs/components/prism-sql';
-import 'prismjs/components/prism-rust';
-import 'prismjs/components/prism-go';
-import 'prismjs/components/prism-java';
-import 'prismjs/components/prism-c';
-import 'prismjs/components/prism-cpp';
-import 'prismjs/components/prism-csharp';
-import 'prismjs/components/prism-ruby';
-import 'prismjs/components/prism-markdown';
-import 'prismjs/components/prism-diff';
-import 'prismjs/components/prism-kotlin';
-import 'prismjs/components/prism-swift';
-import 'prismjs/components/prism-php';
-
 import {
   useState, useMemo, useEffect, useRef,
   forwardRef, useImperativeHandle, CSSProperties,
@@ -38,15 +13,21 @@ import { AuthState, useAuthState } from "../../lib/state/Auth";
 import { UserState, useUserState } from "../../lib/state/Users";
 import { ServerState, useServerState } from "../../lib/state/Servers";
 
-import { renderEmoji } from "../../lib/utils/MarkdownRenderer";
-import { AbstractChannel, Channel, Role, Server, User } from "../../lib/utils/types";
-import { getAvatar, getDisplayName, getRoleColor } from "../../lib/utils/UserUtils";
+import { AbstractChannel, Channel, Role, Server, User, Emoji as CustomEmoji } from "../../lib/utils/types";
+import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage } from "../../lib/api/messageApi";
 import { rootRef } from "../../App";
 
 import { tokenizeInline } from "../../lib/utils/MarkdownParser";
-import { formatTimestamp } from "../../lib/utils/MarkdownRenderer";
+import {
+  renderEmoji,
+  formatTimestamp,
+  superHighlighter,
+  highlighterReady,
+  ensureLanguageLoaded,
+  getShikiTheme
+} from "../../lib/utils/MarkdownRenderer";
 import {
   withMarkdownBlocks,
   withAutoFormatMentions,
@@ -57,27 +38,36 @@ import {
 import data, { Emoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
 import { connection } from "../../lib/api/signalrClient";
-import { getIcon } from "../../lib/utils/ServerUtils";
+import { getEmojiUrl, getIcon } from "../../lib/utils/ServerUtils";
 
 import katex from 'katex';
+import { ShikiEditorHighlighter } from "../../lib/utils/ShikiEditorHighlighter";
 
 init({ data });
 
 const REGIONAL_INDICATOR_LETTERS = 'abcdefghijklmnopqrstuvwxyz'.split('').map((c, i) => ({
   id: `regional_indicator_letter_${c}`,
   type: 'emoji' as const,
-  skins: [{ native: String.fromCodePoint(0x1F1E6 + i) }],
+  skins: [{ native: String.fromCodePoint(0x1F1E6 + i) }]
 }));
 
 function isFlag(native: string): boolean {
-  if (!native) return false;
+  if (!native)
+    return false;
   const pts = [...native].map(c => c.codePointAt(0) ?? 0);
   return pts.length === 2 && pts.every(p => p >= 0x1F1E6 && p <= 0x1F1FF);
 }
 
+function normalizeEmojiId(id: string, native?: string): string {
+  let n = (id ?? "").replace(/-/g, "_");
+  if (native && isFlag(native) && !n.startsWith("flag_") && !n.startsWith("regional_"))
+    n = `flag_${n}`;
+  return n;
+}
+
 const withMentions = (editor: Editor) => {
   const { isInline, isVoid, markableVoid } = editor;
-  const isSpecial = (el: any) => el.type?.startsWith("mention") || el.type === "emoji";
+  const isSpecial = (el: any) => el.type?.startsWith("mention") || el.type === "emoji" || el.type === "customEmoji";
   editor.isInline = el => isSpecial(el) || isInline(el);
   editor.isVoid = el => isSpecial(el) || isVoid(el);
   editor.markableVoid = el => isSpecial(el) || markableVoid(el);
@@ -102,16 +92,25 @@ const insertEmoji = (editor: Editor, emoji: Emoji) => {
   const native = emoji.native ?? emoji.skins?.[0]?.native ?? "";
   ins(editor, { type: "emoji", emoji: native, children: [{ text: native }] });
 };
+const insertCustomEmoji = (editor: Editor, name: string, id: number, url: string) =>
+  ins(editor, {
+    type: "customEmoji",
+    emojiName: name,
+    emojiId: id,
+    emojiUrl: url,
+    children: [{ text: `<:${name}:${id}>` }],
+  });
 
 function serializeInlineNode(node: any): string {
   if (node.text !== undefined)
     return node.text as string;
   switch (node.type) {
-    case 'mentionUser':    return `<@${node.id}>`;
+    case 'mentionUser': return `<@${node.id}>`;
     case 'mentionChannel': return `<#${node.id}>`;
-    case 'mentionServer':  return `<#&${node.id}>`;
-    case 'mentionRole':    return `<@&${node.id}>`;
-    case "emoji":          return (node.emoji as string) ?? "";
+    case 'mentionServer': return `<#&${node.id}>`;
+    case 'mentionRole': return `<@&${node.id}>`;
+    case "emoji": return (node.emoji as string) ?? "";
+    case "customEmoji": return `<:${node.emojiName}:${node.emojiId}>`;
     default:
       if (node.children)
         return (node.children as any[]).map(serializeInlineNode).join("");
@@ -170,63 +169,6 @@ function selectionAtBlockBoundary(
   }
 }
 
-function getPrismGrammar(lang?: string): Prism.Grammar | null {
-  if (!lang)
-    return null;
-  const l = lang.toLowerCase();
-  const aliases: Record<string, string> = {
-    js: 'javascript', ts: 'typescript',
-    py: 'python', rb: 'ruby',
-    sh: 'bash', shell: 'bash', zsh: 'bash',
-    'c++': 'cpp', 'c#': 'csharp', 'f#': 'fsharp',
-    html: 'markup', xml: 'markup', svg: 'markup',
-    yml: 'yaml', md: 'markdown',
-    rs: 'rust', kt: 'kotlin', kts: 'kotlin'
-  };
-  const name = aliases[l] ?? l;
-  return (Prism.languages[name] as Prism.Grammar) ?? null;
-}
- 
-function flattenPrismTokens(
-  toks: Array<string | Prism.Token>,
-  path: any[],
-  offset: number,
-  ranges: any[],
-  inherited?: string
-): number {
-  for (const tok of toks) {
-    if (typeof tok === 'string') {
-      if (inherited && tok.length > 0) {
-        ranges.push({
-          prismToken: inherited,
-          anchor: { path, offset },
-          focus:  { path, offset: offset + tok.length },
-        });
-      }
-      offset += tok.length;
-    } else {
-      const start   = offset;
-      const content = tok.content;
-      if (typeof content === 'string') {
-        if (content.length > 0)
-          ranges.push({
-            prismToken: tok.type,
-            anchor: { path, offset: start },
-            focus:  { path, offset: start + content.length },
-          });
-        offset += content.length;
-      } else {
-        // Array of tokens or a single nested Token
-        const arr: Array<string | Prism.Token> = Array.isArray(content)
-          ? content
-          : [content as Prism.Token];
-        offset = flattenPrismTokens(arr, path, offset, ranges, tok.type);
-      }
-    }
-  }
-  return offset;
-}
-
 export type MessageInputHandle = {
   setText(text: string | null | undefined, select?: boolean): void;
   focus(moveToEnd?: boolean, preventScroll?: boolean): void;
@@ -262,7 +204,7 @@ const MessageInput = forwardRef(function MessageInput({
   serverState?: ServerState;
 }, ref) {
   const { token, user, userSettings } = authState ?? useAuthState();
-  const { channels, currentChannel } = channelState ?? useChannelState();
+  const { channels, currentChannel, getChannelDraft, setChannelDraft, getPendingReplies, clearPendingReplies } = channelState ?? useChannelState();
   const { addMessage } = messageState ?? useMessageState();
   const { users, getMember } = userState ?? useUserState();
   serverState ??= useServerState();
@@ -300,10 +242,35 @@ const MessageInput = forwardRef(function MessageInput({
     }
   }, []);
 
+    const prevChannelIdRef = useRef<number | undefined>(currentChannel?.id);
+
+  useEffect(() => {
+    if (!isChannel)
+      return;
+
+    const prevId = prevChannelIdRef.current;
+    const newId  = currentChannel?.id;
+    if (prevId === newId)
+      return;
+
+    if (prevId !== undefined)
+      setChannelDraft(prevId, serializeSlateToMarkdown(editor.children));
+
+    const draft = newId !== undefined ? getChannelDraft(newId) : "";
+    editor.children = slateFromMarkdown(draft);
+    editor.selection = null;
+    editor.history = { undos: [], redos: [] };
+    try { Editor.normalize(editor, { force: true }); } catch { /* ignore */ }
+    try { Transforms.select(editor, Editor.end(editor, [])); } catch { editor.selection = null; }
+    editor.onChange();
+
+    prevChannelIdRef.current = newId;
+  }, [currentChannel?.id]);
+
   const editableRef = useRef<HTMLDivElement | null>(null);
   const [target, setTarget] = useState<Range | null>(null);
   const [search, setSearch] = useState("");
-  const [index,  setIndex]  = useState(0);
+  const [index, setIndex] = useState(0);
   const [emojiResults, setEmojiResults] = useState<any[]>([]);
 
   useEffect(() => {
@@ -313,13 +280,65 @@ const MessageInput = forwardRef(function MessageInput({
         setEmojiResults([]);
         return;
       }
-      const results = await SearchIndex.search(search.slice(1));
+      const raw = search.slice(1);
+      const q = raw.replace(/_/g, " ");
+      const results = await SearchIndex.search(q);
       if (!cancelled)
         setEmojiResults((results ?? []).slice(0, 10).map((e: Emoji) => ({ ...e, type: "emoji" })));
     }
     run();
     return () => { cancelled = true; };
   }, [search]);
+
+  const shikiHighlighter = useMemo(
+    () => new ShikiEditorHighlighter(ensureLanguageLoaded),
+    []
+  );
+  const [shikiVersion, setShikiVersion] = useState(0);
+  const [hlReady, setHlReady] = useState(() => !!superHighlighter);
+
+  useEffect(() => {
+    if (superHighlighter)
+      return;
+    let alive = true;
+    highlighterReady.then(() => { if (alive) setHlReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    return shikiHighlighter.subscribe(() => setShikiVersion(v => v + 1));
+  }, [shikiHighlighter]);
+
+  const triggerShikiAll = () => {
+    if (!superHighlighter)
+      return;
+    const theme = getShikiTheme(userSettings ?? null);
+    editor.children.forEach((block: any, i: number) => {
+      if (block?.type === 'code-block') {
+        shikiHighlighter.update(
+          i,
+          Node.string(block),
+          block.language ?? 'text',
+          theme,
+          superHighlighter!
+        );
+      } else {
+        shikiHighlighter.clear(i);
+      }
+    });
+  };
+  const shikiTheme = useMemo(
+    () => getShikiTheme(userSettings ?? null),
+    [userSettings?.theme]
+  );
+  useEffect(() => {
+    if (hlReady && superHighlighter)
+      triggerShikiAll();
+  }, [hlReady, shikiTheme]);
+
+  useEffect(() => {
+    return () => shikiHighlighter.clearAll();
+  }, [shikiHighlighter]);
 
   useEffect(() => {
     if (!isChannel)
@@ -329,7 +348,9 @@ const MessageInput = forwardRef(function MessageInput({
       // @ts-expect-error
       if (document.activeElement === editableRef.current || tag === "input" || tag === "textarea" || document.activeElement?.isContentEditable)
         return;
-      if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter")
+      if (!['a', 'v', 'Backspace', 'Delete', 'Enter'].includes(e.key) && (e.ctrlKey || e.metaKey || e.altKey))
+        return;
+      else if (e.key.length !== 1 && e.key !== "Backspace" && e.key !== "Delete" && e.key !== "Enter")
         return;
       Transforms.collapse(editor, { edge: "focus" });
       ReactEditor.focus(editor);
@@ -384,7 +405,7 @@ const MessageInput = forwardRef(function MessageInput({
     editor.onChange();
   };
 
-  const decorate = ([node, path]: any): any[] => {
+  const decorate = ([node, path]: any, _shikiVer = shikiVersion): any[] => {
     if (!Text.isText(node))
       return [];
     if (path.length !== 2)
@@ -399,14 +420,21 @@ const MessageInput = forwardRef(function MessageInput({
       return [];
  
     if (block?.type === 'code-block') {
-      const grammar = getPrismGrammar(block.language);
-      if (!grammar)
-        return [];
-      const code = Node.string(node);
-      const tokens = Prism.tokenize(code, grammar);
-      const ranges: any[] = [];
-      flattenPrismTokens(tokens, path, 0, ranges);
-      return ranges;
+      let nodeStart = 0;
+      for (let ci = 0; ci < path[1]; ci++) {
+        try { nodeStart += Node.string(block.children[ci]).length; }
+        catch { break; }
+      }
+      const nodeText = node.text as string;
+      const nodeLength = nodeText.length;
+ 
+      const decos = shikiHighlighter.getDecorations(path[0], nodeStart, nodeLength);
+      return decos.map(d => ({
+        shikiColor: d.color,
+        shikiFontStyle: d.fontStyle,
+        anchor: { path, offset: d.offset },
+        focus: { path, offset: d.offset + d.length }
+      }));
     }
 
     const blockText = Node.string(block);
@@ -442,8 +470,18 @@ const MessageInput = forwardRef(function MessageInput({
   const Leaf = ({ attributes, children, leaf }: any) => {
     let rendered = children;
 
-    if (leaf.prismToken)
-      rendered = <span className={`token ${leaf.prismToken}`}>{rendered}</span>;
+    if (leaf.shikiColor || leaf.shikiFontStyle) {
+      const s: CSSProperties = {};
+      if (leaf.shikiColor)
+        s.color = leaf.shikiColor;
+      if (leaf.shikiFontStyle & 1)
+        s.fontStyle = 'italic';
+      if (leaf.shikiFontStyle & 2)
+        s.fontWeight = 'bold';
+      if (leaf.shikiFontStyle & 4)
+        s.textDecoration = 'underline';
+      rendered = <span style={s}>{rendered}</span>;
+    }
 
     if (leaf.boldItalic) {
       rendered = <b><i>{rendered}</i></b>;
@@ -503,7 +541,7 @@ const MessageInput = forwardRef(function MessageInput({
             className="mention int"
             style={{
               fontFamily: `${m?.nameFont}, ${element.user?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`,
-              "--special-mention-color": getRoleColor(serverState, element.user, m, currentServer === null),
+              "--special-mention-color": undefined// getRoleColor(serverState, element.user, m, currentServer === null),
             } as any}
           >
             @{getDisplayName(element.user)}
@@ -543,16 +581,32 @@ const MessageInput = forwardRef(function MessageInput({
             {renderEmoji(userSettings, element.emoji)}
           </span>
         );
+      
+      case "customEmoji":
+        return (
+          <span {...attributes} contentEditable={false}>
+            {element.emojiUrl
+              ? <img
+                  src={element.emojiUrl as string}
+                  alt={(element.emojiName as string) ?? ""}
+                  title={`:${element.emojiName}:`}
+                  style={{
+                    width: "1.375em", height: "1.375em",
+                    verticalAlign: "-0.3em",
+                    display: "inline-block",
+                    objectFit: "contain",
+                  }}
+                />
+              : <code>:{element.emojiName}:</code>
+            }
+          </span>
+        );
 
       case "quote":
         return <div {...attributes} className="editor-block-quote">{children}</div>;
 
       case "list-item":
-        return (
-          <div {...attributes} className="editor-list-item">
-            {children}
-          </div>
-        );
+        return <div {...attributes} className="editor-list-item">{children}</div>;
 
       case "numbered-list-item":
         return (
@@ -561,13 +615,12 @@ const MessageInput = forwardRef(function MessageInput({
           </div>
         );
 
-      case "code-block": {
+      case "code-block":
         return (
           <div {...attributes} className="editor-code-block">
             <div spellCheck={false}>{children}</div>
           </div>
         );
-      }
 
       case "math-block": {
         const rawLatex = Node.string(element);
@@ -604,31 +657,51 @@ const MessageInput = forwardRef(function MessageInput({
     if (s.startsWith("@&")) {
       const roles: Role[] = (currentServer as any)?.roles ?? [];
       return roles
-        .filter((r: Role) => r.name?.toLowerCase()?.startsWith(q2))
+        .filter(r => r.name?.toLowerCase()?.startsWith(q2))
         .slice(0, 10)
-        .map((r: Role) => ({ ...r, type: "role" }));
+        .map(r => ({ ...r, type: "role" }));
     }
     if (s.startsWith("#&"))
       return servers
-        .filter((sv: Server) => sv.name.toLowerCase().startsWith(q2))
+        .filter(sv => sv.name.toLowerCase().startsWith(q2))
         .slice(0, 10)
-        .map((sv: Server) => ({ ...sv, type: "server" }));
+        .map(sv => ({ ...sv, type: "server" }));
     if (s.startsWith("#"))
       return channels
-        .filter((c: AbstractChannel) => c.serverId === currentChannel?.serverId && c.name?.toLowerCase()?.startsWith(q1))
+        .filter(c => c.serverId === currentChannel?.serverId && c.name?.toLowerCase()?.startsWith(q1))
         .slice(0, 10)
-        .map((c: AbstractChannel) => ({ ...c, type: "channel" }));
+        .map(c => ({ ...c, type: "channel" }));
     if (s.startsWith("@"))
       return users
-        .filter((u: User) => u?.displayName?.toLowerCase()?.startsWith(q1) || u.username.toLowerCase().startsWith(q1))
+        .filter(u => u?.displayName?.toLowerCase()?.startsWith(q1) || u.username.toLowerCase().startsWith(q1))
         .slice(0, 10)
-        .map((u: User) => ({ ...u, type: "user" }));
+        .map(u => ({ ...u, type: "user" }));
     if (s.startsWith(":")) {
-      const riQuery = s.slice(1);
+      const raw = s.slice(1);
+
       const riMatches = REGIONAL_INDICATOR_LETTERS
-        .filter(r => r.id.startsWith(riQuery))
+        .filter(r => r.id.startsWith(raw))
         .slice(0, 5);
-      return [...emojiResults, ...riMatches].slice(0, 10);
+
+      const serverEmojis = servers
+        .flatMap(sv => sv.emojis ?? [])
+        .filter(e => e.name.toLowerCase().startsWith(raw.toLowerCase()))
+        .slice(0, 5)
+        .map(e => ({ ...e, type: "customEmoji" as const }));
+
+      const flagDirect = [];
+      const flagCodeMatch = raw.match(/^(?:flag_)?([a-z]{2})$/i);
+      if (flagCodeMatch) {
+        const code = flagCodeMatch[1].toLowerCase();
+        const fe = (data as any).emojis[code];
+        if (fe && isFlag(fe.skins?.[0]?.native ?? "")) {
+          const alreadyIn = emojiResults.some(r => r.id === code);
+          if (!alreadyIn)
+            flagDirect.push({ ...fe, id: code, type: "emoji" });
+        }
+      }
+
+      return [...serverEmojis, ...flagDirect, ...emojiResults, ...riMatches].slice(0, 10);
     }
     return [];
   };
@@ -681,6 +754,23 @@ const MessageInput = forwardRef(function MessageInput({
           } catch { /* lalala yeah i eat transient errors bite me */ }
         } else {
           setTarget(null);
+        }
+
+        if (superHighlighter) {
+          const theme = getShikiTheme(userSettings ?? null);
+          editor.children.forEach((block: any, i: number) => {
+            if (block?.type === 'code-block') {
+              shikiHighlighter.update(
+                i,
+                Node.string(block),
+                block.language ?? 'text',
+                theme,
+                superHighlighter!
+              );
+            } else {
+              shikiHighlighter.clear(i);
+            }
+          });
         }
 
         if (setText) {
@@ -772,16 +862,34 @@ const MessageInput = forwardRef(function MessageInput({
                 }
                 case "emoji": {
                   const e = item as Emoji;
-                  const native: string = e.skins?.[0]?.native ?? '';
-                  let displayId: string = (e.id as string).replace(/-/g, '_');
-                  if (isFlag(native) && !displayId.startsWith('flag_') && !displayId.startsWith('regional_'))
-                    displayId = `flag_${displayId}`;
-
+                  const native = e.skins?.[0]?.native ?? "";
+                  const displayId = normalizeEmojiId(e.id, native);
                   return (
                     <div key={item.id} className={`mention-item int ${i === index ? "active" : ""}`}
                       onMouseDown={ev => { ev.preventDefault(); Transforms.select(editor, target!); insertEmoji(editor, e); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
                       <span>{renderEmoji(userSettings, native)} :{displayId}:</span>
+                    </div>
+                  );
+                }
+                case "customEmoji": {
+                  const ce = item as CustomEmoji;
+                  const url = getEmojiUrl(ce);
+                  return (
+                    <div key={ce.id} className={`mention-item int ${i === index ? "active" : ""}`}
+                      onMouseDown={ev => {
+                        ev.preventDefault();
+                        Transforms.select(editor, target!);
+                        insertCustomEmoji(editor, ce.name, ce.id!, url ?? "");
+                        setTarget(null);
+                      }}
+                      onMouseEnter={() => setIndex(i)}>
+                      <img
+                        src={url}
+                        alt={ce.name}
+                        style={{ width: 20, height: 20, objectFit: "contain", borderRadius: 4, flexShrink: 0 }}
+                      />
+                      <span>:{ce.name}:</span>
                     </div>
                   );
                 }
@@ -812,38 +920,20 @@ const MessageInput = forwardRef(function MessageInput({
         // from jumping when focus() is called.
         scrollSelectionIntoView={() => {}}
 
-        onMouseDown={e => {
-          const target = e.target as HTMLElement;
-          const voidEl = target.closest?.('[contenteditable="false"]') as HTMLElement | null;
-          if (!voidEl || !editableRef.current?.contains(voidEl))
-            return;
-          try {
-            const slateNode = ReactEditor.toSlateNode(editor, voidEl);
-            if (!editor.isVoid(slateNode as any) || !editor.isInline(slateNode as any))
-              return;
-            e.preventDefault();
-            const path = ReactEditor.findPath(editor, slateNode);
-            const rect = voidEl.getBoundingClientRect();
-            const dest = e.clientX < rect.left + rect.width / 2
-              ? Editor.before(editor, path)
-              : Editor.after(editor, path);
-            if (dest) {
-              Transforms.select(editor, dest);
-              ReactEditor.focus(editor);
-            }
-          } catch {}
-        }}
-
         onCopy={e => {
           const { selection } = editor;
-          if (!selection)
+          if (!selection || Range.isCollapsed(selection))
             return;
           e.preventDefault();
           const fragment = Editor.fragment(editor, selection);
           const [start, end] = Range.edges(selection);
-          const startsAtBlock = selectionAtBlockBoundary(editor, start, 'start');
-          const endsAtBlock = selectionAtBlockBoundary(editor, end, 'end');
-          const text = serializeFragmentToText(fragment, startsAtBlock, endsAtBlock);
+          
+          const text = serializeFragmentToText(
+            fragment,
+            selectionAtBlockBoundary(editor, start, 'start'),
+            selectionAtBlockBoundary(editor, end, 'end')
+          );
+
           e.clipboardData.setData("text/plain", text);
           try {
             const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
@@ -857,9 +947,13 @@ const MessageInput = forwardRef(function MessageInput({
           e.preventDefault();
           const fragment = Editor.fragment(editor, selection);
           const [start, end] = Range.edges(selection);
-          const startsAtBlock = selectionAtBlockBoundary(editor, start, 'start');
-          const endsAtBlock = selectionAtBlockBoundary(editor, end, 'end');
-          const text = serializeFragmentToText(fragment, startsAtBlock, endsAtBlock);
+
+          const text = serializeFragmentToText(
+            fragment,
+            selectionAtBlockBoundary(editor, start, 'start'),
+            selectionAtBlockBoundary(editor, end, 'end')
+          );
+
           e.clipboardData.setData("text/plain", text);
           try {
             const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
@@ -1063,6 +1157,11 @@ const MessageInput = forwardRef(function MessageInput({
                     setEmojiResults([]);
                     insertEmoji(editor, results[index] as Emoji);
                     break;
+                  case "customEmoji": {
+                    const ce = results[index] as CustomEmoji;
+                    insertCustomEmoji(editor, ce.name, ce.id!, getEmojiUrl(ce) ?? "");
+                    break;
+                  }
                 }
                 setTarget(null);
                 return;
@@ -1121,15 +1220,20 @@ const MessageInput = forwardRef(function MessageInput({
                 clearEditor();
                 if (!currentChannel || !user)
                   return;
+
+                const references = getPendingReplies(currentChannel.id).map(msg => msg.id);
+                clearPendingReplies(currentChannel.id);
+
                 const msg = {
                   id: -1, channelId: currentChannel.id, authorId: user.id,
                   mentions: [], reactions: [], content: md, previousContent: null,
                   timestamp: new Date().toString(), editedTimestamp: null,
                   isDeleted: false, isPinned: false, sending: true,
                   nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`),
+                  references
                 };
                 addMessage(msg);
-                sendMessage(currentChannel.id, md, msg.nonce, { headers: { Authorization: `Bearer ${token}` } })
+                sendMessage(currentChannel.id, md, msg.nonce, references, { headers: { Authorization: `Bearer ${token}` } })
                   .then(sentMsg => addMessage(sentMsg));
               } else if (onEnter) {
                 e.preventDefault();
@@ -1147,7 +1251,7 @@ const MessageInput = forwardRef(function MessageInput({
             if (sel && Range.isCollapsed(sel)) {
               const path = Editor.path(editor, sel);
               const down = e.key === "ArrowDown";
-              if (down && Editor.isEnd(editor, sel.anchor, path) || !down && Editor.isStart(editor, sel.anchor, path)) {
+              
                 const end = down ? Editor.end(editor, path) : Editor.start(editor, path);
                 const next = down ? Editor.after(editor, end) : Editor.before(editor, end);
                 if (!next) {
@@ -1158,13 +1262,13 @@ const MessageInput = forwardRef(function MessageInput({
                   });
                   return;
                 }
-              }
             }
           }
         }}
 
         onPaste={e => {
           const text = e.clipboardData.getData("text/plain");
+          console.log(text);
           if (!text)
             return;
           e.preventDefault();

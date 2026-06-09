@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { t } from "../../../lib/i18n";
 
 export default function CroppingModal({
   src,
@@ -292,8 +293,8 @@ export default function CroppingModal({
         </div>
 
         <div className="actions">
-          <button className="btn" onClick={onCancel}>Cancel</button>
-          <button className="btn" onClick={handleDone}>Save</button>
+          <button className="btn" onClick={onCancel}>{t("cancel")}</button>
+          <button className="btn" onClick={handleDone}>{t("save")}</button>
         </div>
       </div>
     </div>

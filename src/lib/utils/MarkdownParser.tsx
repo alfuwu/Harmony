@@ -481,7 +481,7 @@ export function tokenizeInline(text: string): DecoToken[] {
   return tokens;
 }
 
-export function parseDocument(text: string): DocumentAST {
+export function parseDocument(text: string, allowBlocks = true): DocumentAST {
   const lines  = text.split('\n');
   const blocks: BlockNode[] = [];
   let i = 0;
@@ -489,139 +489,141 @@ export function parseDocument(text: string): DocumentAST {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Code fence: ```[lang]
-    const cbM = /^```(.*)$/.exec(line);
-    if (cbM) {
-      const lang = cbM[1].trim();
-      const body: string[] = [];
-      let j = i + 1;
-      while (j < lines.length && lines[j].trim() !== '```')
-        body.push(lines[j++]);
-      if (j < lines.length) {
+    if (allowBlocks) {
+      // Code fence: ```[lang]
+      const cbM = /^```(.*)$/.exec(line);
+      if (cbM) {
+        const lang = cbM[1].trim();
+        const body: string[] = [];
+        let j = i + 1;
+        while (j < lines.length && lines[j].trim() !== '```')
+          body.push(lines[j++]);
+        if (j < lines.length) {
+          blocks.push({ type: 'codeBlock', ...(lang && { language: lang }), content: body.join('\n') });
+          i = j + 1;
+          continue;
+        }
         blocks.push({ type: 'codeBlock', ...(lang && { language: lang }), content: body.join('\n') });
-        i = j + 1;
+        i = lines.length;
         continue;
       }
-      blocks.push({ type: 'codeBlock', ...(lang && { language: lang }), content: body.join('\n') });
-      i = lines.length;
-      continue;
-    }
 
-    // Display math block: $$ on its own line opens a fenced block
-    if (line.trim() === '$$') {
-      const body: string[] = [];
-      let j = i + 1;
-      while (j < lines.length && lines[j].trim() !== '$$')
-        body.push(lines[j++]);
-      blocks.push({ type: 'mathBlock', content: body.join('\n') });
-      i = j < lines.length ? j + 1 : lines.length;
-      continue;
-    }
+      // Display math block: $$ on its own line opens a fenced block
+      if (line.trim() === '$$') {
+        const body: string[] = [];
+        let j = i + 1;
+        while (j < lines.length && lines[j].trim() !== '$$')
+          body.push(lines[j++]);
+        blocks.push({ type: 'mathBlock', content: body.join('\n') });
+        i = j < lines.length ? j + 1 : lines.length;
+        continue;
+      }
 
-    // Single-line display math: $$expr$$
-    const slMathM = /^\$\$(.+)\$\$$/.exec(line.trim());
-    if (slMathM) {
-      blocks.push({ type: 'mathBlock', content: slMathM[1] });
-      i++;
-      continue;
-    }
+      // Single-line display math: $$expr$$
+      const slMathM = /^\$\$(.+)\$\$$/.exec(line.trim());
+      if (slMathM) {
+        blocks.push({ type: 'mathBlock', content: slMathM[1] });
+        i++;
+        continue;
+      }
 
-    // Heading: #{1,6} text
-    const hM = /^(#{1,6}) (.+)/.exec(line);
-    if (hM) {
-      blocks.push({ type: 'header', level: hM[1].length as 1|2|3|4|5|6, children: parseInline(hM[2]) });
-      i++;
-      continue;
-    }
+      // Heading: #{1,6} text
+      const hM = /^(#{1,6}) (.+)/.exec(line);
+      if (hM) {
+        blocks.push({ type: 'header', level: hM[1].length as 1|2|3|4|5|6, children: parseInline(hM[2]) });
+        i++;
+        continue;
+      }
 
-    // Subheader: -# text
-    const shM = /^-# (.+)/.exec(line);
-    if (shM) {
-      blocks.push({ type: 'subheader', children: parseInline(shM[1]) });
-      i++;
-      continue;
-    }
+      // Subheader: -# text
+      const shM = /^-# (.+)/.exec(line);
+      if (shM) {
+        blocks.push({ type: 'subheader', children: parseInline(shM[1]) });
+        i++;
+        continue;
+      }
 
-    // Collapsible section: >+ Title ... >-
-    if (line.startsWith('>+ ')) {
-      const title = line.slice(3).trim();
-      const bodyLines: string[] = [];
-      let j = i + 1;
-      while (j < lines.length && lines[j].trim() !== '>-')
-        bodyLines.push(lines[j++]);
-      blocks.push({ type: 'collapsible', title: parseInline(title), children: parseDocument(bodyLines.join('\n')) });
-      i = j < lines.length ? j + 1 : lines.length;
-      continue;
-    }
+      // Collapsible section: >+ Title ... >-
+      if (line.startsWith('>+ ')) {
+        const title = line.slice(3).trim();
+        const bodyLines: string[] = [];
+        let j = i + 1;
+        while (j < lines.length && lines[j].trim() !== '>-')
+          bodyLines.push(lines[j++]);
+        blocks.push({ type: 'collapsible', title: parseInline(title), children: parseDocument(bodyLines.join('\n')) });
+        i = j < lines.length ? j + 1 : lines.length;
+        continue;
+      }
 
-    // Block quote: > text
-    const qM = /^> (.*)/.exec(line);
-    if (qM) {
-      const inner = qM[1];
-      if (inner.startsWith('> ')) {
-        // Nested quote: > > text
-        blocks.push({ type: 'nestedQuote', children: parseInline(inner.slice(2)) });
-      } else if ((inner[0] === '-' || inner[0] === '*') && inner[1] === ' ') {
-        // Quote containing unordered list item: > - text  (headers disabled inside)
-        blocks.push({ type: 'quoteListItem', children: parseInline(inner.slice(2), true) });
-      } else {
-        const qnlM = /^(\d+)\. (.*)/.exec(inner);
-        if (qnlM) {
-          // Quote containing numbered list item: > 1. text  (headers disabled inside)
-          blocks.push({ type: 'quoteNumberedListItem', number: parseInt(qnlM[1]), children: parseInline(qnlM[2], true) });
+      // Block quote: > text
+      const qM = /^> (.*)/.exec(line);
+      if (qM) {
+        const inner = qM[1];
+        if (inner.startsWith('> ')) {
+          // Nested quote: > > text
+          blocks.push({ type: 'nestedQuote', children: parseInline(inner.slice(2)) });
+        } else if ((inner[0] === '-' || inner[0] === '*') && inner[1] === ' ') {
+          // Quote containing unordered list item: > - text  (headers disabled inside)
+          blocks.push({ type: 'quoteListItem', children: parseInline(inner.slice(2), true) });
         } else {
-          blocks.push({ type: 'quote', children: parseInline(inner) });
+          const qnlM = /^(\d+)\. (.*)/.exec(inner);
+          if (qnlM) {
+            // Quote containing numbered list item: > 1. text  (headers disabled inside)
+            blocks.push({ type: 'quoteNumberedListItem', number: parseInt(qnlM[1]), children: parseInline(qnlM[2], true) });
+          } else {
+            blocks.push({ type: 'quote', children: parseInline(inner) });
+          }
         }
+        i++;
+        continue;
       }
-      i++;
-      continue;
-    }
 
-    // Unordered list: "- " or "* "
-    if ((line[0] === '-' || line[0] === '*') && line[1] === ' ') {
-      const content = line.slice(2);
-      if (content.startsWith('> ')) {
-        // List item containing a blockquote: - > text
-        blocks.push({ type: 'listItemQuote', children: parseInline(content.slice(2)) });
-      } else {
-        // Regular list item — disable full headers (#), allow subheaders (-#)
-        blocks.push({ type: 'listItem', children: parseInline(content, true) });
+      // Unordered list: "- " or "* "
+      if ((line[0] === '-' || line[0] === '*') && line[1] === ' ') {
+        const content = line.slice(2);
+        if (content.startsWith('> ')) {
+          // List item containing a blockquote: - > text
+          blocks.push({ type: 'listItemQuote', children: parseInline(content.slice(2)) });
+        } else {
+          // Regular list item — disable full headers (#), allow subheaders (-#)
+          blocks.push({ type: 'listItem', children: parseInline(content, true) });
+        }
+        i++;
+        continue;
       }
-      i++;
-      continue;
-    }
 
-    // Ordered list: N. text
-    const nlM = /^(\d+)\. (.+)/.exec(line);
-    if (nlM) {
-      const content = nlM[2];
-      if (content.startsWith('> ')) {
-        // Numbered list item containing a blockquote: N. > text
-        blocks.push({ type: 'numberedListItemQuote', number: parseInt(nlM[1]), children: parseInline(content.slice(2)) });
-      } else {
-        // Regular numbered list item — disable full headers, allow subheaders
-        blocks.push({ type: 'numberedListItem', number: parseInt(nlM[1]), children: parseInline(content, true) });
+      // Ordered list: N. text
+      const nlM = /^(\d+)\. (.+)/.exec(line);
+      if (nlM) {
+        const content = nlM[2];
+        if (content.startsWith('> ')) {
+          // Numbered list item containing a blockquote: N. > text
+          blocks.push({ type: 'numberedListItemQuote', number: parseInt(nlM[1]), children: parseInline(content.slice(2)) });
+        } else {
+          // Regular numbered list item — disable full headers, allow subheaders
+          blocks.push({ type: 'numberedListItem', number: parseInt(nlM[1]), children: parseInline(content, true) });
+        }
+        i++;
+        continue;
       }
-      i++;
-      continue;
-    }
 
-    // GFM-style pipe table
-    if (
-      line.startsWith('|') &&
-      !line.startsWith('||') &&
-      i + 1 < lines.length &&
-      /^\|[\s\-:|]+\|/.test(lines[i + 1]) &&
-      !lines[i + 1].startsWith('||')
-    ) {
-      const aligns = parseTableAlignments(lines[i + 1]);
-      const rows: TableRowNode[] = [{ type: 'tableRow', cells: parseTableCells(lines[i], true, aligns) }];
-      let j = i + 2;
-      while (j < lines.length && lines[j].startsWith('|') && !lines[j].startsWith('||'))
-        rows.push({ type: 'tableRow', cells: parseTableCells(lines[j++], false, aligns) });
-      blocks.push({ type: 'table', rows });
-      i = j;
-      continue;
+      // GFM-style pipe table
+      if (
+        line.startsWith('|') &&
+        !line.startsWith('||') &&
+        i + 1 < lines.length &&
+        /^\|[\s\-:|]+\|/.test(lines[i + 1]) &&
+        !lines[i + 1].startsWith('||')
+      ) {
+        const aligns = parseTableAlignments(lines[i + 1]);
+        const rows: TableRowNode[] = [{ type: 'tableRow', cells: parseTableCells(lines[i], true, aligns) }];
+        let j = i + 2;
+        while (j < lines.length && lines[j].startsWith('|') && !lines[j].startsWith('||'))
+          rows.push({ type: 'tableRow', cells: parseTableCells(lines[j++], false, aligns) });
+        blocks.push({ type: 'table', rows });
+        i = j;
+        continue;
+      }
     }
 
     blocks.push({ type: 'paragraph', children: parseInline(line) });

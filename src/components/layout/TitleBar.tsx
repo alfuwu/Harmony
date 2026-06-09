@@ -63,7 +63,7 @@ export default function TitleBar() {
     return {
       icon: getChannelIcon(currentChannel, { className: "icon" }),
       name: currentChannel.name ?? "Channel",
-      sub: currentChannel.description ?? undefined,
+      sub: currentChannel.description ?? undefined
     };
   }
 

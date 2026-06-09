@@ -8,10 +8,10 @@ import type {
   ListItemQuoteNode, NumberedListItemQuoteNode
 } from './MarkdownAST';
 import { parseDocument, isBigEmoji } from './MarkdownParser';
-import { getDisplayName, getRoleColor } from './UserUtils';
+import { getDisplayName } from './UserUtils';
 import { getChannelIcon } from './ChannelUtils';
 import type { AbstractChannel, Server, User } from './types';
-import { EmojiStyle, type UserSettings } from './userSettings';
+import { EmojiStyle, Theme, type UserSettings } from './userSettings';
 import type { UserState } from '../state/Users';
 import type { ServerState } from '../state/Servers';
 import type { ChannelState } from '../state/Channels';
@@ -20,8 +20,11 @@ import { useShikiHighlighter } from 'react-shiki';
 import { getIcon } from './ServerUtils';
 import { ModelOperations } from '@vscode/vscode-languagedetection';
 import katex from 'katex';
+import { createHighlighterCore, createOnigurumaEngine } from 'react-shiki/core';
+import { BundledLanguage, bundledLanguages, HighlighterCore } from 'shiki';
+import { t } from '../i18n';
 
-const modelOperations = new ModelOperations(
+export const modelOperations = new ModelOperations(
   {
     modelJsonLoaderFunc: async () => {
       const response = await fetch('https://cdn.jsdelivr.net/npm/@vscode/vscode-languagedetection/model/model.json');
@@ -33,6 +36,83 @@ const modelOperations = new ModelOperations(
     }
   }
 );
+
+export let superHighlighter: HighlighterCore | undefined;
+
+export const highlighterReady: Promise<void> = (async () => {
+  try {
+    superHighlighter = await createHighlighterCore({
+      themes: [
+        import('@shikijs/themes/github-light'),
+        import('@shikijs/themes/github-dark')
+      ],
+      langs: [],
+      engine: createOnigurumaEngine(import('shiki/wasm'))
+    });
+  } catch (e) {
+    console.error('[Shiki] highlighter initialisation failed:', e);
+  }
+})();
+
+const _loadedLangs  = new Set<string>();
+const _loadingLangs = new Map<string, Promise<void>>();
+ 
+export const LANG_ALIASES: Record<string, string> = {
+  js: 'javascript', ts: 'typescript', py: 'python', rb: 'ruby',
+  sh: 'bash', shell: 'bash', zsh: 'bash', 'c++': 'cpp',
+  'c#': 'csharp', html: 'markup', xml: 'markup', svg: 'markup',
+  yml: 'yaml', md: 'markdown', rs: 'rust', kt: 'kotlin',
+  kts: 'kotlin'
+};
+
+export const SPECIAL_LANGS = new Set(['text', 'plaintext', 'plain', 'txt', 'ansi', '']);
+ 
+export function normalizeShikiLang(raw: string): string {
+  return LANG_ALIASES[raw.toLowerCase()] ?? raw.toLowerCase();
+}
+
+export async function ensureLanguageLoaded(rawLang: string): Promise<boolean> {
+  const lang = normalizeShikiLang(rawLang);
+  if (SPECIAL_LANGS.has(lang))
+    return true;
+ 
+  await highlighterReady;
+  if (!superHighlighter)
+    return false;
+ 
+  if (_loadedLangs.has(lang))
+    return true;
+  if (!(lang in bundledLanguages))
+    return false;
+ 
+  if (!_loadingLangs.has(lang)) {
+    const p = (async () => {
+      try {
+        await superHighlighter!.loadLanguage(bundledLanguages[lang as BundledLanguage]);
+        _loadedLangs.add(lang);
+      } catch (e) {
+        console.warn(`[Shiki] failed to load language "${lang}":`, e);
+      }
+    })();
+    _loadingLangs.set(lang, p);
+  }
+ 
+  await _loadingLangs.get(lang);
+  return _loadedLangs.has(lang);
+}
+
+export function getShikiTheme(
+  userSettings: UserSettings | null | undefined,
+): 'github-dark' | 'github-light' {
+  if (!userSettings) return 'github-dark';
+  const light =
+    userSettings.theme === Theme.Light ||
+    (userSettings.theme === Theme.System &&
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-color-scheme: light)').matches);
+  return light ? 'github-light' : 'github-dark';
+}
+
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
 
 function fmtRelative(date: Date): string {
@@ -150,9 +230,31 @@ function SpoilerSpan({ children, stateMap, id, showAlways }: {
   );
 }
 
-const CodeBlock = React.memo(function CodeBlock({ content, language, showLineNumbers }: { content: string; language?: string; showLineNumbers?: boolean }) {
+const CodeBlock = React.memo(function CodeBlock({
+  content,
+  language,
+  theme,
+  showLineNumbers
+}: {
+  content: string;
+  language?: string;
+  theme?: Theme;
+  showLineNumbers?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const [detectedLanguage, setDetectedLanguage] = useState<string | undefined>(undefined);
+
+  const [hlInstance, setHlInstance] = useState<HighlighterCore | undefined>(superHighlighter);
+  useEffect(() => {
+    if (superHighlighter)
+      return; // already ready at mount
+    let alive = true;
+    highlighterReady.then(() => {
+      if (alive)
+        setHlInstance(superHighlighter);
+    });
+    return () => { alive = false; };
+  }, []);
 
   useEffect(() => {
     if (language)
@@ -183,6 +285,12 @@ const CodeBlock = React.memo(function CodeBlock({ content, language, showLineNum
 
   const effectiveLanguage = language || detectedLanguage || 'text';
 
+  useEffect(() => {
+    ensureLanguageLoaded(effectiveLanguage).then(loaded => {
+      console.log("ensured language " + effectiveLanguage + " loaded: " + loaded);
+    });
+  }, [content, language, detectedLanguage, hlInstance]);
+
   const copy = useCallback(() => {
     navigator.clipboard.writeText(content).then(() => {
       setCopied(true);
@@ -190,12 +298,18 @@ const CodeBlock = React.memo(function CodeBlock({ content, language, showLineNum
     });
   }, [content]);
 
+  const light = theme === Theme.Light ||
+    theme === Theme.System && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+
+  const shikiTheme = light ? "github-light" : "github-dark";
+
   const highlighter = useShikiHighlighter(
     content,
     effectiveLanguage,
-    "github-dark",
+    shikiTheme,
     {
-      showLineNumbers: showLineNumbers
+      showLineNumbers: showLineNumbers,
+      highlighter: hlInstance
     }
   );
 
@@ -204,14 +318,14 @@ const CodeBlock = React.memo(function CodeBlock({ content, language, showLineNum
       <div className="code-block-header">
         <span className="code-block-lang">{effectiveLanguage}</span>
         <button className="code-block-copy" onClick={copy} onDoubleClick={e => e.stopPropagation()} title="Copy code">
-          {copied ? '✓ Copied' : 'Copy'}
+          {copied ? t("copied") : t("copy")}
         </button>
       </div>
       <div className="multiline-code">
         <div data-testid="shiki-container" data-slot="container" className="rs-root not-prose rs-default-styles shiki">
           {highlighter ?? (
             // fallback to manually created output that mimicks useShikiHighlighter
-            <pre className="shiki github-dark" tabIndex={0} style={{backgroundColor: "rgb(36, 41, 46)", color: "rgb(225, 228, 232)"}}>
+            <pre className={`shiki ${shikiTheme}`} tabIndex={0} style={{backgroundColor: light ? "#fff" : "#24292e", color: light ? "#24292e" : "#e1e4e8"}}>
               <code className={showLineNumbers ? "rs-has-line-numbers" : undefined}>
                 {content.split('\n').map(line => <span className={"line" + (showLineNumbers ? " rs-line-number" : "")}><span>{line + '\n'}</span></span>)}
               </code>
@@ -347,7 +461,7 @@ function rin(
       const u = us?.users.find((x: User) => x.id === node.id);
       const m = u && us ? us.getMember(u.id, ss?.currentServer?.id) : undefined;
       const name = u ? '@' + getDisplayName(u, m) : `<@${node.id}>`;
-      const color = u && ss ? getRoleColor(ss, u, m, ss.currentServer === null) : undefined;
+      const color = undefined;// u && ss ? getRoleColor(ss, u, m, ss.currentServer === null) : undefined;
       return (
         <span
           key={k()}
@@ -525,8 +639,8 @@ function renderBlocks(
     if (block.type === 'collapsible') {
       const cb = block as CollapsibleNode;
       out.push(
-        <details key={k()} className="collapsible-block" onToggle={ctx.onToggleDetails} onDoubleClick={e => e.stopPropagation()}>
-          <summary className="collapsible-title uno">{ri(cb.title, ctx, sm, sc, kc)}</summary>
+        <details key={k()} className="collapsible-block" onToggle={ctx.onToggleDetails}>
+          <summary className="collapsible-title uno" onDoubleClick={e => e.stopPropagation()}>{ri(cb.title, ctx, sm, sc, kc)}</summary>
           <div className="collapsible-body">
             {renderBlocks(cb.children, ctx, sm, sc, kc, false)}
           </div>
@@ -566,11 +680,11 @@ function renderBlocks(
         i++;
       }
       out.push(
-        <span key={k()} className="quote">
+        <div key={k()} className="quote">
           <ul className="quote-list">
             {items.map(it => <li key={k()}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
           </ul>
-        </span>
+        </div>
       );
       prevWasInline = false;
       continue;
@@ -583,11 +697,11 @@ function renderBlocks(
         i++;
       }
       out.push(
-        <span key={k()} className="quote">
+        <div key={k()} className="quote">
           <ol className="quote-list">
             {items.map(it => <li key={k()} value={it.number}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
           </ol>
-        </span>
+        </div>
       );
       prevWasInline = false;
       continue;
@@ -595,7 +709,7 @@ function renderBlocks(
 
     if (block.type === 'codeBlock') {
       out.push(
-        <CodeBlock key={k()} content={block.content} language={block.language} showLineNumbers={ctx.userSettings?.showLineNumbers} />
+        <CodeBlock key={k()} content={block.content} language={block.language} theme={ctx.userSettings?.theme} showLineNumbers={ctx.userSettings?.showLineNumbers} />
       );
       prevWasInline = false;
       i++;
@@ -670,11 +784,12 @@ function renderBlock(
 interface MarkdownProps extends RenderContext {
   content: string;
   spoilerStateRef?: React.MutableRefObject<Map<number, boolean>>;
+  allowBlocks?: boolean;
 }
 
-export function RenderMarkdown({ content, spoilerStateRef, ...ctx }: MarkdownProps) {
+export function RenderMarkdown({ content, spoilerStateRef, allowBlocks = true, ...ctx }: MarkdownProps) {
   const sm = spoilerStateRef ?? null;
-  const ast = parseDocument(content);
+  const ast = parseDocument(content, allowBlocks);
   const bigEmoji = !ctx.noBigEmoji && isBigEmoji(ast);
   const sc = { n: 0 };
   const kc = { n: 0 };
