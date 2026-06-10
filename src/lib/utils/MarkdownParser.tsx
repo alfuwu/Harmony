@@ -312,18 +312,20 @@ class InlineParser {
       const pctM = /^\[progress[: ]+(\d+(?:\.\d+)?)%\]/.exec(this.rest());
       if (pctM) {
         const value = Math.min(100, Math.max(0, parseFloat(pctM[1])));
-        this.deco('progressBar', p, p + pctM[0].length);
+        const label = `${pctM[1]}%`;
+        this.deco('progressBar', p, p + pctM[0].length, { value, label });
         this.eat(pctM[0].length);
-        return { type: 'progressBar', value, label: `${pctM[1]}%` };
+        return { type: 'progressBar', value, label };
       }
       const fracM = /^\[progress[: ]+(\d+)\/(\d+)\]/.exec(this.rest());
       if (fracM) {
         const num = parseInt(fracM[1]);
         const den = parseInt(fracM[2]);
         const value = den > 0 ? Math.min(100, (num / den) * 100) : 0;
-        this.deco('progressBar', p, p + fracM[0].length);
+        const label = `${fracM[1]}/${fracM[2]}`;
+        this.deco('progressBar', p, p + fracM[0].length, { value, label });
         this.eat(fracM[0].length);
-        return { type: 'progressBar', value, label: `${fracM[1]}/${fracM[2]}` };
+        return { type: 'progressBar', value, label };
       }
       const n = this.parseLink();
       if (n)

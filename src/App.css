@@ -1833,8 +1833,7 @@ code {
   top: 0;
 }
 div.quote::before {
-  top: 3px;
-  bottom: -6px;
+  top: 0;
 }
 
 ol {

@@ -27,6 +27,17 @@ function clearToStart(editor: Editor, path: number[]) {
   Transforms.delete(editor);
 }
 
+const REVERTIBLE_TYPES = [
+  'quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block',
+  'nested-quote', 'quote-list-item', 'quote-numbered-list-item',
+  'list-item-quote', 'numbered-list-item-quote', 'collapsible'
+] as const;
+
+const REVERSIONS: Record<string, string> = {
+  'nested-quote': 'quote', 'quote-list-item': 'quote', 'quote-numbered-list-item': 'quote',
+  'list-item-quote': 'list-item', 'numbered-list-item-quote': 'numbered-list-item'
+} as const;
+
 export function withMarkdownBlocks(editor: Editor): Editor {
   const { insertText, insertBreak, deleteBackward } = editor;
 
@@ -36,10 +47,18 @@ export function withMarkdownBlocks(editor: Editor): Editor {
       const block = currentBlock(editor);
       if (block) {
         const [node, path] = block;
-        if ((node as any).type === 'paragraph') {
-          const start  = Editor.start(editor, path);
+        const nodeType = (node as any).type;
+
+        if (nodeType === 'paragraph') {
+          const start = Editor.start(editor, path);
           const before = Editor.string(editor, { anchor: start, focus: selection.anchor });
 
+          // >+ to collapsible
+          /*if (before === '>+') {
+            clearToStart(editor, path);
+            Transforms.setNodes(editor, { type: 'collapsible' } as any, { at: path });
+            return;
+          }*/
           // > to quote
           if (before === '>') {
             clearToStart(editor, path);
@@ -65,6 +84,51 @@ export function withMarkdownBlocks(editor: Editor): Editor {
             const lang = before.slice(3).trim();
             clearToStart(editor, path);
             Transforms.setNodes(editor, { type: 'code-block', ...(lang && { language: lang }) } as any, { at: path });
+            return;
+          }
+        }
+
+        else if (nodeType === 'quote') {
+          const start = Editor.start(editor, path);
+          const before = Editor.string(editor, { anchor: start, focus: selection.anchor });
+
+          if (before === '>') {
+            clearToStart(editor, path);
+            Transforms.setNodes(editor, { type: 'nested-quote' } as any, { at: path });
+            return;
+          }
+          if (before === '-' || before === '*') {
+            clearToStart(editor, path);
+            Transforms.setNodes(editor, { type: 'quote-list-item' } as any, { at: path });
+            return;
+          }
+          const qnlM = /^(\d+)\.$/.exec(before);
+          if (qnlM) {
+            clearToStart(editor, path);
+            Transforms.setNodes(editor, { type: 'quote-numbered-list-item', number: parseInt(qnlM[1]) } as any, { at: path });
+            return;
+          }
+        }
+
+        else if (nodeType === 'list-item') {
+          const start = Editor.start(editor, path);
+          const before = Editor.string(editor, { anchor: start, focus: selection.anchor });
+          if (before === '>') {
+            clearToStart(editor, path);
+            Transforms.setNodes(editor, { type: 'list-item-quote' } as any, { at: path });
+            return;
+          }
+        }
+
+        else if (nodeType === 'numbered-list-item') {
+          const start = Editor.start(editor, path);
+          const before = Editor.string(editor, { anchor: start, focus: selection.anchor });
+          if (before === '>') {
+            clearToStart(editor, path);
+            Transforms.setNodes(editor, {
+              type: 'numbered-list-item-quote',
+              number: (node as any).number ?? 1,
+            } as any, { at: path });
             return;
           }
         }
@@ -102,7 +166,7 @@ export function withMarkdownBlocks(editor: Editor): Editor {
       }
 
       // Empty continuation block to revert to paragraph
-      if (blockText === '' && ['quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block'].includes(node.type)) {
+      if (blockText === '' && REVERTIBLE_TYPES.includes(node.type)) {
         Transforms.setNodes(editor, { type: 'paragraph' } as any, { at: path });
         return;
       }
@@ -113,16 +177,39 @@ export function withMarkdownBlocks(editor: Editor): Editor {
           Transforms.insertNodes(editor, { type: node.type, children: [{ text: '' }] } as any);
           return;
 
-        case 'numbered-list-item':
+        case 'numbered-list-item': {
           const nextNum = (node.number ?? 1) + 1;
           Transforms.insertNodes(editor, { type: 'numbered-list-item', number: nextNum, children: [{ text: '' }] } as any);
           return;
+        }
 
-        case 'code-block':
-          editor.insertText('\n');
+        case 'nested-quote':
+          Transforms.insertNodes(editor, { type: 'nested-quote', children: [{ text: '' }] } as any);
           return;
 
+        case 'quote-list-item':
+          Transforms.insertNodes(editor, { type: 'quote-list-item', children: [{ text: '' }] } as any);
+          return;
+
+        case 'quote-numbered-list-item': {
+          const nextNum = (node.number ?? 1) + 1;
+          Transforms.insertNodes(editor, { type: 'quote-numbered-list-item', number: nextNum, children: [{ text: '' }] } as any);
+          return;
+        }
+
+        case 'list-item-quote':
+          Transforms.insertNodes(editor, { type: 'list-item-quote', children: [{ text: '' }] } as any);
+          return;
+
+        case 'numbered-list-item-quote': {
+          const nextNum = (node.number ?? 1) + 1;
+          Transforms.insertNodes(editor, { type: 'numbered-list-item-quote', number: nextNum, children: [{ text: '' }] } as any);
+          return;
+        }
+
+        case 'code-block':
         case 'math-block':
+        case 'collapsible':
           editor.insertText('\n');
           return;
       }
@@ -135,7 +222,8 @@ export function withMarkdownBlocks(editor: Editor): Editor {
     if (block) {
       const [node, path] = block as [any, number[]];
       if ((node as any).type !== 'paragraph' && isAtBlockStart(editor)) {
-        Transforms.setNodes(editor, { type: 'paragraph' } as any, { at: path });
+        const type = REVERSIONS[(node as any).type] ?? 'paragraph'
+        Transforms.setNodes(editor, { type } as any, { at: path });
         return;
       }
     }
@@ -157,6 +245,17 @@ function serializeBlock(block: any): string {
     case 'numbered-list-item': return `${block.number ?? 1}. ${text}`;
     case 'code-block': return `\`\`\`${block.language ?? ''}\n${text}\n\`\`\``;
     case 'math-block': return `$$\n${text}\n$$`;
+    case 'nested-quote': return `> > ${text}`;
+    case 'quote-list-item': return `> - ${text}`;
+    case 'quote-numbered-list-item': return `> ${block.number ?? 1}. ${text}`;
+    case 'list-item-quote': return `- > ${text}`;
+    case 'numbered-list-item-quote': return `${block.number ?? 1}. > ${text}`;
+    case 'collapsible': {
+      const nl = text.indexOf('\n');
+      const title = nl >= 0 ? text.slice(0, nl) : text;
+      const body = nl >= 0 ? text.slice(nl + 1) : '';
+      return body ? `>+ ${title}\n${body}\n>-` : `>+ ${title}\n>-`;
+    }
     default: return text;
   }
 }
@@ -205,6 +304,39 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
       continue;
     }
 
+    /*if (line.startsWith('>+ ')) {
+      const titleLine = line.slice(3);
+      const bodyLines: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() !== '>-')
+        bodyLines.push(lines[j++]);
+      const combined = bodyLines.length > 0
+        ? `${titleLine}\n${bodyLines.join('\n')}`
+        : titleLine;
+      result.push({ type: 'collapsible', children: [{ text: combined }] });
+      i = j < lines.length ? j + 1 : lines.length;
+      continue;
+    }*/
+
+    if (line.startsWith('> > ')) {
+      result.push({ type: 'nested-quote', children: [{ text: line.slice(4) }] });
+      i++;
+      continue;
+    }
+
+    if (line.startsWith('> - ') || line.startsWith('> * ')) {
+      result.push({ type: 'quote-list-item', children: [{ text: line.slice(4) }] });
+      i++;
+      continue;
+    }
+
+    const qnlM = /^> (\d+)\. (.*)/.exec(line);
+    if (qnlM) {
+      result.push({ type: 'quote-numbered-list-item', number: parseInt(qnlM[1]), children: [{ text: qnlM[2] }] });
+      i++;
+      continue;
+    }
+
     const qM = /^> (.*)/.exec(line);
     if (qM) {
       result.push({ type: 'quote', children: [{ text: qM[1] }] });
@@ -212,8 +344,21 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
       continue;
     }
 
+    if ((line.startsWith('- > ') || line.startsWith('* > '))) {
+      result.push({ type: 'list-item-quote', children: [{ text: line.slice(4) }] });
+      i++;
+      continue;
+    }
+
     if ((line[0] === '-' || line[0] === '*') && line[1] === ' ') {
       result.push({ type: 'list-item', children: [{ text: line.slice(2) }] });
+      i++;
+      continue;
+    }
+
+    const nlqM = /^(\d+)\. > (.*)/.exec(line);
+    if (nlqM) {
+      result.push({ type: 'numbered-list-item-quote', number: parseInt(nlqM[1]), children: [{ text: nlqM[2] }] });
       i++;
       continue;
     }

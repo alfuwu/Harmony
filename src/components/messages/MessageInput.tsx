@@ -20,6 +20,7 @@ import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage } from "../../lib/api/messageApi";
 import { rootRef } from "../../App";
 
+import { ShikiEditorHighlighter } from "../../lib/utils/ShikiEditorHighlighter";
 import { tokenizeInline } from "../../lib/utils/MarkdownParser";
 import {
   renderEmoji,
@@ -42,9 +43,74 @@ import { connection } from "../../lib/api/signalrClient";
 import { getEmojiUrl, getIcon } from "../../lib/utils/ServerUtils";
 
 import katex from 'katex';
-import { ShikiEditorHighlighter } from "../../lib/utils/ShikiEditorHighlighter";
 
 init({ data });
+
+function CodeBlockElement({
+  attributes,
+  children,
+  element,
+  editor,
+  shikiHighlighter
+}: {
+  attributes: any;
+  children: React.ReactNode;
+  element: any;
+  editor: BaseEditor & HistoryEditor & ReactEditor;
+  shikiHighlighter: ShikiEditorHighlighter;
+}) {
+  const blockIndex = useMemo(() => {
+    try { return ReactEditor.findPath(editor, element)[0]; }
+    catch { return -1; }
+  }, [editor, element]);
+
+  const [html, setHtml] = useState<string | null>(
+    () => blockIndex >= 0 ? shikiHighlighter.getHighlightedHtml(blockIndex) : null,
+  );
+
+  useEffect(() => {
+    if (blockIndex < 0)
+      return;
+    setHtml(shikiHighlighter.getHighlightedHtml(blockIndex));
+    return shikiHighlighter.subscribe((updatedIndex) => {
+      if (updatedIndex === blockIndex)
+        setHtml(shikiHighlighter.getHighlightedHtml(blockIndex));
+    });
+  }, [blockIndex, shikiHighlighter]);
+
+  return (
+    <div {...attributes} className="editor-code-block">
+      <div spellCheck={false} style={{
+        position: 'relative',
+        color: 'transparent',
+        caretColor: 'var(--text-normal, #abb2bf)',
+      }}>
+        {html !== null && (
+          <div
+            contentEditable={false}
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              pointerEvents: 'none',
+              userSelect: 'none',
+              font: 'inherit',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              overflowWrap: 'break-word',
+              overflow: 'hidden',
+              margin: 0,
+              padding: 0,
+              color: '#abb2bf'
+            }}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        )}
+        {children}
+      </div>
+    </div>
+  );
+}
 
 const REGIONAL_INDICATOR_LETTERS = 'abcdefghijklmnopqrstuvwxyz'.split('').map((c, i) => ({
   id: `regional_indicator_letter_${c}`,
@@ -246,7 +312,9 @@ const MessageInput = forwardRef(function MessageInput({
         (id) => usersRef.current.find((u: User) => u.id === id),
         (id) => channelsRef.current.find((c: AbstractChannel) => c.id === id),
         (id) => serversRef.current.find((s: Server) => s.id === id),
-        (username, discriminator) => usersRef.current.find((u: User) => u.username.toLowerCase() == username.toLowerCase() && u.discriminator == discriminator)
+        (username, discriminator) => usersRef.current.find(
+          u => u.username.toLowerCase() === username.toLowerCase() && u.discriminator === discriminator
+        )
       )
     ) as BaseEditor & HistoryEditor & ReactEditor,
     []
@@ -262,7 +330,7 @@ const MessageInput = forwardRef(function MessageInput({
     }
   }, []);
 
-    const prevChannelIdRef = useRef<number | undefined>(currentChannel?.id);
+  const prevChannelIdRef = useRef<number | undefined>(currentChannel?.id);
 
   useEffect(() => {
     if (!isChannel)
@@ -310,11 +378,7 @@ const MessageInput = forwardRef(function MessageInput({
     return () => { cancelled = true; };
   }, [search]);
 
-  const shikiHighlighter = useMemo(
-    () => new ShikiEditorHighlighter(ensureLanguageLoaded),
-    []
-  );
-  const [shikiVersion, setShikiVersion] = useState(0);
+  const shikiHighlighter = useMemo(() => new ShikiEditorHighlighter(ensureLanguageLoaded), []);
   const [hlReady, setHlReady] = useState(() => !!superHighlighter);
 
   useEffect(() => {
@@ -324,10 +388,6 @@ const MessageInput = forwardRef(function MessageInput({
     highlighterReady.then(() => { if (alive) setHlReady(true); });
     return () => { alive = false; };
   }, []);
-
-  useEffect(() => {
-    return shikiHighlighter.subscribe(() => setShikiVersion(v => v + 1));
-  }, [shikiHighlighter]);
 
   const triggerShikiAll = () => {
     if (!superHighlighter)
@@ -425,7 +485,7 @@ const MessageInput = forwardRef(function MessageInput({
     editor.onChange();
   };
 
-  const decorate = ([node, path]: any, _shikiVer = shikiVersion): any[] => {
+  const decorate = ([node, path]: any): any[] => {
     if (!Text.isText(node))
       return [];
     if (path.length !== 2)
@@ -436,26 +496,8 @@ const MessageInput = forwardRef(function MessageInput({
       block = Node.get(editor, [path[0]]);
     } catch { return []; }
 
-    if (block?.type === 'math-block' || block?.type === 'collapsible')
+    if (block?.type === 'math-block' || block?.type === 'code-block')
       return [];
- 
-    if (block?.type === 'code-block') {
-      let nodeStart = 0;
-      for (let ci = 0; ci < path[1]; ci++) {
-        try { nodeStart += Node.string(block.children[ci]).length; }
-        catch { break; }
-      }
-      const nodeText = node.text as string;
-      const nodeLength = nodeText.length;
-      
-      const decos = shikiHighlighter.getDecorations(path[0], nodeStart, nodeLength);
-      return decos.map(d => ({
-        shikiColor: d.color,
-        shikiFontStyle: d.fontStyle,
-        anchor: { path, offset: d.offset },
-        focus: { path, offset: d.offset + d.length }
-      }));
-    }
 
     const blockText = Node.string(block);
     const childIndex = path[1];
@@ -489,19 +531,6 @@ const MessageInput = forwardRef(function MessageInput({
 
   const Leaf = ({ attributes, children, leaf }: any) => {
     let rendered = children;
-
-    /*if (leaf.shikiColor || leaf.shikiFontStyle) {
-      const s: CSSProperties = {};
-      if (leaf.shikiColor)
-        s.color = leaf.shikiColor;
-      if (leaf.shikiFontStyle & 1)
-        s.fontStyle = 'italic';
-      if (leaf.shikiFontStyle & 2)
-        s.fontWeight = 'bold';
-      if (leaf.shikiFontStyle & 4)
-        s.textDecoration = 'underline';
-      rendered = <span style={s}>{rendered}</span>;
-    }*/
 
     if (leaf.boldItalic) {
       rendered = <b><i>{rendered}</i></b>;
@@ -543,8 +572,6 @@ const MessageInput = forwardRef(function MessageInput({
       rendered = <span className="lowlight">{rendered}</span>
     if (leaf.hexColor)
       rendered = <span className="hex-color" style={{ '--color': leaf.content } as any}>{rendered}</span>
-    if (leaf.mds)
-      rendered = <span className="mds">{rendered}</span>;
     if (leaf.progressBar) {
       const pct = typeof leaf.value === 'number' ? leaf.value : 0;
       rendered = (
@@ -562,6 +589,8 @@ const MessageInput = forwardRef(function MessageInput({
         </span>
       );
     }
+    if (leaf.mds)
+      rendered = <span className="mds">{rendered}</span>;
 
     return <span {...attributes}>{rendered}</span>;
   };
@@ -642,6 +671,13 @@ const MessageInput = forwardRef(function MessageInput({
       case "quote":
         return <div {...attributes} className="editor-block-quote">{children}</div>;
 
+      case "nested-quote":
+        return (
+          <div {...attributes} className="editor-block-quote">
+            <div className="editor-block-quote">{children}</div>
+          </div>
+        );
+
       case "list-item":
         return <div {...attributes} className="editor-list-item">{children}</div>;
 
@@ -652,11 +688,50 @@ const MessageInput = forwardRef(function MessageInput({
           </div>
         );
 
+      case "quote-list-item":
+        return (
+          <div {...attributes} className="editor-block-quote">
+            <div className="editor-list-item">{children}</div>
+          </div>
+        );
+
+      case "quote-numbered-list-item":
+        return (
+          <div {...attributes} className="editor-block-quote">
+            <div {...attributes} className="editor-numbered-item" data-number={String(element.number) + '.'}>
+              {children}
+            </div>
+          </div>
+        );
+
+      case "list-item-quote":
+        return (
+          <div {...attributes} className="editor-list-item editor-list-item-quote">
+            <div className="editor-block-quote">
+              {children}
+            </div>
+          </div>
+        );
+
+      case "numbered-list-item-quote":
+        return (
+          <div {...attributes} className="editor-numbered-item" data-number={String(element.number) + '.'}>
+            <div className="editor-block-quote">
+              {children}
+            </div>
+          </div>
+        );
+
       case "code-block":
         return (
-          <div {...attributes} className="editor-code-block">
-            <div spellCheck={false}>{children}</div>
-          </div>
+          <CodeBlockElement 
+            attributes={attributes}
+            element={element}
+            editor={editor}
+            shikiHighlighter={shikiHighlighter}
+          >
+            {children}
+          </CodeBlockElement>
         );
 
       case "math-block": {
@@ -1236,7 +1311,11 @@ const MessageInput = forwardRef(function MessageInput({
           if (e.key === "Enter") {
             const blockType = getCurrentBlockType();
             if (e.shiftKey) {
-              if (['quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block'].includes(blockType ?? '')) {
+              if ([
+                'quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block',
+                'nested-quote', 'quote-list-item', 'quote-numbered-list-item',
+                'list-item-quote', 'numbered-list-item-quote'
+              ].includes(blockType ?? '')) {
                 e.preventDefault();
                 editor.insertBreak();
                 return;
@@ -1297,6 +1376,7 @@ const MessageInput = forwardRef(function MessageInput({
               const path = Editor.path(editor, sel);
               const down = e.key === "ArrowDown";
               
+              if (down && Editor.isEnd(editor, sel.anchor, path) || !down && Editor.isStart(editor, sel.anchor, path)) {
                 const end = down ? Editor.end(editor, path) : Editor.start(editor, path);
                 const next = down ? Editor.after(editor, end) : Editor.before(editor, end);
                 if (!next) {
@@ -1307,6 +1387,7 @@ const MessageInput = forwardRef(function MessageInput({
                   });
                   return;
                 }
+              }
             }
           }
         }}
