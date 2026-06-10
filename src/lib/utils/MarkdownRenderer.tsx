@@ -285,11 +285,17 @@ const CodeBlock = React.memo(function CodeBlock({
 
   const effectiveLanguage = language || detectedLanguage || 'text';
 
+  const [confirmedLang, setConfirmedLang] = useState<string>('text');
+
   useEffect(() => {
+    let cancelled = false;
+    setConfirmedLang('text');
     ensureLanguageLoaded(effectiveLanguage).then(loaded => {
-      console.log("ensured language " + effectiveLanguage + " loaded: " + loaded);
+      if (!cancelled)
+        setConfirmedLang(loaded ? effectiveLanguage : 'text');
     });
-  }, [content, language, detectedLanguage, hlInstance]);
+    return () => { cancelled = true; };
+  }, [effectiveLanguage, hlInstance]);
 
   const copy = useCallback(() => {
     navigator.clipboard.writeText(content).then(() => {
@@ -305,7 +311,7 @@ const CodeBlock = React.memo(function CodeBlock({
 
   const highlighter = useShikiHighlighter(
     content,
-    effectiveLanguage,
+    confirmedLang,
     shikiTheme,
     {
       showLineNumbers: showLineNumbers,
