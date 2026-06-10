@@ -50,7 +50,9 @@ export function Name({ user, member, serverState, allowDmColors = false, md, spo
         ...textStyle,
         fontFamily: member?.nameFont || user?.nameFont ?
           `"${member?.nameFont ?? ""}", "${user?.nameFont ?? ""}", ${opts.style?.fontFamily}, Inter, sans-serif` :
-          opts.style?.fontFamily
+          opts.style?.fontFamily,
+        // @ts-expect-error
+        "--author-hover": textStyle.background ?? "currentColor"
       }}
     >
       {md ? RenderMarkdown({

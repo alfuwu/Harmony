@@ -37,7 +37,7 @@ export default function ContextMenu({ items, position, onClose }: ContextMenuPro
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const menuW = 200;
-  const menuH = items.length * 34 + 8;
+  //const menuH = items.length * 34 + 8;
   const x = Math.min(position.x, vw - menuW - 8);
   const y = Math.min(position.y, vh - 8);
 

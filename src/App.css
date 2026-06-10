@@ -963,6 +963,9 @@ textarea,
   -ms-user-select: none;     /* Internet Explorer/Edge */
   user-select: none;         /* Standard */
 }
+.author b span {
+  font-weight: 900;
+}
 .author::after, .mention::after {
   content: "";
   position: absolute;
@@ -1165,7 +1168,7 @@ em-emoji-picker {
 .title > span {
   margin-left: 34px;
 }
-.title > .icon {
+.title-icon {
   position: absolute;
   left: 0;
 }
@@ -1262,11 +1265,16 @@ em-emoji-picker {
   width: 24px;
   height: 24px;
 }
-.mention-item > .icon {
+.icon, .inline-icon {
   width: 20px;
   height: 20px;
   position: relative;
   top: 2px;
+}
+.inline-icon {
+  width: calc(1em - 2px);
+  height: calc(1em - 2px);
+  line-height: 1;
 }
 .mention-item > .username {
   margin-left: auto;

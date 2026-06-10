@@ -31,6 +31,7 @@ export const defaultTranslations = {
     "delete": "Delete",
     "update": "Update",
     "submit": "Submit",
+    "...": "...",
 
     // messages
     "messages.beginning": "— Beginning of {name} —",
@@ -308,7 +309,7 @@ export const defaultTranslations = {
     "reviews.empty": "No reviews yet. Be the first!",
     "reviews.edit": "Edit your review",
     "reviews.write": "Write a review",
-    "reviews.placeholder": "Say something about {user}...",
+    "reviews.placeholder": "Say something about ",
 
     // popouts
     "user.reviews": "Reviews",

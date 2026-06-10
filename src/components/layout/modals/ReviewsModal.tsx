@@ -5,7 +5,7 @@ import { Member, Review, User } from "../../../lib/utils/types";
 import { UserSettings } from "../../../lib/utils/userSettings";
 import MessageInput, { MessageInputHandle } from "../../messages/MessageInput";
 import { deleteReview, getReviews, submitReview, updateReview } from "../../../lib/api/userApi";
-import { getAvatar, getDisplayName } from "../../../lib/utils/UserUtils";
+import { getAvatar } from "../../../lib/utils/UserUtils";
 import { Name, SectionLabel } from "../Generic";
 import { AuthState } from "../../../lib/state/Auth";
 import { formatDate } from "../../../lib/utils/funcs";
@@ -125,6 +125,17 @@ export default function ReviewsModal({
     }
   }, [submitting, user]);
 
+  const name = (
+    <Name
+      user={user}
+      member={member}
+      serverState={ctx.serverState}
+      allowDmColors={true}
+      md={ctx}
+      spoilerState={spoilerState}
+    />
+  );
+
   return (
     <div
       onClick={onClose}
@@ -167,14 +178,7 @@ export default function ReviewsModal({
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)" }}>{t("reviews")}</div>
             <div style={{ fontSize: 12, color: "var(--text-5)", marginTop: 1 }}>
-              <Name
-                user={user}
-                member={member}
-                serverState={ctx.serverState}
-                allowDmColors={true}
-                md={ctx}
-                spoilerState={spoilerState}
-              /> · {t(reviews.length === 1 ? "reviews.count" : "reviews.count_plural", { count: reviews.length })}
+              {name}{"  ·  "}{t(reviews.length === 1 ? "reviews.count" : "reviews.count_plural", { count: reviews.length })}
             </div>
           </div>
           <button
@@ -277,7 +281,13 @@ export default function ReviewsModal({
               <MessageInput
                 isChannel={false}
                 initialText={draft}
-                placeholderText={t("reviews.placeholder", { user: getDisplayName(user) })}
+                placeholder={
+                  <>
+                    {t("reviews.placeholder")}
+                    {name}
+                    {t("...")}
+                  </>
+                }
                 setText={setDraft}
                 authState={authState as AuthState}
                 serverState={ctx.serverState}

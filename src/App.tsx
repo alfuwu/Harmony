@@ -21,6 +21,7 @@ import UserSettingsModal from "./components/layout/modals/UserSettingsModal";
 import TypingIndicator from "./components/messages/TypingIndicator";
 import { Theme, UserSettings } from "./lib/utils/userSettings";
 import PendingRepliesBar from "./components/messages/PendingRepliesBar";
+import ServerSettingsModal from "./components/layout/modals/ServerSettingsModal";
 
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
 export const hostUrl = "http://localhost:5000";
@@ -75,6 +76,7 @@ function AppInner() {
   //const { open, close } = usePopoutState();
 
   const [modalOpen, setModalOpen] = useState(false);
+  //const [serverModalOpen, setServerModalOpen] = useState(false);
   //const [quotebookOpen, setQuotebookOpen] = useState(false);
   const [showDms, setShowDms] = useState(false);
 

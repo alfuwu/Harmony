@@ -36,7 +36,7 @@ export default function TitleBar() {
 
   function getTitle(): { icon: React.ReactNode; name: string; sub?: string } {
     if (!currentChannel)
-      return { icon: getChannelIcon(currentChannel, { className: "icon" }), name: "The Void" };
+      return { icon: getChannelIcon(currentChannel, { className: "title-icon" }), name: "The Void" };
 
     const type = currentChannel.channelType;
 

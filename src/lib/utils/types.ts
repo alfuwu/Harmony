@@ -280,6 +280,7 @@ export interface Reaction {
 
 export interface Emoji {
   id?: number | null;
+  animated?: boolean;
   name: string;
 }
 

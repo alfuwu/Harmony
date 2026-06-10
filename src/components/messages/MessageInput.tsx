@@ -1,6 +1,7 @@
 import {
   useState, useMemo, useEffect, useRef,
   forwardRef, useImperativeHandle, CSSProperties,
+  ReactNode
 } from "react";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { createEditor, Node, Editor, Transforms, Range, Text, BaseElement, BaseEditor } from "slate";
@@ -127,10 +128,10 @@ function serializeFragmentToText(
     .map((block, i) => {
       const isFirst = i === 0;
       const isLast  = i === nodes.length - 1;
-      const content = ((block.children ?? []) as any[]).map(serializeInlineNode).join('');
+      const content = (block.children ?? []).map(serializeInlineNode).join('');
  
       const partialStart = isFirst && !startsAtFirstBlock;
-      const partialEnd   = isLast  && !endsAtLastBlock;
+      const partialEnd = isLast  && !endsAtLastBlock;
  
       switch (block.type) {
         case 'quote':
@@ -142,10 +143,27 @@ function serializeFragmentToText(
         case 'math-block':
           return (partialStart || partialEnd) ? content : `$$\n${content}\n$$`;
         case 'code-block':
-          // Only wrap in fences when both ends of the block are selected
           return (partialStart || partialEnd)
             ? content
             : `\`\`\`${block.language ?? ''}\n${content}\n\`\`\``;
+        case 'nested-quote':
+          return partialStart ? content : `> > ${content}`;
+        case 'quote-list-item':
+          return partialStart ? content : `> - ${content}`;
+        case 'quote-numbered-list-item':
+          return partialStart ? content : `> ${block.number ?? 1}. ${content}`;
+        case 'list-item-quote':
+          return partialStart ? content : `- > ${content}`;
+        case 'numbered-list-item-quote':
+          return partialStart ? content : `${block.number ?? 1}. > ${content}`;
+        case 'collapsible': {
+          if (partialStart || partialEnd)
+            return content;
+          const nl = content.indexOf('\n');
+          const title = nl >= 0 ? content.slice(0, nl) : content;
+          const body  = nl >= 0 ? content.slice(nl + 1) : '';
+          return body ? `>+ ${title}\n${body}\n>-` : `>+ ${title}\n>-`;
+        }
         default:
           return content;
       }
@@ -177,6 +195,7 @@ export type MessageInputHandle = {
 const MessageInput = forwardRef(function MessageInput({
   isChannel = true,
   placeholderText,
+  placeholder,
   initialText,
   setText,
   onEnter,
@@ -191,6 +210,7 @@ const MessageInput = forwardRef(function MessageInput({
 }: {
   isChannel?: boolean;
   placeholderText?: string;
+  placeholder?: ReactNode;
   initialText?: string | null;
   setText?: React.Dispatch<React.SetStateAction<string | null | undefined>>;
   onEnter?: (s: string) => void;
@@ -284,7 +304,7 @@ const MessageInput = forwardRef(function MessageInput({
       const q = raw.replace(/_/g, " ");
       const results = await SearchIndex.search(q);
       if (!cancelled)
-        setEmojiResults((results ?? []).slice(0, 10).map((e: Emoji) => ({ ...e, type: "emoji" })));
+        setEmojiResults((results ?? []).map((e: Emoji) => ({ ...e, type: "emoji" })));
     }
     run();
     return () => { cancelled = true; };
@@ -416,7 +436,7 @@ const MessageInput = forwardRef(function MessageInput({
       block = Node.get(editor, [path[0]]);
     } catch { return []; }
 
-    if (block?.type === 'math-block')
+    if (block?.type === 'math-block' || block?.type === 'collapsible')
       return [];
  
     if (block?.type === 'code-block') {
@@ -427,7 +447,7 @@ const MessageInput = forwardRef(function MessageInput({
       }
       const nodeText = node.text as string;
       const nodeLength = nodeText.length;
- 
+      
       const decos = shikiHighlighter.getDecorations(path[0], nodeStart, nodeLength);
       return decos.map(d => ({
         shikiColor: d.color,
@@ -470,7 +490,7 @@ const MessageInput = forwardRef(function MessageInput({
   const Leaf = ({ attributes, children, leaf }: any) => {
     let rendered = children;
 
-    if (leaf.shikiColor || leaf.shikiFontStyle) {
+    /*if (leaf.shikiColor || leaf.shikiFontStyle) {
       const s: CSSProperties = {};
       if (leaf.shikiColor)
         s.color = leaf.shikiColor;
@@ -481,7 +501,7 @@ const MessageInput = forwardRef(function MessageInput({
       if (leaf.shikiFontStyle & 4)
         s.textDecoration = 'underline';
       rendered = <span style={s}>{rendered}</span>;
-    }
+    }*/
 
     if (leaf.boldItalic) {
       rendered = <b><i>{rendered}</i></b>;
@@ -525,6 +545,23 @@ const MessageInput = forwardRef(function MessageInput({
       rendered = <span className="hex-color" style={{ '--color': leaf.content } as any}>{rendered}</span>
     if (leaf.mds)
       rendered = <span className="mds">{rendered}</span>;
+    if (leaf.progressBar) {
+      const pct = typeof leaf.value === 'number' ? leaf.value : 0;
+      rendered = (
+        <span
+          className="progress-bar-edit"
+          title={leaf.label ? `Progress: ${leaf.label}` : `Progress: ${Math.round(pct)}%`}
+          style={{
+            backgroundImage: `linear-gradient(90deg, rgba(88, 101, 242, 0.28) ${pct}%, rgba(114, 118, 125, 0.15) ${pct}%)`,
+            borderRadius: '4px',
+            padding: '1px 5px',
+            boxShadow: 'inset 0 0 0 1px rgba(88, 101, 242, 0.45)',
+          }}
+        >
+          {rendered}
+        </span>
+      );
+    }
 
     return <span {...attributes}>{rendered}</span>;
   };
@@ -680,13 +717,11 @@ const MessageInput = forwardRef(function MessageInput({
       const raw = s.slice(1);
 
       const riMatches = REGIONAL_INDICATOR_LETTERS
-        .filter(r => r.id.startsWith(raw))
-        .slice(0, 5);
+        .filter(r => r.id.startsWith(raw));
 
       const serverEmojis = servers
         .flatMap(sv => sv.emojis ?? [])
         .filter(e => e.name.toLowerCase().startsWith(raw.toLowerCase()))
-        .slice(0, 5)
         .map(e => ({ ...e, type: "customEmoji" as const }));
 
       const flagDirect = [];
@@ -701,7 +736,7 @@ const MessageInput = forwardRef(function MessageInput({
         }
       }
 
-      return [...serverEmojis, ...flagDirect, ...emojiResults, ...riMatches].slice(0, 10);
+      return [...serverEmojis, ...flagDirect, ...emojiResults, ...riMatches].slice(0, 20);
     }
     return [];
   };
@@ -844,7 +879,10 @@ const MessageInput = forwardRef(function MessageInput({
                     <div key={sv.id} className={`mention-item int ${i === index ? "active" : ""}`}
                       onMouseDown={e => { e.preventDefault(); Transforms.select(editor, target!); insertServerMention(editor, sv); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
-                      <span>#&{sv.name}</span>
+                      <span>
+                        <img src={getIcon(sv)} className="server-icon2" />
+                        {sv.name}
+                      </span>
                     </div>
                   );
                 }
@@ -902,13 +940,20 @@ const MessageInput = forwardRef(function MessageInput({
       <Editable
         ref={editableRef}
         className="msg-input"
-        placeholder={
-          placeholderText
-            ? placeholderText
-            : isChannel
-              ? currentChannel ? `Send a message in #${currentChannel.name}` : "Send a message into the void"
-              : "Type..."
-        }
+        placeholder=" "
+        renderPlaceholder={({ attributes }) => (
+          <span {...attributes}>
+            {placeholder !== undefined
+              ? placeholder
+              : placeholderText !== undefined
+                ? placeholderText
+                : isChannel
+                  ? currentChannel
+                    ? <>Send a message in {getChannelIcon(currentChannel, { className: "inline-icon" })}{currentChannel.name}</>
+                    : "Send a message into the void"
+                  : "Type..."}
+          </span>
+        )}
         decorate={decorate}
         renderLeaf={Leaf}
         renderElement={renderElement}
@@ -916,7 +961,7 @@ const MessageInput = forwardRef(function MessageInput({
         spellCheck
         // Suppress Slate's built-in scroll-cursor-into-view behaviour.
         // For the channel input this is a no-op (it's always visible at the
-        // bottom).  For inline message editing it prevents the message list
+        // bottom). For inline message editing it prevents the message list
         // from jumping when focus() is called.
         scrollSelectionIntoView={() => {}}
 
