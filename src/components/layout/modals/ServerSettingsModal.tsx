@@ -4,6 +4,7 @@ import React, {
   useCallback,
   useRef,
   useMemo,
+  ReactNode,
 } from "react";
 import { useAuthState } from "../../../lib/state/Auth";
 import { useServerState } from "../../../lib/state/Servers";
@@ -33,6 +34,7 @@ import {
 } from "../../../lib/api/ServerApi";
 import { t, useLocale } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
+import { AlertTriangleIcon, BanIcon, EditIcon, FilmIcon, HomeIcon, InviteIcon, SearchIcon, SmileIcon, StarIcon, TrashIcon, UsersIcon } from "../../svgs/other/Icons";
 
 // ═══════════════════════════════════════════════════════════
 // Permission definitions
@@ -710,17 +712,17 @@ export default function ServerSettingsModal({
     roles: "server.tab.roles",
     members: "server.tab.members",
     bans: "server.tab.bans",
-    delete: "server.tab.delete",
+    delete: "server.tab.delete"
   };
 
-  const TAB_ICONS: Record<string, string> = {
-    overview: "🏠",
-    invites: "🔗",
-    emojis: "😊",
-    roles: "🎭",
-    members: "👥",
-    bans: "🔨",
-    delete: "⚠️",
+  const TAB_ICONS: Record<string, ReactNode> = {
+    overview: <HomeIcon size={18} />,
+    invites: <InviteIcon size={18} />,
+    emojis: <SmileIcon size={18} />,
+    roles: <StarIcon size={18} />,
+    members: <UsersIcon size={18} />,
+    bans: <BanIcon size={18} />,
+    delete: <AlertTriangleIcon size={18} />
   };
 
   function selectTab(tab: string) {
@@ -1099,19 +1101,18 @@ export default function ServerSettingsModal({
                   alignItems: "center",
                   justifyContent: "center",
                   color: "#fff",
-                  fontSize: 16,
                   transition: "background 150ms",
                 }}
-                onMouseEnter={(e) =>
-                  ((e.currentTarget as HTMLElement).style.background =
+                onMouseEnter={e =>
+                  (e.currentTarget.style.background =
                     "rgba(0,0,0,0.5)")
                 }
-                onMouseLeave={(e) =>
-                  ((e.currentTarget as HTMLElement).style.background =
+                onMouseLeave={e =>
+                  (e.currentTarget.style.background =
                     "rgba(0,0,0,0)")
                 }
               >
-                ✏️
+                <EditIcon size={16} />
               </div>
             </div>
             <input
@@ -1602,7 +1603,8 @@ export default function ServerSettingsModal({
                       flexShrink: 0,
                     }}
                   >
-                    {emoji.animated ? "🎬" : "🖼️"}
+                    {/* TODO: replace emoji with svg icon */}
+                    {emoji.animated ? <FilmIcon size={22} /> : "🖼️"}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
@@ -1642,13 +1644,12 @@ export default function ServerSettingsModal({
                       boxShadow: "none",
                       color: "var(--text-5)",
                       cursor: "pointer",
-                      fontSize: 16,
                       padding: "2px",
                       flexShrink: 0,
                     }}
                     title={t("server.delete_emoji")}
                   >
-                    🗑
+                    <TrashIcon size={16} />
                   </button>
                 </div>
               ))}
@@ -1725,13 +1726,11 @@ export default function ServerSettingsModal({
                   }}
                   onMouseEnter={(e) => {
                     if (!isSelected)
-                      (e.currentTarget as HTMLElement).style.background =
-                        "var(--hover)";
+                      e.currentTarget.style.background = "var(--hover)";
                   }}
                   onMouseLeave={(e) => {
                     if (!isSelected)
-                      (e.currentTarget as HTMLElement).style.background =
-                        "none";
+                      e.currentTarget.style.background = "none";
                   }}
                 >
                   <span
@@ -1979,7 +1978,7 @@ export default function ServerSettingsModal({
                         [RoleDisplayType.Gradient, t("server.role_gradient")],
                         [RoleDisplayType.Glow, t("server.role_holographic")],
                         [RoleDisplayType.GradientGlow, t("server.role_gradient_glow")],
-                      ] as [RoleDisplayType, string][]
+                      ] as const
                     ).map(([type, label]) => (
                       <button
                         key={type}
@@ -2393,19 +2392,17 @@ export default function ServerSettingsModal({
             placeholder={t("server.search_members")}
             style={{ width: "calc(100% - 22px)", paddingLeft: 32 }}
           />
-          <span
+          <SearchIcon
+            size={14}
             style={{
               position: "absolute",
               left: 10,
               top: "50%",
               transform: "translateY(-50%)",
               color: "var(--text-5)",
-              fontSize: 14,
               pointerEvents: "none",
             }}
-          >
-            🔍
-          </span>
+          />
         </div>
 
         <div
@@ -2452,13 +2449,11 @@ export default function ServerSettingsModal({
                   }}
                   onMouseEnter={(e) => {
                     if (!isExpanded)
-                      (e.currentTarget as HTMLElement).style.background =
-                        "var(--hover)";
+                      e.currentTarget.style.background = "var(--hover)";
                   }}
                   onMouseLeave={(e) => {
                     if (!isExpanded)
-                      (e.currentTarget as HTMLElement).style.background =
-                        "none";
+                      e.currentTarget.style.background = "none";
                   }}
                 >
                   <img
@@ -2658,7 +2653,7 @@ export default function ServerSettingsModal({
           <div
             style={{ textAlign: "center", padding: "32px 0", color: "var(--text-5)" }}
           >
-            Loading bans…
+            Loading bans...
           </div>
         ) : bans.length === 0 ? (
           <div
@@ -2671,7 +2666,7 @@ export default function ServerSettingsModal({
               border: "1px dashed var(--border)",
             }}
           >
-            No banned members. Keep it civil! ✌️
+            No banned members.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2753,7 +2748,7 @@ export default function ServerSettingsModal({
                       cursor:
                         unbanningId === ban.userId ? "wait" : "pointer",
                       flexShrink: 0,
-                      opacity: unbanningId === ban.userId ? 0.6 : 1,
+                      opacity: unbanningId === ban.userId ? 0.6 : 1
                     }}
                   >
                     {unbanningId === ban.userId ? t("server.unbanning") : t("server.unban")}
@@ -2869,7 +2864,8 @@ export default function ServerSettingsModal({
     }
   }
 
-  if (!open || !currentServer) return null;
+  if (!open || !currentServer)
+    return null;
 
   const isRolesTab = currentTab === "roles";
 
@@ -2990,7 +2986,7 @@ export default function ServerSettingsModal({
                       ...(item === "delete" ? { color: "var(--red-2)" } : {}),
                     }}
                   >
-                    <span style={{ marginRight: 8, fontSize: 14 }}>
+                    <span style={{ marginRight: 8, marginTop: 5 }}>
                       {TAB_ICONS[item]}
                     </span>
                     {t(TAB_LABELS[item])}

@@ -1,10 +1,10 @@
-import { useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { rootRef } from "../../App";
 
 export interface ContextMenuItem {
   label: string;
-  icon?: string;
+  icon?: ReactNode;
   onClick: () => void;
   danger?: boolean;
   disabled?: boolean;

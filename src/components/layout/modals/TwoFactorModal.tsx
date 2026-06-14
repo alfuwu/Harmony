@@ -4,7 +4,7 @@ import {
   twoFactorConfirmSetup,
   twoFactorDisable,
 } from "../../../lib/api/AuthApi";
-import { t } from "../../../lib/i18n/Index";
+import { t, tr } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 type SetupStep = "loading" | "secret" | "confirm" | "recovery";
@@ -314,9 +314,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
             </button>
           </div>
           <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-5)" }}>
-            {t("2fa.manual_setup.prefix")}{" "}
-            <em>{t("2fa.manual_setup.option")}</em>{" "}
-            {t("2fa.manual_setup.suffix")}
+            {tr("2fa.manual_setup", { option: <em>{t("2fa.manual_setup.option")}</em> })}
           </div>
         </div>
 

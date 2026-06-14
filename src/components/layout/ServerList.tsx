@@ -13,6 +13,7 @@ import { joinServer } from "../../lib/api/SignalrClient";
 import { hostUrl } from "../../App";
 import { getIcon } from "../../lib/utils/ServerUtils";
 import { t, useLocale } from "../../lib/i18n/Index";
+import { HashIcon, InviteIcon, LogOutIcon, MessageIcon } from "../svgs/other/Icons";
 
 interface Props {
   onDmClick: () => void;
@@ -78,28 +79,28 @@ export default function ServerList({ onDmClick, showDms }: Props) {
     const items: ContextMenuItem[] = [
       {
         label: t("server.copy_id"),
-        icon: "🆔",
-        onClick: () => navigator.clipboard.writeText(String(serverId)),
+        icon: <HashIcon size={14} />,
+        onClick: () => navigator.clipboard.writeText(String(serverId))
       },
     ];
 
     if (server.inviteUrls?.[0]) {
       items.push({
         label: t("server.copy_invite"),
-        icon: "🔗",
+        icon: <InviteIcon size={14} />,
         onClick: () =>
           navigator.clipboard.writeText(
             `${hostUrl}/invite/${server.inviteUrls![0]}`
-          ),
+          )
       });
     }
 
     items.push({ label: "", onClick: () => {}, divider: true });
     items.push({
       label: t("server.leave"),
-      icon: "🚪",
+      icon: <LogOutIcon size={14} />,
       danger: true,
-      onClick: () => handleLeaveServer(serverId),
+      onClick: () => handleLeaveServer(serverId)
     });
 
     return items;
@@ -123,11 +124,10 @@ export default function ServerList({ onDmClick, showDms }: Props) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 22,
             transition: "border-radius 150ms",
           }}
         >
-          💬
+          <MessageIcon size={22} />
         </div>
       </div>
 

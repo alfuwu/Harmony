@@ -1,3 +1,5 @@
+import { OnlineStatus } from "./Types";
+
 // enums
 export enum Theme {
     Light,
@@ -244,7 +246,8 @@ export interface UserSettings {
     // dev options
     developerMode: boolean;
 
-    // channels
+    // hidden stuff (not shown in user settings modal)
     hiddenChannels: number[];
     mutedChannels: number[];
+    preferredStatus: OnlineStatus | null;
 }

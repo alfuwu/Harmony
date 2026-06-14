@@ -112,6 +112,7 @@ function WaveformBars({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(160);
+  const [pressed, setPressed] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -170,8 +171,12 @@ function WaveformBars({
           overflow: "hidden"
         }}
         onClick={handleClick}
+        onMouseDown={() => setPressed(true)}
+        onMouseUp={() => setPressed(false)}
+        onMouseMove={e => { console.log(pressed); if (pressed) handleClick(e)}}
+        draggable={false}
       >
-        <div style={{
+        <div draggable={false} style={{
           width: `${progress * 100}%`, height: "100%",
           background: "var(--accent-1)", borderRadius: 2,
           transition: "width 0.1s linear"
@@ -192,11 +197,15 @@ function WaveformBars({
         flex: 1
       }}
       onClick={handleClick}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseMove={e => { if (pressed) handleClick(e) }}
+      draggable={false}
     >
       {displayValues.map((v, i) => {
         const played = (i / displayValues.length) <= progress;
         return (
-          <div key={i} style={{
+          <div key={i} draggable={false} style={{
             flex: 1,
             height: Math.max(3, Math.round(v * WAVEFORM_H)),
             background: played ? "var(--accent-1)" : "var(--text-5)",

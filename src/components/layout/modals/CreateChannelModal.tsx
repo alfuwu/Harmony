@@ -17,11 +17,12 @@ const CHANNEL_TYPES: { value: ChannelType; labelKey?: TranslationKeys; label?: s
   { value: ChannelType.Category, labelKey: "create_channel.type.category" },
   { value: ChannelType.Text, labelKey: "create_channel.type.text" },
   { value: ChannelType.Voice, labelKey: "create_channel.type.voice" },
-  { value: ChannelType.Announcement, label: "📣 Announcement" },
-  { value: ChannelType.Rules, label: "📋 Rules" },
-  { value: ChannelType.Forum, label: "💬 Forum" },
+  { value: ChannelType.Announcement, labelKey: "create_channel.type.announcement" },
+  { value: ChannelType.Rules, labelKey: "create_channel.type.rules" },
+  { value: ChannelType.Forum, labelKey: "create_channel.type.forum" },
   { value: ChannelType.Canvas, labelKey: "create_channel.type.canvas" },
-  { value: ChannelType.Document, label: "📄 Document" },
+  { value: ChannelType.Lounge, labelKey: "create_channel.type.lounge" },
+  { value: ChannelType.Document, labelKey: "create_channel.type.document" }
 ];
 
 export default function CreateChannelModal({ open, serverId, onClose }: CreateChannelModalProps) {

@@ -103,7 +103,7 @@ export default function DmList() {
 
         const dm = c as DmChannel;
         const otherId = dm.members?.find(id => id !== user?.id);
-        const other = otherId ? userState.get(otherId) : undefined;
+        const other = otherId !== undefined ? userState.get(otherId) : undefined;
         const name = other ? getDisplayName(other) : t("user.unknown");
         const avatar = getAvatar(other ?? null);
         const status = other?.onlineStatus ?? OnlineStatus.Offline;

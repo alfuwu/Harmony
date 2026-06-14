@@ -15,6 +15,7 @@ let _channelState: ChannelState;
 let _serverState: ServerState;
 let _userState: UserState;
 let _heartbeatHandle: ReturnType<typeof setInterval> | null = null;
+const _typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function updateSignalRRefs(params: {
   messageState: MessageState;
@@ -137,13 +138,23 @@ export function initSignalR({
   });
 
   connection.on("Typing", (event) => {
+    const key = `${event.channelId}:${event.userId}`;
+
+    const existing = _typingTimeouts.get(key);
+    if (existing !== undefined)
+      clearTimeout(existing);
+
     _channelState.startTyping(event);
-    setTimeout(() => _channelState.stopTyping(event), 8000);
+
+    const handle = setTimeout(() => {
+      _channelState.stopTyping(event);
+      _typingTimeouts.delete(key);
+    }, 8000);
+
+    _typingTimeouts.set(key, handle);
   });
 
-  connection.on("StopTyping", (event) => {
-    _channelState.stopTyping(event);
-  });
+  connection.on("StopTyping", (event) => _channelState.stopTyping(event));
 
   connection.on("NewChan", (channel) => {
     _channelState.addChannel(channel);
@@ -214,6 +225,8 @@ export function initSignalR({
 
   connection.onclose(() => {
     stopHeartbeat();
+    _typingTimeouts.forEach(clearTimeout);
+    _typingTimeouts.clear();
   });
 
   connection.start()

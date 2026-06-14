@@ -16,7 +16,7 @@ import { useChannelState } from "../../lib/state/Channels";
 import { initializeClient } from "../../lib/client/Init";
 import { useMessageState } from "../../lib/state/Messages";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { t, useLocale } from "../../lib/i18n/Index";
+import { t, tr, useLocale } from "../../lib/i18n/Index";
 import { TranslationKeys } from "../../lib/i18n/Schema";
 
 type View = "login" | "register" | "twoFactor" | "emailPending";
@@ -237,12 +237,11 @@ export default function LoginScreen() {
     return (
       <div className="login-screen">
         <div className="login-modal" style={{ textAlign: "center" }}>
-          <h2 style={{ margin: "0 0 8px" }}>{t("login.check_email")}</h2>
+          <h2 style={{ margin: "0 0 8px" }}>{t("login.email.check")}</h2>
           <p style={{ color: "var(--text-4)", fontSize: 14, margin: "0 0 16px" }}>
-            {t("login.email_sent")}{" "}
-            <strong style={{ color: "var(--text-2)" }}>{pendingEmail}</strong>.
+            {tr("login.email.sent", { email: <strong style={{ color: "var(--text-2)" }}>{pendingEmail}</strong> })}
             <br />
-            {t("login.email_activate")}
+            {t("login.email.activate")}
           </p>
 
           <div
@@ -257,7 +256,7 @@ export default function LoginScreen() {
               textAlign: "left",
             }}
           >
-            <strong>{t("login.email_didnt_get")}</strong> {t("login.email_spam")}
+            <strong>{t("login.email.didnt_get")}</strong> {t("login.email.spam")}
           </div>
 
           {error && <div className="error-msg">{t(error as TranslationKeys)}</div>}
@@ -345,7 +344,7 @@ export default function LoginScreen() {
                 )}
                 {!checkingUsername && availability?.pomelo && (
                   <span style={{ color: "var(--green-2)" }}>
-                    ✓ <strong>@{username}</strong> {t("change_un.available.prefix")}
+                    ✓ {tr("change_un.available", { username: <strong>@{username}</strong> })}
                   </span>
                 )}
                 {!checkingUsername && availability && !availability.pomelo && (
@@ -360,11 +359,7 @@ export default function LoginScreen() {
                     }}
                   >
                     <span style={{ marginRight: 5 }}>⚠️</span>
-                    <strong>@{username}</strong> {t("change_un.taken.prefix")}{" "}
-                    <strong>
-                      @{username}{discPreview}
-                    </strong>{" "}
-                    {t("change_un.taken.suffix")}
+                    {tr("change_un.taken", { username: <strong>@{username}</strong>, disc: <strong>@{username}{discPreview}</strong> })}
                   </div>
                 )}
               </div>

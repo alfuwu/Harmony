@@ -1770,7 +1770,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
   const tabs = {
     "user": ["acc", "profiles", "p&s"],
     "app":  ["appearance", "accessibility", "v&v", "chat", "notifs", "lang", "advanced"]
-  };
+  } as const;
 
   return (
     <>

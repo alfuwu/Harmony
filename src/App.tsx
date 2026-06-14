@@ -1,6 +1,6 @@
 import "./App.css";
 import 'katex/dist/katex.min.css';
-import { createRef, useEffect, useState } from "react";
+import { createRef, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api/Http";
 import LoginScreen from "./components/auth/LoginScreen";
 import ChannelList from "./components/layout/ChannelList";
@@ -24,7 +24,10 @@ import PendingRepliesBar from "./components/messages/PendingRepliesBar";
 import DmList from "./components/layout/DmList";
 import { t, useLocale, i18n } from "./lib/i18n/Index";
 import { localeFromLanguage } from "./lib/i18n/LocaleMap";
+import { OnlineStatus } from "./lib/utils/Types";
+import { connection } from "./lib/api/SignalrClient";
 
+const IDLE_MS = 5 * 60 * 1000;
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
 export const hostUrl = "http://localhost:5000";
 export const rootRef = createRef<HTMLDivElement>();
@@ -78,12 +81,19 @@ function AppInner() {
   const userState = useUserState();
   //const { open, close } = usePopoutState();
 
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isIdleRef = useRef(false);
   const [modalOpen, setModalOpen] = useState(false);
   //const [serverModalOpen, setServerModalOpen] = useState(false);
   //const [quotebookOpen, setQuotebookOpen] = useState(false);
   const [showDms, setShowDms] = useState(false);
 
   syncSignalRRefs(messageState, channelState, serverState, userState);
+
+  const userStateRef = useRef(userState);
+  useEffect(() => {
+    userStateRef.current = userState;
+  });
 
   useEffect(() => {
     applySettings(userSettings);
@@ -104,6 +114,49 @@ function AppInner() {
     document.documentElement.style.fontSize =
       `${(userSettings?.textSize ?? 1) * 16}px`;
   }, [userSettings?.textSize]);
+
+  useEffect(() => {
+    if (!user || !token)
+      return;
+
+    function goIdle() {
+      if (isIdleRef.current)
+        return;
+      const live = userStateRef.current.get(user!.id);
+      if (live?.onlineStatus !== OnlineStatus.Online)
+        return;
+
+      isIdleRef.current = true;
+      connection?.invoke("SetStatus", OnlineStatus.Idle).catch(e => console.log(e));
+      if (live)
+        userStateRef.current.addUser({ ...live, onlineStatus: OnlineStatus.Idle });
+    }
+
+    function onActivity() {
+      if (idleTimerRef.current)
+        clearTimeout(idleTimerRef.current);
+
+      if (isIdleRef.current) {
+        isIdleRef.current = false;
+        connection?.invoke("SetStatus", OnlineStatus.Online).catch(() => {});
+        const live = userStateRef.current.get(user!.id);
+        if (live)
+          userStateRef.current.addUser({ ...live, onlineStatus: OnlineStatus.Online });
+      }
+
+      idleTimerRef.current = setTimeout(goIdle, IDLE_MS);
+    }
+
+    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart"] as const;
+    events.forEach(e => window.addEventListener(e, onActivity, { passive: true }));
+    onActivity();
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, onActivity));
+      if (idleTimerRef.current)
+        clearTimeout(idleTimerRef.current);
+    };
+  }, [user?.id, user?.status, token]);
 
   useEffect(() => {
     const fetchMe = async () => {

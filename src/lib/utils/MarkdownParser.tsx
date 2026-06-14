@@ -1,7 +1,7 @@
 import { COLORS } from './MarkdownAST';
 import type { InlineNode, BlockNode, DocumentAST, DecoToken, TextNode, TableRowNode, TableCellNode } from './MarkdownAST';
 
-const MARKDOWN_SYMBOLS = "[*_@|`~<\\^\-:#>&=#]";
+const MARKDOWN_SYMBOLS = "[*_@|`~<\\^\-:#>&=#]!";
 
 class InlineParser {
   private pos = 0;
@@ -50,8 +50,8 @@ class InlineParser {
         i += skip;
         continue;
       }
-      if (c === '`' && dc !== '`') {
-        const ce = this.src.indexOf('`', i + 1);
+      if (c === '`' && dc !== '`' || c === '$' && dc !== '$') {
+        const ce = this.src.indexOf(c, i + 1);
         if (ce !== -1) {
           i = ce + 1;
           continue;
@@ -163,44 +163,54 @@ class InlineParser {
       }
     }
 
-    if (this.at('***')) {
-      const e = this.findClose('***', p + 3);
-      if (e !== -1) {
-        this.deco('mds', p, p + 3);
-        this.deco('boldItalic', p + 3, e);
-        this.deco('mds', e, e + 3);
-        this.eat(3);
-        const children = this.inner(this.pos, e);
-        this.pos = e + 3;
-        return { type: 'boldItalic', children };
+    if (c === '*') {
+      if (this.at('**')) {
+        const n = this.trySpan('**', 'bold', true);
+        if (n)
+          return n;
+      }
+
+      if (this.peek(1) !== '*') {
+        const n = this.trySpan('*', 'italic', true);
+        if (n)
+          return n;
       }
     }
 
-    if (this.at('**') && this.peek(2) !== '*') {
-      const n = this.trySpan('**', 'bold', true);
-      if (n) return n;
+    if (c === '_') {
+      if (this.at('__')) {
+        const n = this.trySpan('__', 'underline', true);
+        if (n)
+          return n;
+      }
+
+      if (this.peek(1) !== '_') {
+        const n = this.trySpan('_', 'italic', true);
+        if (n)
+          return n;
+      }
     }
 
-    if (c === '*' && this.peek(1) !== '*') {
-      const n = this.trySpan('*', 'italic', true);
-      if (n)
-        return n;
+    if (c === '~') {
+      if (this.at('~~~')) {
+        const n = this.trySpan('~~~', 'wobbly', true);
+        if (n)
+          return n;
+      }
+      if (this.at('~~') && this.peek(2) !== '~') {
+        const n = this.trySpan('~~', 'strikethrough', true);
+        if (n)
+          return n;
+      }
+      if (this.peek(1) !== '~') {
+        const n = this.trySpan('~', 'subscript', true);
+        if (n)
+          return n;
+      }
     }
 
-    if (this.at('__')) {
-      const n = this.trySpan('__', 'underline', true);
-      if (n)
-        return n;
-    }
-
-    if (c === '_' && this.peek(1) !== '_') {
-      const n = this.trySpan('_', 'italic', true);
-      if (n)
-        return n;
-    }
-
-    if (this.at('~~')) {
-      const n = this.trySpan('~~', 'strikethrough');
+    if (this.at('!!') && this.peek(3) !== '!') {
+      const n = this.trySpan('!!', "shaky", true);
       if (n)
         return n;
     }
@@ -213,12 +223,6 @@ class InlineParser {
 
     if (c === '^') {
       const n = this.trySpan('^', 'superscript');
-      if (n)
-        return n;
-    }
-
-    if (c === '~' && !this.at('~~')) {
-      const n = this.trySpan('~', 'subscript');
       if (n)
         return n;
     }
@@ -252,16 +256,16 @@ class InlineParser {
       }
     }
 
-    if (this.at('===')) {
-      const n = this.trySpan('===', 'lowlight');
-      if (n)
-        return n;
-    }
-
-    if (this.at('==')) {
-      const n = this.trySpan('==', 'highlight');
-      if (n)
-        return n;
+    if (c === '=') {
+      if (this.at('===')) {
+        const n = this.trySpan('===', 'lowlight');
+        if (n)
+          return n;
+      } else if (this.at('==')) {
+        const n = this.trySpan('==', 'highlight');
+        if (n)
+          return n;
+      }
     }
 
     if (c === '<') {
@@ -424,6 +428,19 @@ class InlineParser {
       this.deco('mds', p + len - 1, p + len);
       this.eat(len);
       return { type: 'link', url: bktM[1] };
+    }
+
+    if (this.at("<<")) {
+      const e = this.findClose('>>', p + 2);
+      if (e !== -1) {
+        this.deco('mds', p, p + 2);
+        this.deco('marquee', p + 2, e);
+        this.deco('mds', e, e + 2);
+        this.eat(2);
+        const children = this.inner(this.pos, e);
+        this.pos = e + 2;
+        return { type: 'marquee', children };
+      }
     }
 
     return null;

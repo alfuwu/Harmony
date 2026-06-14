@@ -14,8 +14,8 @@ import { AuthState, useAuthState } from "../../lib/state/Auth";
 import { UserState, useUserState } from "../../lib/state/Users";
 import { ServerState, useServerState } from "../../lib/state/Servers";
 
-import { AbstractChannel, Channel, Role, Server, User, Emoji as CustomEmoji } from "../../lib/utils/Types";
-import { getAvatar, getDisplayName, getDisplayRole } from "../../lib/utils/UserUtils";
+import { AbstractChannel, Channel, Role, Server, User, Emoji as CustomEmoji, DmChannel } from "../../lib/utils/Types";
+import { getAvatar, getDisplayRole } from "../../lib/utils/UserUtils";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage, uploadAttachment } from "../../lib/api/MessageApi";
 import { rootRef } from "../../App";
@@ -42,14 +42,16 @@ import data, { Emoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
 import { connection } from "../../lib/api/SignalrClient";
 import { getEmojiUrl, getIcon } from "../../lib/utils/ServerUtils";
-import { t, useLocale } from "../../lib/i18n/Index";
+import { t, tr, useLocale } from "../../lib/i18n/Index";
 
 import katex from 'katex';
 import EmojiPickerPopout from "../layout/popouts/EmojiPickerPopout";
 import { PopoutState, usePopoutState } from "../../lib/state/Popouts";
 import TextDocument from "../svgs/other/TextDocument";
-import { intToHex, makeMarkdownContext } from "../../lib/utils/Funcs";
+import { intToHex, lerp, makeMarkdownContext } from "../../lib/utils/Funcs";
 import { Name } from "../layout/Generic";
+import { PlusIcon, SmileIcon } from "../svgs/other/Icons";
+import Random from "../../lib/utils/Random";
 
 init({ data });
 
@@ -479,24 +481,30 @@ const MessageInput = forwardRef(function MessageInput({
   }, [search]);
 
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const shouldStopTyping = useRef(true);
 
-  const stopTypingIndicator = useCallback(() => {
+  const stopTypingIndicator = useCallback((invoke = true) => {
     if (typingIntervalRef.current === null)
       return;
     clearInterval(typingIntervalRef.current);
     typingIntervalRef.current = null;
-    if (isChannel && currentChannel)
+    if (isChannel && currentChannel && invoke)
       connection?.invoke("StopTyping", currentChannel.id).catch(() => {});
   }, [isChannel, currentChannel]);
 
   const startTypingIndicator = useCallback(() => {
+    if (shouldStopTyping.current)
+      shouldStopTyping.current = false;
     if (!isChannel || !currentChannel || typingIntervalRef.current !== null)
       return;
+
     connection?.invoke("StartTyping", currentChannel.id).catch(() => {});
-    // Keep the server-side cache alive while the user is actively typing
     typingIntervalRef.current = setInterval(() => {
       connection?.invoke("StartTyping", currentChannel.id).catch(() => {});
-    }, 6000);
+      if (shouldStopTyping.current)
+        stopTypingIndicator(false);
+      shouldStopTyping.current = true;
+    }, 7000);
   }, [isChannel, currentChannel]);
 
   useEffect(() => () => {
@@ -654,8 +662,10 @@ const MessageInput = forwardRef(function MessageInput({
   const openFilePicker = () => fileInputRef.current?.click();
 
   const openEmojiPicker = (e: React.MouseEvent) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const rect = e.currentTarget.getBoundingClientRect();
     const id = 'emoji-picker';
+    // TODO: fix emoji picker bug causing selections to not properly replace text when entering a new character + preventing the placeholder message from popping up
+    // weirdly fixes itself after a couple of seconds, but those seconds are annoying & shouldnt exist
     open({
       id,
       element: (
@@ -665,7 +675,8 @@ const MessageInput = forwardRef(function MessageInput({
           servers={servers}
           onSelect={(emoji, e) => {
             const native = typeof emoji === 'string' ? emoji : emoji;
-            Transforms.insertText(editor, native);
+            Transforms.select(editor, target!);
+            ins(editor, { type: "emoji", emoji: native, children: [{ text: native }] });
             ReactEditor.focus(editor);
             if (!e.shiftKey)
               close(id);
@@ -717,6 +728,29 @@ const MessageInput = forwardRef(function MessageInput({
       const nodeEnd = offset + nodeText.length;
       const overlapStart = Math.max(t.start, nodeStart);
       const overlapEnd = Math.min(t.end, nodeEnd);
+
+      if (t.style === 'shaky' || t.style === 'wobbly') {
+        const len = overlapEnd - overlapStart;
+
+        for (let i = 0; i < len; i++) {
+          const seed = BigInt(t.start + i);
+          const rand = Random.create(seed);
+
+          const r = (-0.5 + rand.nextFloat()) * 2;
+          const amp = lerp(r, r < 0 ? -1 : 1, 0.5) / 16;
+          const speed = 0.5 + rand.nextFloat() * 0.5;
+
+          results.push({
+            char: true,
+            amp,
+            speed,
+            i,
+            anchor: { path, offset: overlapStart - nodeStart + i },
+            focus: { path, offset: overlapStart - nodeStart + i + 1 }
+          });
+        }
+      }
+
       if (overlapStart < overlapEnd) {
         results.push({
           [t.style]: true,
@@ -732,14 +766,10 @@ const MessageInput = forwardRef(function MessageInput({
   const Leaf = ({ attributes, children, leaf }: any) => {
     let rendered = children;
 
-    if (leaf.boldItalic) {
-      rendered = <b><i>{rendered}</i></b>;
-    } else {
-      if (leaf.bold)
-        rendered = <b>{rendered}</b>;
-      if (leaf.italic)
-        rendered = <i>{rendered}</i>;
-    }
+    if (leaf.bold)
+      rendered = <b>{rendered}</b>;
+    if (leaf.italic)
+      rendered = <i>{rendered}</i>;
     if (leaf.underline)
       rendered = <u>{rendered}</u>;
     if (leaf.strikethrough)
@@ -753,9 +783,33 @@ const MessageInput = forwardRef(function MessageInput({
     if (leaf.subscript)
       rendered = <sub>{rendered}</sub>;
     if (leaf.color)
-      rendered = <span className={"colored" + (leaf.colors ? " gradient" : "")} style={{ '--color': leaf.hex, ...(leaf.colors && { '--gradient': `linear-gradient(90deg, ${leaf.colors.join(", ")})` }) } as any}>{rendered}</span>;
+      rendered = <span className={"colored" + (leaf.colors ? " gradient" : "")} style={{ '--color': leaf.hex, ...(leaf.colors && { '--gradient': `linear-gradient(90deg, ${leaf.colors.join(", ")})` }) } as React.CSSProperties}>{rendered}</span>;
     if (leaf.link)
       rendered = <a>{rendered}</a>;
+    if (leaf.marquee)
+      rendered = (
+        <span className="marquee">
+          <span className="marquee-track">
+            {rendered}
+          </span>
+        </span>
+      );
+    if (leaf.char)
+      rendered = (
+        <span className="char"
+          style={{
+            '--amp': `${leaf.amp}em`,
+            '--speed': `${leaf.speed}s`,
+            '--i': leaf.i
+          } as React.CSSProperties}
+        >
+          {rendered}
+        </span>
+      );
+    if (leaf.wobbly)
+      rendered = <span className="wobbly">{rendered}</span>;
+    if (leaf.shaky)
+      rendered = <span className="shaky">{rendered}</span>;
     if (leaf.timestamp)
       rendered = <span className="timestamp-edit" title={formatTimestamp(Number(leaf.timestamp), leaf.style)}>{rendered}</span>;
     if (leaf.mentionEveryone)
@@ -991,7 +1045,7 @@ const MessageInput = forwardRef(function MessageInput({
     const q1 = s.slice(1); // for one-char prefixes @, #, :
 
     if (s.startsWith("@&")) {
-      const roles: Role[] = (currentServer as any)?.roles ?? [];
+      const roles: Role[] = currentServer?.roles ?? [];
       return roles
         .filter(r => r.name?.toLowerCase()?.startsWith(q2))
         .slice(0, 10)
@@ -1007,11 +1061,14 @@ const MessageInput = forwardRef(function MessageInput({
         .filter(c => c.serverId === currentChannel?.serverId && c.name?.toLowerCase()?.startsWith(q1))
         .slice(0, 10)
         .map(c => ({ ...c, type: "channel" }));
-    if (s.startsWith("@"))
+    if (s.startsWith("@")) {
+      const roles: Role[] = currentServer?.roles ?? [];
       return users
         .filter(u => u?.displayName?.toLowerCase()?.startsWith(q1) || u.username.toLowerCase().startsWith(q1))
-        .slice(0, 10)
-        .map(u => ({ ...u, type: "user" }));
+        .map(u => ({ ...u, type: "user" } as any))
+        .concat(roles.filter(r => r.name?.toLowerCase()?.startsWith(q1)).map(r => ({ ...r, type: "role" })))
+        .slice(0, 10);
+    }
     if (s.startsWith(":")) {
       const raw = s.slice(1);
 
@@ -1164,9 +1221,17 @@ const MessageInput = forwardRef(function MessageInput({
                   return (
                     <div key={u.id} className={`mention-item int ${i === index ? "active" : ""}`}
                       onMouseDown={e => { e.preventDefault(); Transforms.select(editor, target!); insertUserMention(editor, u); setTarget(null); }}
-                      onMouseEnter={() => setIndex(i)}>
+                      onMouseEnter={() => setIndex(i)}
+                    >
                       <img className="avatar" src={getAvatar(u, m)} alt={t("alt.avatar")} />
-                      <span style={{ fontFamily: `${m?.nameFont}, ${u.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif` }}>{getDisplayName(u, m)}</span>
+                      <Name
+                        user={u}
+                        member={m}
+                        serverState={serverState}
+                        allowDmColors={!!!currentServer}
+                        md={markdownContext}
+                        spoilerState={spoilerState}
+                      />
                       <span className="username">@{u.username}</span>
                     </div>
                   );
@@ -1282,7 +1347,7 @@ const MessageInput = forwardRef(function MessageInput({
         {isChannel && (
           <button
             type="button"
-            onMouseDown={e => { e.preventDefault(); openFilePicker(); }}
+            onMouseDown={e => { e.preventDefault(); if (e.button === 0) openFilePicker(); }}
             style={{
               flexShrink: 0,
               background: 'none',
@@ -1291,7 +1356,6 @@ const MessageInput = forwardRef(function MessageInput({
               padding: '2px 4px',
               color: 'var(--text-4)',
               cursor: 'pointer',
-              fontSize: 18,
               lineHeight: 1,
               alignSelf: 'center',
               transition: 'color 150ms',
@@ -1300,7 +1364,7 @@ const MessageInput = forwardRef(function MessageInput({
             onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
             onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-4)')}
           >
-            ➕
+            <PlusIcon size={18} />
           </button>
         )}
 
@@ -1316,8 +1380,18 @@ const MessageInput = forwardRef(function MessageInput({
                   ? placeholderText
                   : isChannel
                     ? currentChannel
-                      ? <>{t("input.placeholder", { channel: "" }).replace("{channel}", "").trimEnd()}{" "}{getChannelIcon(currentChannel, { className: "inline-icon" })}{currentChannel.name}</>
-                      : t("input.placeholder_void")
+                      ? !!currentServer
+                        ? <>{tr("input.placeholder", { channel: <>{getChannelIcon(currentChannel, { className: "inline-icon" })}{currentChannel.name}</> })}</>
+                        // todo: expand to support group dms
+                        : <>{tr("input.placeholder.dm", { user: <Name
+                            user={userState.get((currentChannel as DmChannel).members.filter(m => m !== user?.id)[0]) ?? null}
+                            serverState={serverState}
+                            allowDmColors={true}
+                            md={markdownContext}
+                            spoilerState={spoilerState}
+                            prefix="@"
+                          />})}</>
+                      : t("input.placeholder.void")
                     : t("input.type")}
             </span>
           )}
@@ -1817,7 +1891,6 @@ const MessageInput = forwardRef(function MessageInput({
               padding: '2px 4px',
               color: 'var(--text-4)',
               cursor: 'pointer',
-              fontSize: 18,
               lineHeight: 1,
               alignSelf: 'center',
               transition: 'color 150ms'
@@ -1826,7 +1899,7 @@ const MessageInput = forwardRef(function MessageInput({
             onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
             onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-4)')}
           >
-            😊
+            <SmileIcon size={18} />
           </button>
         )}
       </div>

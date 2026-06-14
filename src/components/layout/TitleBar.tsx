@@ -8,6 +8,7 @@ import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
 import { searchMessages } from "../../lib/api/ChannelApi";
 import { useMessageState } from "../../lib/state/Messages";
 import { t, useLocale } from "../../lib/i18n/Index";
+import { UsersIcon } from "../svgs/other/Icons";
 
 export default function TitleBar() {
   useLocale();
@@ -46,10 +47,10 @@ export default function TitleBar() {
     if (type === ChannelType.DM) {
       const dm = currentChannel as DmChannel;
       const otherId = dm.members?.find(id => id !== user?.id);
-      const other = otherId ? get(otherId) : undefined;
+      const other = otherId !== undefined ? get(otherId) : undefined;
       return {
         icon: other ? (
-          <img src={getAvatar(other)} alt="" style={{ width: 20, height: 20, borderRadius: "50%", marginRight: 6 }} />
+          <img src={getAvatar(other)} alt="" style={{ width: 24, height: 24, borderRadius: "50%", marginRight: 6 }} />
         ) : null,
         name: other ? getDisplayName(other) : t("title.dm"),
         sub: other ? `@${other.username}` : undefined,
@@ -57,8 +58,9 @@ export default function TitleBar() {
     }
 
     if (type === ChannelType.GroupDM) {
+      // TODO: make group dms able to have custom image icons
       return {
-        icon: "👥",
+        icon: <UsersIcon size={14} />,
         name: currentChannel.name ?? t("title.group_dm"),
       };
     }

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, JSX, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, ReactNode } from 'react';
 import type {
   DocumentAST, BlockNode, InlineNode,
   ListItemNode, NumberedListItemNode,
@@ -23,8 +23,24 @@ import katex from 'katex';
 import { createHighlighterCore, createOnigurumaEngine } from 'react-shiki/core';
 import { BundledLanguage, bundledLanguages, HighlighterCore } from 'shiki';
 import { t, useLocale } from '../i18n/Index';
-import { intToHex } from './Funcs';
+import { intToHex, lerp, toHash } from './Funcs';
 import { Name } from '../../components/layout/Generic';
+import Random from './Random';
+import Graphemer from 'graphemer';
+
+declare global {
+  namespace Intl {
+    class Segmenter {
+      constructor(
+        locales?: string | string[],
+        options?: { granularity?: 'grapheme' | 'word' | 'sentence' }
+      );
+      segment(
+        input: string
+      ): Iterable<{ segment: string; index: number; input: string }>;
+    }
+  }
+}
 
 export const modelOperations = new ModelOperations(
   {
@@ -56,9 +72,9 @@ export const highlighterReady: Promise<void> = (async () => {
   }
 })();
 
-const _loadedLangs  = new Set<string>();
+const _loadedLangs = new Set<string>();
 const _loadingLangs = new Map<string, Promise<void>>();
- 
+
 export const LANG_ALIASES: Record<string, string> = {
   js: 'javascript', ts: 'typescript', py: 'python', rb: 'ruby',
   sh: 'bash', shell: 'bash', zsh: 'bash', 'c++': 'cpp',
@@ -68,7 +84,7 @@ export const LANG_ALIASES: Record<string, string> = {
 };
 
 export const SPECIAL_LANGS = new Set(['text', 'plaintext', 'plain', 'txt', 'ansi', '']);
- 
+
 export function normalizeShikiLang(raw: string): string {
   return LANG_ALIASES[raw.toLowerCase()] ?? raw.toLowerCase();
 }
@@ -77,16 +93,16 @@ export async function ensureLanguageLoaded(rawLang: string): Promise<boolean> {
   const lang = normalizeShikiLang(rawLang);
   if (SPECIAL_LANGS.has(lang))
     return true;
- 
+
   await highlighterReady;
   if (!superHighlighter)
     return false;
- 
+
   if (_loadedLangs.has(lang))
     return true;
   if (!(lang in bundledLanguages))
     return false;
- 
+
   if (!_loadingLangs.has(lang)) {
     const p = (async () => {
       try {
@@ -98,7 +114,7 @@ export async function ensureLanguageLoaded(rawLang: string): Promise<boolean> {
     })();
     _loadingLangs.set(lang, p);
   }
- 
+
   await _loadingLangs.get(lang);
   return _loadedLangs.has(lang);
 }
@@ -196,6 +212,7 @@ export interface RenderContext {
   userSettings?: UserSettings | null;
   noBigEmoji?: boolean;
   showSpoilers?: 'always' | 'onHover';
+  forceInline?: boolean;
   onMentionClick?: (user: User, member: any, e: React.MouseEvent) => void;
   onRoleClick?: (role: any, server: Server, e: React.MouseEvent) => void;
   onChannelClick?: (ch: AbstractChannel, e: React.MouseEvent) => void;
@@ -335,7 +352,7 @@ const CodeBlock = React.memo(function CodeBlock({
         <div data-testid="shiki-container" data-slot="container" className="rs-root not-prose rs-default-styles shiki">
           {highlighter ?? (
             // fallback to manually created output that mimicks useShikiHighlighter
-            <pre className={`shiki ${shikiTheme}`} tabIndex={0} style={{backgroundColor: light ? "#fff" : "#24292e", color: light ? "#24292e" : "#e1e4e8"}}>
+            <pre className={`shiki ${shikiTheme}`} tabIndex={0} style={{ backgroundColor: light ? "#fff" : "#24292e", color: light ? "#24292e" : "#e1e4e8" }}>
               <code className={showLineNumbers ? "rs-has-line-numbers" : undefined}>
                 {content.split('\n').map(line => <span className={"line" + (showLineNumbers ? " rs-line-number" : "")}><span>{line + '\n'}</span></span>)}
               </code>
@@ -347,6 +364,103 @@ const CodeBlock = React.memo(function CodeBlock({
   );
 });
 
+const hasSegmenter = typeof Intl.Segmenter !== 'undefined';
+const segmenter = hasSegmenter ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+const graphemer = !hasSegmenter ? new Graphemer() : null;
+
+export function splitGraphemes(text: string): string[] {
+  if (!text)
+    return [];
+
+  if (segmenter) {
+    const segments = segmenter.segment(text);
+    const result: string[] = [];
+
+    for (const { segment } of segments)
+      result.push(segment);
+
+    return result;
+  }
+
+  if (graphemer)
+    return graphemer.splitGraphemes(text);
+
+  return [];
+}
+
+export function mapTextNodes(
+  node: ReactNode,
+  fn: (graphemes: string[]) => ReactNode
+): ReactNode {
+  if (typeof node === "string")
+    return fn(splitGraphemes(node));
+
+  if (typeof node === "number")
+    return fn(splitGraphemes(String(node)));
+
+  if (Array.isArray(node))
+    return node.map((child, i) => (
+      <React.Fragment key={i}>
+        {mapTextNodes(child, fn)}
+      </React.Fragment>
+    ));
+
+  if (React.isValidElement(node))
+    return React.cloneElement(
+      node,
+      undefined,
+      mapTextNodes(node.props.children, fn)
+    );
+
+  return node;
+}
+
+export function WobblyText({ children }: { children: ReactNode }) {
+  return (
+    <span className="wobbly">
+      {mapTextNodes(children, text => [...text].map((char, i) => (
+        <span
+          key={i}
+          className="char"
+          style={{ '--i': i } as React.CSSProperties}
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </span>
+      )))}
+    </span>
+  );
+}
+
+export function ShakyText({ children }: { children: ReactNode }) {
+  return (
+    <span className="shaky">
+      {mapTextNodes(children, text => {
+        const rand = Random.create(BigInt(toHash(text.join(""))));
+        return text.map((char, i) => {
+          const r = (-0.5 + rand.nextFloat()) * 2;
+          const amp = lerp(r, r < 0 ? -1 : 1, 0.5) / 16;
+          const speed = 0.5 + rand.nextFloat() * 0.5;
+
+          return (
+            <span
+              key={i}
+              className="char"
+              style={
+                {
+                  "--amp": `${amp}em`,
+                  "--speed": `${speed}s`
+                } as React.CSSProperties
+              }
+            >
+              {char === " " ? "\u00A0" : char}
+            </span>
+          );
+        })
+      })}
+    </span>
+  );
+}
+
 function LiveTimestampSpan({ ts, style }: { ts: number; style: string }) {
   const [, tick] = useState(0);
   useEffect(() => {
@@ -354,7 +468,6 @@ function LiveTimestampSpan({ ts, style }: { ts: number; style: string }) {
       return;
 
     const diff = Math.abs(Date.now() - ts);
-    // Update every 1s for recent times, every minute for older ones.
     const interval = diff < 3_600_000 ? 1_00 : 60_000;
     const id = setInterval(() => tick(n => n + 1), interval);
     return () => clearInterval(id);
@@ -378,14 +491,35 @@ function ProgressBarInline({ value, label }: { value: number; label: string }) {
   );
 }
 
+interface CharCounter {
+  remaining: number;
+  done: boolean;
+}
+
+function consumeChars(cc: CharCounter | null, text: string): string {
+  if (!cc)
+    return text;
+  if (cc.done)
+    return '';
+  if (text.length < cc.remaining) {
+    cc.remaining -= text.length;
+    return text;
+  }
+  const visible = text.slice(0, cc.remaining);
+  cc.remaining = 0;
+  cc.done = true;
+  return visible + '...';
+}
+
 function ri(
   nodes: InlineNode[],
   ctx: RenderContext,
   sm: React.MutableRefObject<Map<number, boolean>> | null,
   sc: { n: number },
-  kc: { n: number }
-): JSX.Element[] {
-  return nodes.map(n => rin(n, ctx, sm, sc, kc));
+  kc: { n: number },
+  cc: CharCounter | null
+): ReactNode[] {
+  return nodes.map(n => rin(n, ctx, sm, sc, kc, cc));
 }
 
 function rin(
@@ -393,16 +527,23 @@ function rin(
   ctx: RenderContext,
   sm: React.MutableRefObject<Map<number, boolean>> | null,
   sc: { n: number },
-  kc: { n: number }
-): JSX.Element {
+  kc: { n: number },
+  cc: CharCounter | null
+): ReactNode {
   const k = () => ++kc.n;
-  const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc, kc);
+  const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc, kc, cc);
+
+  if (cc?.done)
+    return <span key={k()} />;
 
   switch (node.type) {
-    case 'text': return <span key={k()}>{node.content}</span>;
+    case 'text': {
+      const visible = consumeChars(cc, node.content);
+      return <span key={k()}>{visible}</span>;
+    }
+
     case 'bold': return <b key={k()} data-md-pre="**" data-md-post="**">{ch(node.children)}</b>;
     case 'italic': return <i key={k()} data-md-pre="*" data-md-post="*">{ch(node.children)}</i>;
-    case 'boldItalic': return <b key={k()} data-md-pre="***" data-md-post="***"><i>{ch(node.children)}</i></b>;
     case 'underline': return <u key={k()} data-md-pre="__" data-md-post="__">{ch(node.children)}</u>;
     case 'strikethrough': return <s key={k()} data-md-pre="~~" data-md-post="~~">{ch(node.children)}</s>;
     case 'superscript': return <sup key={k()} data-md-pre="^" data-md-post="^">{ch(node.children)}</sup>;
@@ -439,10 +580,10 @@ function rin(
       return <span key={k()} className="lowlight" data-md-pre="===" data-md-post="===">{ch(node.children)}</span>;
 
     case 'hexColor':
-      return <span key={k()} className="hex-color" style={{ '--color': node.content } as any}>{node.content}</span>;
+      return <span key={k()} className="hex-color" style={{ '--color': node.content } as any}>{consumeChars(cc, node.content)}</span>;
 
     case 'code':
-      return <code key={k()} data-md-pre="`" data-md-post="`">{node.content}</code>;
+      return <code key={k()} data-md-pre="`" data-md-post="`">{consumeChars(cc, node.content)}</code>;
 
     case 'color':
       return (
@@ -463,10 +604,25 @@ function rin(
       }
       return (
         <a key={k()} href={node.url} target="_blank" rel="noreferrer" onDoubleClick={e => e.stopPropagation()}>
-          <span>{node.url}</span>
+          <span>{consumeChars(cc, node.url)}</span>
         </a>
       );
     }
+
+    case 'marquee':
+      return (
+        <span key={k()} className="marquee" data-md-pre="<<" data-md-post=">>">
+          <span className="marquee-track">
+            {ch(node.children)}
+          </span>
+        </span>
+      );
+
+    case 'wobbly':
+      return <WobblyText key={k()}>{ch(node.children)}</WobblyText>;
+
+    case 'shaky':
+      return <ShakyText key={k()}>{ch(node.children)}</ShakyText>;
 
     case 'timestamp':
       return <LiveTimestampSpan key={k()} ts={node.timestamp} style={node.style} />;
@@ -475,15 +631,16 @@ function rin(
       return <ProgressBarInline key={k()} value={node.value} label={node.label} />;
 
     case 'mentionEveryone':
-      return <span key={k()} className="mention int" onDoubleClick={e => e.stopPropagation()}>@{node.subtype}</span>;
+      return <span key={k()} className="mention int" onDoubleClick={e => e.stopPropagation()}>{consumeChars(cc, `@${node.subtype}`)}</span>;
 
     case 'mentionUser': {
       const us = ctx.userState;
       const ss = ctx.serverState;
-      const u = us?.users.find((x: User) => x.id === node.id);
+      const u = us?.get(node.id);
       const m = u && us ? us.getMember(u.id, ss?.currentServer?.id) : undefined;
       const r = m && ss && getDisplayRole(ss, m, true);
       const col = r?.colors?.[0] ?? r?.color;
+      consumeChars(cc, "@" + (m?.nickname ?? u?.displayName ?? u?.username ?? ""));
       return (
         <span
           key={k()}
@@ -509,6 +666,7 @@ function rin(
       const s = ss?.currentServer;
       const r = s?.roles.find(x => x.id === node.id);
       const col = r?.colors?.[0] ?? r?.color;
+      consumeChars(cc, "@" + (r?.name ?? ""));
       return (
         <span
           key={k()}
@@ -533,6 +691,7 @@ function rin(
       const cs = ctx.channelState;
       const ch2 = cs?.channels.find((x: AbstractChannel) => x.id === node.id) as AbstractChannel | undefined;
       const name = ch2?.name ?? `<#${node.id}>`;
+      consumeChars(cc, name);
       return (
         <span
           key={k()}
@@ -549,6 +708,7 @@ function rin(
       const ss = ctx.serverState;
       const srv = ss?.servers.find((x: Server) => x.id === node.id);
       const name = srv?.name ? `${srv.name}` : `<#&${node.id}>`;
+      consumeChars(cc, name);
       return (
         <span
           key={k()}
@@ -564,7 +724,7 @@ function rin(
     case 'emoji':
       return (
         <span key={k()}>
-          {renderEmoji(ctx.userSettings ?? null, node.native, 'emoji-text int', ctx.onEmojiClick ?? null)}
+          {renderEmoji(ctx.userSettings ?? null, consumeChars(cc, node.native), 'emoji-text int', ctx.onEmojiClick ?? null)}
         </span>
       );
 
@@ -580,16 +740,40 @@ function renderBlocks(
   sc: { n: number },
   kc: { n: number },
   bigEmoji: boolean,
-): JSX.Element[] {
-  const out: JSX.Element[] = [];
+  cc: CharCounter | null
+): ReactNode[] {
+  const out: ReactNode[] = [];
   let i = 0;
   let prevWasInline = false;
   const k = () => ++kc.n;
 
   while (i < ast.length) {
+    if (cc?.done)
+      break;
+
     const block = ast[i];
 
     if (block.type === 'table') {
+      if (ctx.forceInline) {
+        if (prevWasInline)
+          out.push(<span key={k()}>{' '}</span>);
+        const tbl = block as TableNode;
+        const allCells = tbl.rows.flatMap(r => r.cells);
+        out.push(
+          <span key={k()}>
+            {allCells.map((cell, ci) => (
+              <span key={ci}>
+                {ci > 0 && <span>{' | '}</span>}
+                {ri(cell.children, ctx, sm, sc, kc, cc)}
+              </span>
+            ))}
+          </span>
+        );
+        prevWasInline = true;
+        i++;
+        continue;
+      }
+
       const tbl = block as TableNode;
       const [headerRow, ...bodyRows] = tbl.rows;
       out.push(
@@ -600,7 +784,7 @@ function renderBlocks(
                 <tr>
                   {headerRow.cells.map((cell, ci) => (
                     <th key={ci} style={{ textAlign: cell.align ?? undefined }}>
-                      {ri(cell.children, ctx, sm, sc, kc)}
+                      {ri(cell.children, ctx, sm, sc, kc, cc)}
                     </th>
                   ))}
                 </tr>
@@ -611,7 +795,7 @@ function renderBlocks(
                 <tr key={rowIdx}>
                   {row.cells.map((cell, ci) => (
                     <td key={ci} style={{ textAlign: cell.align ?? undefined }}>
-                      {ri(cell.children, ctx, sm, sc, kc)}
+                      {ri(cell.children, ctx, sm, sc, kc, cc)}
                     </td>
                   ))}
                 </tr>
@@ -626,6 +810,29 @@ function renderBlocks(
     }
 
     if (block.type === 'listItem' || block.type === 'listItemQuote') {
+      if (ctx.forceInline) {
+        if (prevWasInline)
+          out.push(<span key={k()}>{' '}</span>);
+        const items: (ListItemNode | ListItemQuoteNode)[] = [];
+        while (i < ast.length && (ast[i].type === 'listItem' || ast[i].type === 'listItemQuote')) {
+          items.push(ast[i] as ListItemNode | ListItemQuoteNode);
+          i++;
+        }
+        out.push(
+          <span key={k()}>
+            {items.map((it, idx) => (
+              <span key={idx}>
+                {idx > 0 && <span>{' '}</span>}
+                <span>{'• '}</span>
+                {ri(it.children, ctx, sm, sc, kc, cc)}
+              </span>
+            ))}
+          </span>
+        );
+        prevWasInline = true;
+        continue;
+      }
+
       const items: (ListItemNode | ListItemQuoteNode)[] = [];
       while (i < ast.length && (ast[i].type === 'listItem' || ast[i].type === 'listItemQuote')) {
         items.push(ast[i] as ListItemNode | ListItemQuoteNode);
@@ -636,8 +843,8 @@ function renderBlocks(
           {items.map(it => (
             <li key={k()} data-md-pre={it.type === 'listItemQuote' ? '- > ' : '- '}>
               {it.type === 'listItemQuote'
-                ? <span className="quote">{ri((it as ListItemQuoteNode).children, ctx, sm, sc, kc)}</span>
-                : ri((it as ListItemNode).children, ctx, sm, sc, kc)
+                ? <span className="quote">{ri((it as ListItemQuoteNode).children, ctx, sm, sc, kc, cc)}</span>
+                : ri((it as ListItemNode).children, ctx, sm, sc, kc, cc)
               }
             </li>
           ))}
@@ -648,6 +855,29 @@ function renderBlocks(
     }
 
     if (block.type === 'numberedListItem' || block.type === 'numberedListItemQuote') {
+      if (ctx.forceInline) {
+        if (prevWasInline)
+          out.push(<span key={k()}>{' '}</span>);
+        const items: (NumberedListItemNode | NumberedListItemQuoteNode)[] = [];
+        while (i < ast.length && (ast[i].type === 'numberedListItem' || ast[i].type === 'numberedListItemQuote')) {
+          items.push(ast[i] as NumberedListItemNode | NumberedListItemQuoteNode);
+          i++;
+        }
+        out.push(
+          <span key={k()}>
+            {items.map((it, idx) => (
+              <span key={idx}>
+                {idx > 0 && <span>{' '}</span>}
+                <span>{`${it.number}. `}</span>
+                {ri(it.children, ctx, sm, sc, kc, cc)}
+              </span>
+            ))}
+          </span>
+        );
+        prevWasInline = true;
+        continue;
+      }
+
       const items: (NumberedListItemNode | NumberedListItemQuoteNode)[] = [];
       while (i < ast.length && (ast[i].type === 'numberedListItem' || ast[i].type === 'numberedListItemQuote')) {
         items.push(ast[i] as NumberedListItemNode | NumberedListItemQuoteNode);
@@ -657,12 +887,12 @@ function renderBlocks(
         <ol key={k()}>
           {items.map(it => (
             <li key={k()} value={it.number}
-                data-md-pre={it.type === 'numberedListItemQuote'
-                  ? `${it.number}. > `
-                  : `${it.number}. `}>
+              data-md-pre={it.type === 'numberedListItemQuote'
+                ? `${it.number}. > `
+                : `${it.number}. `}>
               {it.type === 'numberedListItemQuote'
-                ? <span className="quote">{ri((it as NumberedListItemQuoteNode).children, ctx, sm, sc, kc)}</span>
-                : ri((it as NumberedListItemNode).children, ctx, sm, sc, kc)
+                ? <span className="quote">{ri((it as NumberedListItemQuoteNode).children, ctx, sm, sc, kc, cc)}</span>
+                : ri((it as NumberedListItemNode).children, ctx, sm, sc, kc, cc)
               }
             </li>
           ))}
@@ -673,12 +903,22 @@ function renderBlocks(
     }
 
     if (block.type === 'collapsible') {
+      if (ctx.forceInline) {
+        if (prevWasInline)
+          out.push(<span key={k()}>{' '}</span>);
+        const cb = block as CollapsibleNode;
+        out.push(<span key={k()}>{ri(cb.title, ctx, sm, sc, kc, cc)}</span>);
+        prevWasInline = true;
+        i++;
+        continue;
+      }
+
       const cb = block as CollapsibleNode;
       out.push(
         <details key={k()} className="collapsible-block" onToggle={ctx.onToggleDetails}>
-          <summary className="collapsible-title uno" onDoubleClick={e => e.stopPropagation()}>{ri(cb.title, ctx, sm, sc, kc)}</summary>
+          <summary className="collapsible-title uno" onDoubleClick={e => e.stopPropagation()}>{ri(cb.title, ctx, sm, sc, kc, cc)}</summary>
           <div className="collapsible-body">
-            {renderBlocks(cb.children, ctx, sm, sc, kc, false)}
+            {renderBlocks(cb.children, ctx, sm, sc, kc, false, cc)}
           </div>
         </details>
       );
@@ -688,6 +928,28 @@ function renderBlocks(
     }
 
     if (block.type === 'nestedQuote') {
+      if (ctx.forceInline) {
+        if (prevWasInline)
+          out.push(<span key={k()}>{' '}</span>);
+        const items: NestedQuoteNode[] = [];
+        while (i < ast.length && ast[i].type === 'nestedQuote') {
+          items.push(ast[i] as NestedQuoteNode);
+          i++;
+        }
+        out.push(
+          <span key={k()}>
+            {items.map((it, idx) => (
+              <span key={idx}>
+                {idx > 0 && <span>{' '}</span>}
+                {ri(it.children, ctx, sm, sc, kc, cc)}
+              </span>
+            ))}
+          </span>
+        );
+        prevWasInline = true;
+        continue;
+      }
+
       const items: NestedQuoteNode[] = [];
       while (i < ast.length && ast[i].type === 'nestedQuote') {
         items.push(ast[i] as NestedQuoteNode);
@@ -699,7 +961,7 @@ function renderBlocks(
             {items.map((it, idx) => (
               <span key={idx} data-md-pre="> > ">
                 {idx > 0 && <br />}
-                {ri(it.children, ctx, sm, sc, kc)}
+                {ri(it.children, ctx, sm, sc, kc, cc)}
               </span>
             ))}
           </span>
@@ -710,6 +972,29 @@ function renderBlocks(
     }
 
     if (block.type === 'quoteListItem') {
+      if (ctx.forceInline) {
+        if (prevWasInline)
+          out.push(<span key={k()}>{' '}</span>);
+        const items: QuoteListItemNode[] = [];
+        while (i < ast.length && ast[i].type === 'quoteListItem') {
+          items.push(ast[i] as QuoteListItemNode);
+          i++;
+        }
+        out.push(
+          <span key={k()}>
+            {items.map((it, idx) => (
+              <span key={idx}>
+                {idx > 0 && <span>{' '}</span>}
+                <span>{'• '}</span>
+                {ri(it.children, ctx, sm, sc, kc, cc)}
+              </span>
+            ))}
+          </span>
+        );
+        prevWasInline = true;
+        continue;
+      }
+
       const items: QuoteListItemNode[] = [];
       while (i < ast.length && ast[i].type === 'quoteListItem') {
         items.push(ast[i] as QuoteListItemNode);
@@ -718,7 +1003,7 @@ function renderBlocks(
       out.push(
         <div key={k()} className="quote">
           <ul className="quote-list">
-            {items.map(it => <li key={k()} data-md-pre="> - ">{ri(it.children, ctx, sm, sc, kc)}</li>)}
+            {items.map(it => <li key={k()} data-md-pre="> - ">{ri(it.children, ctx, sm, sc, kc, cc)}</li>)}
           </ul>
         </div>
       );
@@ -727,6 +1012,29 @@ function renderBlocks(
     }
 
     if (block.type === 'quoteNumberedListItem') {
+      if (ctx.forceInline) {
+        if (prevWasInline)
+          out.push(<span key={k()}>{' '}</span>);
+        const items: QuoteNumberedListItemNode[] = [];
+        while (i < ast.length && ast[i].type === 'quoteNumberedListItem') {
+          items.push(ast[i] as QuoteNumberedListItemNode);
+          i++;
+        }
+        out.push(
+          <span key={k()}>
+            {items.map((it, idx) => (
+              <span key={idx}>
+                {idx > 0 && <span>{' '}</span>}
+                <span>{`${it.number}. `}</span>
+                {ri(it.children, ctx, sm, sc, kc, cc)}
+              </span>
+            ))}
+          </span>
+        );
+        prevWasInline = true;
+        continue;
+      }
+
       const items: QuoteNumberedListItemNode[] = [];
       while (i < ast.length && ast[i].type === 'quoteNumberedListItem') {
         items.push(ast[i] as QuoteNumberedListItemNode);
@@ -735,7 +1043,7 @@ function renderBlocks(
       out.push(
         <div key={k()} className="quote">
           <ol className="quote-list">
-            {items.map(it => <li key={k()} value={it.number} data-md-pre={`> ${it.number}. `}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
+            {items.map(it => <li key={k()} value={it.number} data-md-pre={`> ${it.number}. `}>{ri(it.children, ctx, sm, sc, kc, cc)}</li>)}
           </ol>
         </div>
       );
@@ -744,6 +1052,20 @@ function renderBlocks(
     }
 
     if (block.type === 'codeBlock') {
+      if (ctx.forceInline) {
+        if (prevWasInline)
+          out.push(<span key={k()}>{' '}</span>);
+        const visible = consumeChars(cc, block.content);
+        out.push(
+          <code key={k()} data-md-pre={`\`\`\`${block.language ?? ''}\n`} data-md-post="\n```">
+            {visible}
+          </code>
+        );
+        prevWasInline = true;
+        i++;
+        continue;
+      }
+
       out.push(
         <CodeBlock key={k()} content={block.content} language={block.language} theme={ctx.userSettings?.theme} showLineNumbers={ctx.userSettings?.showLineNumbers} />
       );
@@ -752,10 +1074,14 @@ function renderBlocks(
       continue;
     }
 
-    if (prevWasInline)
-      out.push(<br key={k()} />);
+    if (prevWasInline) {
+      if (ctx.forceInline)
+        out.push(<span key={k()}>{' '}</span>);
+      else
+        out.push(<br key={k()} />);
+    }
 
-    out.push(renderBlock(block, ctx, sm, sc, kc, bigEmoji));
+    out.push(renderBlock(block, ctx, sm, sc, kc, bigEmoji, cc));
     prevWasInline = true;
     i++;
   }
@@ -769,10 +1095,11 @@ function renderBlock(
   sm: React.MutableRefObject<Map<number, boolean>> | null,
   sc: { n: number },
   kc: { n: number },
-  bigEmoji: boolean
-): JSX.Element {
+  bigEmoji: boolean,
+  cc: CharCounter | null,
+): ReactNode {
   const k = () => ++kc.n;
-  const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc, kc);
+  const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc, kc, cc);
 
   switch (block.type) {
     case 'paragraph': {
@@ -780,9 +1107,12 @@ function renderBlock(
         return (
           <span key={k()} style={{ whiteSpace: 'pre-wrap' }}>
             {block.children.map(n => {
-              if (n.type === 'text') return <span key={k()}>{n.content}</span>;
+              if (n.type === 'text') {
+                const visible = consumeChars(cc, n.content);
+                return <span key={k()}>{visible}</span>;
+              }
               if (n.type === 'emoji') return <span key={k()}>{renderEmoji(ctx.userSettings ?? null, n.native, 'emoji-big int', ctx.onEmojiClick ?? null)}</span>;
-              return rin(n, ctx, sm, sc, kc);
+              return rin(n, ctx, sm, sc, kc, cc);
             })}
           </span>
         );
@@ -798,10 +1128,14 @@ function renderBlock(
 
     case 'mathBlock': {
       try {
-        const html = katex.renderToString(block.content, { throwOnError: false, displayMode: true });
-        return <div key={k()} className="math-block" data-md-verbatim={`$$\n${block.content}\n$$`} dangerouslySetInnerHTML={{ __html: html }} />;
+        const html = katex.renderToString(block.content, { throwOnError: false, displayMode: !ctx.forceInline });
+        return ctx.forceInline
+          ? <span key={k()} className="math-block" data-md-verbatim={`$$\n${block.content}\n$$`} dangerouslySetInnerHTML={{ __html: html }} />
+          : <div key={k()} className="math-block" data-md-verbatim={`$$\n${block.content}\n$$`} dangerouslySetInnerHTML={{ __html: html }} />;
       } catch {
-        return <pre key={k()} className="math-block math-error">{'$$\n' + block.content + '\n$$'}</pre>;
+        return ctx.forceInline
+          ? <span key={k()} className="math-block math-error">{'$$\n' + block.content + '\n$$'}</span>
+          : <pre key={k()} className="math-block math-error">{'$$\n' + block.content + '\n$$'}</pre>;
       }
     }
 
@@ -822,13 +1156,15 @@ interface MarkdownProps extends RenderContext {
   spoilerStateRef?: React.MutableRefObject<Map<number, boolean>>;
   allowBlocks?: boolean;
   allowBig?: boolean;
+  maxLength?: number;
 }
 
-export function RenderMarkdown({ content, spoilerStateRef, allowBlocks = true, allowBig = true, ...ctx }: MarkdownProps) {
+export function RenderMarkdown({ content, spoilerStateRef, allowBlocks = true, allowBig = true, maxLength, ...ctx }: MarkdownProps) {
   const sm = spoilerStateRef ?? null;
   const ast = parseDocument(content, allowBlocks, !allowBig);
-  const bigEmoji = !ctx.noBigEmoji && isBigEmoji(ast);
+  const bigEmoji = !ctx.noBigEmoji && !ctx.forceInline && isBigEmoji(ast);
+  const cc: CharCounter | null = maxLength != null ? { remaining: maxLength, done: false } : null;
   const sc = { n: 0 };
   const kc = { n: 0 };
-  return <>{renderBlocks(ast, ctx, sm, sc, kc, bigEmoji)}</>;
+  return <>{renderBlocks(ast, ctx, sm, sc, kc, bigEmoji, cc)}</>;
 }

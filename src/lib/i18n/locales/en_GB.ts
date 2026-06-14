@@ -1,5 +1,5 @@
 // british english
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const en_GB: Record<TranslationKeys, string> = {
   

@@ -17,6 +17,7 @@ import { t, useLocale } from "../../lib/i18n/Index";
 import { SkeletonChannelList } from "./Skeleton";
 import ContextMenu, { ContextMenuItem } from "./ContextMenu";
 import CreateChannelModal from "./modals/CreateChannelModal";
+import { BellIcon, BellOffIcon, EyeIcon, EyeOffIcon, HashIcon, InviteIcon, PlusIcon, TrashIcon } from "../svgs/other/Icons";
 
 export default function ChannelList() {
   useLocale();
@@ -155,41 +156,43 @@ export default function ChannelList() {
 
     if (canManage || serverOwner) {
       items.push({
-        label: t("channel.delete"), icon: "🗑️", danger: true,
-        onClick: () => handleDeleteChannel(channel),
+        label: t("channel.delete"), icon: <TrashIcon size={14} />, danger: true,
+        onClick: () => handleDeleteChannel(channel)
       });
       items.push({
-        label: t("channel.create_here"), icon: "➕",
-        onClick: () => setCreateChannelOpen(true),
+        label: t("channel.create_here"), icon: <PlusIcon size={14} />,
+        onClick: () => setCreateChannelOpen(true)
       });
     }
 
     if (canInvite || serverOwner) {
       items.push({
-        label: t("channel.copy_invite"), icon: "🔗",
+        label: t("channel.copy_invite"), icon: <InviteIcon size={14} />,
         onClick: () => {
           const url = currentServer?.inviteUrls?.[0];
           if (url) navigator.clipboard.writeText(url);
-        },
+        }
       });
     }
 
     items.push({ label: "", onClick: () => {}, divider: true });
     items.push({
       label: isMuted ? t("channel.unmute") : t("channel.mute"),
-      icon: isMuted ? "🔔" : "🔕",
-      onClick: () => toggleMuteChannel(channel.id),
+      icon: isMuted ? <BellIcon size={14} /> : <BellOffIcon size={14} />,
+      onClick: () => toggleMuteChannel(channel.id)
     });
     items.push({
       label: isHidden ? t("channel.unhide") : t("channel.hide"),
-      icon: isHidden ? "👁" : "🚫",
-      onClick: () => toggleHideChannel(channel.id),
+      icon: isHidden ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />,
+      onClick: () => toggleHideChannel(channel.id)
     });
-    items.push({ label: "", onClick: () => {}, divider: true });
-    items.push({
-      label: t("channel.copy_id"), icon: "🆔",
-      onClick: () => navigator.clipboard.writeText(String(channel.id)),
-    });
+    if (userSettings?.developerMode) {
+      items.push({ label: "", onClick: () => {}, divider: true });
+      items.push({
+        label: t("channel.copy_id"), icon: <HashIcon size={14} />,
+        onClick: () => navigator.clipboard.writeText(String(channel.id))
+      });
+    }
 
     return items;
   }
@@ -215,7 +218,7 @@ export default function ChannelList() {
           {c.name ?? t("channel.unnamed")}
         </span>
         {isMuted && (
-          <span style={{ fontSize: 12, opacity: 0.6, flexShrink: 0 }}>🔕</span>
+          <BellOffIcon size={12} style={{ opacity: 0.6, flexShrink: 0 }} />
         )}
       </div>
     );
@@ -234,7 +237,7 @@ export default function ChannelList() {
           style={{ color: "var(--text-5)", gap: 6 }}
           onClick={() => setCreateChannelOpen(true)}
         >
-          <span style={{ fontSize: 18, lineHeight: 1 }}>＋</span>
+          <PlusIcon size={18} style={{ lineHeight: 1 }} />
           <span style={{ fontSize: 12 }}>{t("channel.create")}</span>
         </div>
       )}
@@ -265,7 +268,7 @@ export default function ChannelList() {
                   <span style={{ marginRight: 4, transition: "transform 150ms", transform: collapsed ? "rotate(-90deg)" : "none" }}>
                     ›
                   </span>
-                  {(cat as any).name}
+                  {cat.name}
                   {(canManage || serverOwner) && (
                     <span
                       style={{ marginLeft: "auto", fontSize: 16 }}
@@ -315,11 +318,11 @@ export default function ChannelList() {
                     onClick={(e) => { e.stopPropagation(); toggleHideChannel(c.id); }}
                     style={{
                       background: "none", border: "none", boxShadow: "none",
-                      padding: "0 2px", fontSize: 12, color: "var(--text-5)",
+                      padding: "0 2px", color: "var(--text-5)",
                       cursor: "pointer", flexShrink: 0,
                     }}
                   >
-                    👁
+                    <EyeIcon size={18} />
                   </button>
                 </div>
               ))}

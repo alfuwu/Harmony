@@ -63,6 +63,8 @@ export const ChannelProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const startTyping = (event: Typing) => {
     setTyping(prev => {
       const prevTyping = prev[event.channelId] || [];
+      if (prevTyping.includes(event.userId))
+        return prev;
       return { ...prev, [event.channelId]: [...prevTyping, event.userId] };
     });
   };

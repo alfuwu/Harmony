@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { sendPhoneVerification, verifyPhone } from "../../../lib/api/AuthApi";
-import { t, useLocale } from "../../../lib/i18n/Index";
+import { t, tr, useLocale } from "../../../lib/i18n/Index";
 import type { TranslationKeys } from "../../../lib/i18n/Schema";
 
 type Step = "enter" | "verify";
@@ -123,8 +123,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
           <>
             <h2 style={{ margin: 0 }}>{t(currentPhone ? "change_phone.title" : "add_phone.title")}</h2>
             <p style={{ margin: 0, color: "var(--text-5)", fontSize: 13 }}>
-              {t("change_phone.desc.1")} <code>+12125551234</code>.{" "}
-              {t("change_phone.desc.2")}
+              {tr("change_phone.desc", { number: <code>+12125551234</code> })}
             </p>
 
             <div className="form-group">
@@ -158,9 +157,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
           <>
             <h2 style={{ margin: 0 }}>{t("verify_phone.title")}</h2>
             <p style={{ margin: 0, color: "var(--text-5)", fontSize: 13 }}>
-              {t("verify_phone.sent")}{" "}
-              <strong style={{ color: "var(--text-3)" }}>{phone}</strong>.{" "}
-              {t("verify_phone.expiry")}
+              {tr("verify_phone.sent", { number: <strong style={{ color: "var(--text-3)" }}>{phone}</strong>})}
             </p>
 
             <div className="form-group">

@@ -1,3 +1,4 @@
+import { ReactNode } from "react";
 import { t, useLocale } from "../../lib/i18n/Index";
 import { useAuthState } from "../../lib/state/Auth";
 import { useChannelState } from "../../lib/state/Channels";
@@ -25,9 +26,9 @@ export default function TypingIndicator({ channelId, currentUserId }: TypingIndi
     userSettings
   };
 
-  if (!channelId)
+  if (channelId === undefined)
     return null;
-
+  
   const typingIds = (channelState.getTyping(channelId) ?? []).filter(id => id !== currentUserId);
   if (typingIds.length === 0)
     return null;
@@ -37,15 +38,20 @@ export default function TypingIndicator({ channelId, currentUserId }: TypingIndi
     .map(id => {
       const u = userState.get(id);
       const m = userState.getMember(id, serverState.currentServer?.id);
-      return <b><Name
-        user={u!}
-        member={m}
-        serverState={serverState}
-        md={markdownData}
-      /></b>;
+      return (
+        <b>
+          <Name
+            user={u!}
+            member={m}
+            serverState={serverState}
+            md={markdownData}
+            allowDmColors={!!!serverState.currentServer}
+          />
+        </b>
+      );
     });
 
-  let text: JSX.Element;
+  let text: ReactNode;
   if (typingIds.length === 1) text = <>{names[0]}{t("messages.typing")}</>;
   else if (typingIds.length === 2) text = <>{names[0]}{t("messages.typing.conjoin1")}{names[1]}{t("messages.typing_plural")}</>;
   else if (typingIds.length < 5) text = (

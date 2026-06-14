@@ -20,6 +20,7 @@ import { Name } from "./Generic";
 import { RenderContext } from "../../lib/utils/MarkdownRenderer";
 import { roleToStyle } from "../../lib/utils/Funcs";
 import { t, useLocale } from "../../lib/i18n/Index";
+import { BanIcon, EditIcon, HashIcon, MessageIcon, UserMinusIcon } from "../svgs/other/Icons";
 
 const LARGE_SERVER_THRESHOLD = 1500;
 
@@ -111,7 +112,7 @@ export default function MemberList() {
     if (!isSelf) {
       items.push({
         label: t("member.send_message"),
-        icon: "💬",
+        icon: <MessageIcon size={14} />,
         onClick: async () => {
           try {
             const dm = await createDm(member.userId, { headers: { Authorization: `Bearer ${token}` } });
@@ -120,21 +121,15 @@ export default function MemberList() {
           } catch (e) { console.error(e); }
         },
       });
-      items.push({ label: t("member.set_nickname"), icon: "✏️", onClick: () => setNicknameModal({ member }) });
+      items.push({ label: t("member.set_nickname"), icon: <EditIcon size={14} />, onClick: () => setNicknameModal({ member }) });
       items.push({ label: "", onClick: () => {}, divider: true });
     }
-
-    items.push({
-      label: t("member.copy_id"),
-      icon: "🆔",
-      onClick: () => navigator.clipboard.writeText(String(member.userId))
-    });
 
     if (!isSelf && (canKick || owner)) {
       items.push({ label: "", onClick: () => {}, divider: true });
       items.push({
         label: t("member.kick"),
-        icon: "👢",
+        icon: <UserMinusIcon size={14} />,
         danger: true,
         onClick: async () => {
           if (!serverState.currentServer)
@@ -150,7 +145,7 @@ export default function MemberList() {
     if (!isSelf && (canBan || owner)) {
       items.push({
         label: t("member.ban"),
-        icon: "🔨",
+        icon: <BanIcon size={14} />,
         danger: true,
         onClick: async () => {
           if (!serverState.currentServer)
@@ -163,13 +158,21 @@ export default function MemberList() {
       });
     }
 
+    if (userSettings?.developerMode) {
+      items.push({
+        label: t("member.copy_id"),
+        icon: <HashIcon size={14} />,
+        onClick: () => navigator.clipboard.writeText(String(member.userId))
+      });
+    }
+
     return items;
   }
 
   const markdownData: RenderContext = { serverState, channelState, userState, userSettings };
 
   const serverMembers = userState.members.filter(m => m.serverId === serverState.currentServer?.id);
-  const serverRoles   = serverState.currentServer?.roles ?? [];
+  const serverRoles = serverState.currentServer?.roles ?? [];
   const isLargeServer = serverMembers.length > LARGE_SERVER_THRESHOLD;
 
   const { sections, offline } = buildSections(serverMembers, serverRoles, userState);

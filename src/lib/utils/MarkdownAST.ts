@@ -1,7 +1,6 @@
 export type TextNode            = { type: 'text';             content: string };
 export type BoldNode            = { type: 'bold';             children: InlineNode[] };
 export type ItalicNode          = { type: 'italic';           children: InlineNode[] };
-export type BoldItalicNode      = { type: 'boldItalic';       children: InlineNode[] };
 export type UnderlineNode       = { type: 'underline';        children: InlineNode[] };
 export type StrikethroughNode   = { type: 'strikethrough';    children: InlineNode[] };
 export type SpoilerNode         = { type: 'spoiler';          children: InlineNode[] };
@@ -24,14 +23,17 @@ export type HighlightNode       = { type: 'highlight';        children: InlineNo
 export type LowlightNode        = { type: 'lowlight';         children: InlineNode[] };
 export type HexColorNode        = { type: 'hexColor';         content: string };
 export type ProgressBarNode     = { type: 'progressBar';      value: number; label: string };
+export type MarqueeNode         = { type: 'marquee';          children: InlineNode[] };
+export type WobblyNode          = { type: 'wobbly';           children: InlineNode[] };
+export type ShakyNode           = { type: 'shaky';            children: InlineNode[] };
 
 export type InlineNode =
-  | TextNode | BoldNode | ItalicNode | BoldItalicNode | UnderlineNode
-  | StrikethroughNode | SpoilerNode | CodeNode | SuperscriptNode | SubscriptNode
-  | ColorNode | LinkNode | TimestampNode | MentionUserNode | MentionEveryoneNode
+  | TextNode | BoldNode | ItalicNode | UnderlineNode | StrikethroughNode
+  | SpoilerNode | CodeNode | SuperscriptNode | SubscriptNode | ColorNode
+  | LinkNode | TimestampNode | MentionUserNode | MentionEveryoneNode
   | MentionRoleNode | MentionChannelNode | MentionServerNode | EmojiNode
   | InlineSubheader | InlineHeader | InlineMathNode | HighlightNode | LowlightNode
-  | HexColorNode | ProgressBarNode;
+  | HexColorNode | ProgressBarNode | MarqueeNode | WobblyNode | ShakyNode;
 
 export type ParagraphNode         = { type: 'paragraph';         children: InlineNode[] };
 export type HeaderNode            = { type: 'header';            level: 1|2|3|4|5|6; children: InlineNode[] };

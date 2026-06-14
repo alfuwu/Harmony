@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { renderEmoji } from "../../../lib/utils/MarkdownRenderer";
 import { UserSettings } from "../../../lib/utils/UserSettings";
-import { t } from "../../../lib/i18n/Index";
+import { t, tr } from "../../../lib/i18n/Index";
 
 function isFlag(native: string): boolean {
   const pts = [...(native ?? "")].map(c => c.codePointAt(0) ?? 0);
@@ -183,8 +183,7 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
           color: "var(--text-5)",
           lineHeight: 1.4,
         }}>
-          {t("emoji.find_hint.prefix")}{" "}
-          <code
+          {tr("emoji.find_hint", { hint: <code
             style={{
               fontSize: "11px",
               background: "var(--bg-1)",
@@ -195,8 +194,7 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
             }}
           >
             :{displayName.slice(0, 3)}
-          </code>{" "}
-          {t("emoji.find_hint.suffix")}
+          </code> })}
         </div>
       </div>
     </div>

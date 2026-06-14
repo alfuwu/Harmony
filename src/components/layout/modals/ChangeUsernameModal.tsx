@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { checkUsernameAvailability, UsernameAvailability } from "../../../lib/api/AuthApi";
 import { updateMe } from "../../../lib/api/UserApi";
-import { t } from "../../../lib/i18n/Index";
+import { t, tr } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 interface Props {
@@ -115,7 +115,7 @@ export default function ChangeUsernameModal({
             )}
             {!unchanged && !checking && availability?.pomelo && (
               <span style={{ color: "var(--green-2)" }}>
-                ✓ <strong>@{trimmed}</strong> {t("change_un.available.prefix")}
+                ✓ {tr("change_un.available", { username: <strong>@{trimmed}</strong> })}
               </span>
             )}
             {!unchanged && !checking && availability && !availability.pomelo && (
@@ -129,8 +129,7 @@ export default function ChangeUsernameModal({
                   lineHeight: 1.5,
                 }}
               >
-                ⚠️ <strong>@{trimmed}</strong> {t("change_un.taken.prefix")}{" "}
-                <strong>@{trimmed}{discPreview}</strong> {t("change_un.taken.suffix")}
+                ⚠️ {tr("change_un.taken", { username: <strong>@{trimmed}</strong>, discriminator: <strong>@{trimmed}{discPreview}</strong> })}
               </div>
             )}
           </div>

@@ -1,3 +1,5 @@
+import { ReactNode } from "react";
+
 export const defaultTranslations = {
     // generic
     "edit": "Edit",
@@ -251,7 +253,7 @@ export const defaultTranslations = {
     "jack.rep": "im dying",
     "role.name1": "Admin",
     "role.name2": "Moderator",
-    "spoiler.out": "Contains a",
+    "spoiler.text": "Contains a {spoiler}",
     "spoiler.in": "spoiler",
     "emoji.preview.system.desc": "Your device's\nnative style",
     "emoji.preview.twemoji.desc": "Consistent\nacross devices",
@@ -262,19 +264,16 @@ export const defaultTranslations = {
     "change_un.desc": "Your username is how others find and mention you.",
     "change_un.same": "Same as current username.",
     "change_un.checking": "Checking availability...",
-    "change_un.available.prefix": "is available as a unique handle.",
-    "change_un.taken.prefix": "is taken. You'll be assigned",
-    "change_un.taken.suffix": "instead.",
+    "change_un.available": "{username} is available as a unique handle.",
+    "change_un.taken": "{username} is taken. You'll be assigned {disc} instead.",
 
     "change_phone.title": "Change Phone Number",
     "add_phone.title": "Add Phone Number",
-    "change_phone.desc.1": "Enter your number in E.164 format, e.g.",
-    "change_phone.desc.2": "A 6-digit verification code will be sent via SMS.",
+    "change_phone.desc": "Enter your number in E.164 format, e.g. {number}. A 6-digit verification code will be sent via SMS.",
     "send_code": "Send Code",
     "sending": "Sending...",
     "verify_phone.title": "Enter Verification Code",
-    "verify_phone.sent": "We sent a 6-digit code to",
-    "verify_phone.expiry": "It expires in 10 minutes.",
+    "verify_phone.sent": "We sent a 6-digit code to {number}. It expires in 10 minutes.",
     "verify_phone.code": "Verification code",
     "resend_code": "Resend code",
     "resend_in": "Resend in {seconds}s",
@@ -295,9 +294,8 @@ export const defaultTranslations = {
     "2fa.setup.title": "Set Up Two-Factor Authentication",
     "2fa.setup.desc": "Open your authenticator app (Google Authenticator, Authy, 1Password, etc.) and add a new account using the secret key below.",
     "2fa.secret_key": "Secret Key",
-    "2fa.manual_setup.prefix": "In your app, choose",
+    "2fa.manual_setup": "In your app, choose {option} and paste the key above. Set the account name to anything (e.g. Harmony) and leave type as Time-based.",
     "2fa.manual_setup.option": "Enter setup key manually",
-    "2fa.manual_setup.suffix": "and paste the key above. Set the account name to anything (e.g. Harmony) and leave type as Time-based.",
     "2fa.confirm": "Confirm with a code from your app",
     "2fa.confirm.desc": "Enter the 6-digit code shown in your authenticator app to verify the setup.",
     "2fa.enable": "Enable 2FA",
@@ -322,8 +320,7 @@ export const defaultTranslations = {
     "emoji.shortcode": "Shortcode",
     "emoji.copy_shortcode": "Copy shortcode",
     "emoji.copied_title": "Copied!",
-    "emoji.find_hint.prefix": "Type",
-    "emoji.find_hint.suffix": "in chat to find this emoji.",
+    "emoji.find_hint": "Type {hint} in chat to find this emoji.",
 
     // errors
     "error.failed_save": "Failed to save changes",
@@ -355,11 +352,11 @@ export const defaultTranslations = {
     "login.already_have": "Already have an account?",
     "login.2fa_recovery_hint": "Enter one of your recovery codes.",
     "login.2fa_auth_hint": "Enter the 6-digit code from your authenticator app.",
-    "login.check_email": "Check your email",
-    "login.email_sent": "We sent a verification link to",
-    "login.email_activate": "Click the link in that email to activate your account.",
-    "login.email_spam": "Check your spam folder, or click below to resend.",
-    "login.email_didnt_get": "Didn't get it?",
+    "login.email.check": "Check your email",
+    "login.email.sent": "We sent a verification link to {email}.",
+    "login.email.activate": "Click the link in that email to activate your account.",
+    "login.email.spam": "Check your spam folder, or click below to resend.",
+    "login.email.didnt_get": "Didn't get it?",
     "login.resend_verification": "Resend verification email",
     "settings.email_sent": "Verification email sent!",
 
@@ -404,7 +401,8 @@ export const defaultTranslations = {
 
     // message input
     "input.placeholder": "Send a message in {channel}",
-    "input.placeholder_void": "Send a message into the void",
+    "input.placeholder.dm": "Send a message to {user}",
+    "input.placeholder.void": "Send a message into the void",
     "input.type": "Type...",
     "input.progress": "Progress: {percent}%",
     "input.mention.roles": "ROLES",
@@ -439,11 +437,15 @@ export const defaultTranslations = {
     "create_channel.placeholder.desc": "What is this channel about?",
     "create_channel.failed": "Failed to create channel",
     "create_channel.creating": "Creating...",
-    "create_channel.type.category": "📁 Category",
-    "create_channel.type.text": "# Text",
-    "create_channel.type.voice": "🔊 Voice",
-    "create_channel.type.lounge": "🛋️ Lounge",
-    "create_channel.type.canvas": "🎨 Canvas",
+    "create_channel.type.category": "Category",
+    "create_channel.type.text": "Text",
+    "create_channel.type.voice": "Voice",
+    "create_channel.type.announcement": "Announcement",
+    "create_channel.type.rules": "Rules",
+    "create_channel.type.forum": "Forum",
+    "create_channel.type.canvas": "Canvas",
+    "create_channel.type.lounge": "Lounge",
+    "create_channel.type.document": "Document",
     "create_server.title": "Create Your Server",
     "create_server.placeholder.name": "Name",
     "create_server.placeholder.desc": "Description (optional)",
@@ -715,3 +717,4 @@ export const defaultTranslations = {
 
 export type TranslationKeys = keyof typeof defaultTranslations;
 export type TranslationParams = Record<string, string | number>;
+export type TranslationParamsReact = Record<string, string | number | ReactNode>;

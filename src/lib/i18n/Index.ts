@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { defaultTranslations, TranslationKeys, TranslationParams } from "./Schema";
+import { ReactNode, useEffect, useState } from "react";
+import { defaultTranslations, TranslationKeys, TranslationParams, TranslationParamsReact } from "./Schema";
 
 type LocaleListener = () => void;
 
@@ -48,14 +48,32 @@ class I18nManager {
     if (!params)
       return template;
 
-    return Object.entries(params).reduce((str, [paramKey, value]) => {
-      return str.replace(`{${paramKey}}`, String(value));
-    }, template);
+    return Object.entries(params).reduce((str, [paramKey, value]) => 
+      str.replace(`{${paramKey}}`, String(value)), template);
+  }
+
+  tr(key: TranslationKeys, params?: TranslationParamsReact): ReactNode {
+    const template = this.translations[key] || defaultTranslations[key] || key;
+
+    if (!params)
+      return template;
+
+    const parts = template.split(/(\{[^}]+\})/);
+
+    return parts.map(part => {
+      const match = part.match(/^\{([^}]+)\}$/);
+      if (!match)
+        return part;
+
+      const value = params[match[1] as keyof typeof params];
+      return value !== undefined ? value : part;
+    });
   }
 }
 
 export const i18n = new I18nManager();
 export const t = (key: TranslationKeys, params?: TranslationParams) => i18n.t(key, params);
+export const tr = (key: TranslationKeys, params?: TranslationParamsReact) => i18n.tr(key, params);
 
 export function useLocale(): number {
   const [tick, setTick] = useState(0);

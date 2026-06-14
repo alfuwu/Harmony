@@ -38,6 +38,7 @@ import { t, useLocale } from "../../lib/i18n/Index";
 import { Name } from "../layout/Generic";
 import { makeMarkdownContext } from "../../lib/utils/Funcs";
 import MessageAttachment from "./MessageAttachment";
+import { BookmarkIcon, CopyIcon, EditIcon, HashIcon, PinIcon, ReplyIcon, SmileIcon, TrashIcon } from "../svgs/other/Icons";
 
 const MERGE_WINDOW  = 7 * 60 * 1000; // 7 minutes in ms
 const SCROLL_THRESHOLD = 120;
@@ -45,6 +46,55 @@ const PAGE_SIZE = 50;
 
 function getId(msg: Message): string {
   return msg.id + msg.timestamp + msg.nonce;
+}
+
+function AnimatedCount({ count }: { count: number }) {
+  const prevRef = useRef(count);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [fromCount, setFromCount] = useState(count);
+  const [animKey, setAnimKey] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (count === prevRef.current)
+      return;
+    if (timerRef.current)
+      clearTimeout(timerRef.current);
+
+    setFromCount(prevRef.current);
+    setAnimKey(Date.now());
+    prevRef.current = count;
+
+    timerRef.current = setTimeout(() => setAnimKey(null), 250);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [count]);
+
+  if (animKey === null)
+    return <>{count}</>;
+
+  return (
+    <span style={{
+      position: "relative",
+      display: "inline-block",
+      overflow: "hidden",
+      height: "1.2em",
+      verticalAlign: "middle"
+    }}>
+      <span
+        key={`out-${animKey}`}
+        style={{ position: "absolute", animation: "rxnSlideOut 280ms ease forwards" }}
+      >
+        {fromCount}
+      </span>
+      <span
+        key={`in-${animKey}`}
+        style={{ position: "absolute", animation: "rxnSlideIn 280ms ease forwards" }}
+      >
+        {count}
+      </span>
+      {/* hidden */}
+      <span style={{ color: "transparent" }}>{count}</span>
+    </span>
+  );
 }
 
 export default function MessageList() {
@@ -418,7 +468,7 @@ export default function MessageList() {
 
     items.push({
       label: t("messages.react"),
-      icon: "😊",
+      icon: <SmileIcon size={14} />,
       onClick: () => {
         const id = `emoji-picker-${msg.id}`;
         open({
@@ -437,14 +487,14 @@ export default function MessageList() {
 
     items.push({
       label: isAlreadyReplying ? t("messages.reply.cancel") : t("messages.reply"),
-      icon: "↩️",
+      icon: <ReplyIcon size={14} />,
       onClick: () => handleReply(msg)
     });
 
     if (isMine) {
       items.push({
         label: t("messages.edit"),
-        icon: "✏️",
+        icon: <EditIcon size={14} />,
         onClick: () => startEditing(msg, true)
       });
     }
@@ -452,34 +502,36 @@ export default function MessageList() {
     if (canPin) {
       items.push({
         label: t(msg.isPinned ? "messages.unpin" : "messages.pin"),
-        icon: "📌",
+        icon: <PinIcon size={14} />,
         onClick: () => handlePin(msg)
       });
     }
 
     items.push({
       label: t("messages.quotebook"),
-      icon: "📖",
+      icon: <BookmarkIcon size={14} />,
       onClick: () => handleAddToQuotebook(msg)
     });
 
     items.push({
-      label: t("messages.copy_id"),
-      icon: "🆔",
-      onClick: () => navigator.clipboard.writeText(String(msg.id))
-    });
-
-    items.push({
       label: t("messages.copy"),
-      icon: "📋",
+      icon: <CopyIcon size={14} />,
       onClick: () => navigator.clipboard.writeText(msg.content)
     });
+
+    if (userSettings?.developerMode) {
+      items.push({
+        label: t("messages.copy_id"),
+        icon: <HashIcon size={14} />,
+        onClick: () => navigator.clipboard.writeText(String(msg.id))
+      });
+    }
 
     if (isMine || canDeleteOthers || canEditOther) {
       items.push({ label: "", onClick: () => {}, divider: true });
       items.push({
         label: t("messages.delete"),
-        icon: "🗑️",
+        icon: <TrashIcon size={14} />,
         danger: true,
         onClick: () => handleDelete(msg)
       });
@@ -504,12 +556,11 @@ export default function MessageList() {
 
   const typingIds = (
     (currentChan && channelState.getTyping(currentChan.id)) ?? []
-  ).filter((id) => id !== user?.id);
+  ).filter(id => id !== user?.id);
 
   const compact = !!userSettings?.compactMode;
 
-  return (
-    <>
+  return (<>
     <div
       className={
         "message-list ovy-auto" +
@@ -518,8 +569,7 @@ export default function MessageList() {
       }
       ref={container}
     >
-      {messagesLoading && channelMessages.length === 0 ? <SkeletonMessages count={8} compact={compact} /> : (
-        <>
+      {messagesLoading && channelMessages.length === 0 ? <SkeletonMessages count={8} compact={compact} /> : (<>
         {isLoadingMore && (
           <div style={{ padding: "4px 0 8px" }}>
             <SkeletonMessages count={3} compact={compact} />
@@ -632,10 +682,11 @@ export default function MessageList() {
                           onClick={() => jumpToMessage(r)}
                         >
                           {RenderMarkdown({
-                            content: reply?.content.split('\n')[0] ?? t("message.unknown"),
+                            content: reply?.content ?? t("message.unknown"),
                             spoilerStateRef: spoilerState,
-                            allowBlocks: false,
                             noBigEmoji: true,
+                            forceInline: true,
+                            maxLength: 64,
                             userState,
                             serverState,
                             channelState,
@@ -840,7 +891,7 @@ export default function MessageList() {
                                 : "var(--text-4)"
                             }}
                           >
-                            {reaction.reactors.length}
+                            <AnimatedCount count={reaction.reactors.length} />
                           </span>
                         </button>
                       );
@@ -876,9 +927,7 @@ export default function MessageList() {
                         boxShadow: "none"
                       }}
                     >
-                      <svg width={18} height={18}>
-                        {/* todo: add svg icon */}
-                      </svg>
+                      <SmileIcon size={18} />
                     </button>
                   </div>
                 )}
@@ -904,23 +953,23 @@ export default function MessageList() {
                       });
                     }}
                   >
-                    😊
+                    <SmileIcon size={14} />
                   </button>
                   <button
                     title={isPendingReply ? t("messages.reply.cancel") : t("messages.reply")}
                     onClick={() => handleReply(msg)}
                     style={{ color: isPendingReply ? "var(--accent-1)" : undefined }}
                   >
-                    ↩
+                    <ReplyIcon size={14} />
                   </button>
                   {msg.authorId === user?.id && (
                     <button title={t("edit")} onClick={() => startEditing(msg, true)}>
-                      ✏️
+                      <EditIcon size={14} />
                     </button>
                   )}
                   {(msg.authorId === user?.id || canDeleteOthers) && (
                     <button title={t("delete")} onClick={() => handleDelete(msg)}>
-                      🗑️
+                      <TrashIcon size={14} />
                     </button>
                   )}
                   <button
@@ -935,8 +984,7 @@ export default function MessageList() {
             </div>
           );
         })}
-        </>
-      )}
+      </>)}
     </div>
 
     {ctxMenu && (
@@ -946,6 +994,5 @@ export default function MessageList() {
         onClose={() => setCtxMenu(null)}
       />
     )}
-    </>
-  );
+  </>);
 }
