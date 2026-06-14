@@ -1,5 +1,5 @@
 // angelic
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const anl: Record<TranslationKeys, string> = {
   

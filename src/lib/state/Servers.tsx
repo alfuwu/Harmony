@@ -1,5 +1,5 @@
 import React, { useContext, useState, createContext } from "react";
-import { Server } from "../utils/types";
+import { Server } from "../utils/Types";
 
 export interface ServerState {
   currentServer: Server | null;

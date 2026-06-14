@@ -1,5 +1,5 @@
 // lolcat
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const en_LOL: Record<TranslationKeys, string> = {
   

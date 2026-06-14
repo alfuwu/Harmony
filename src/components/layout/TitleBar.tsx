@@ -3,12 +3,14 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useUserState } from "../../lib/state/Users";
 import { useAuthState } from "../../lib/state/Auth";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
-import { ChannelType, DmChannel } from "../../lib/utils/types";
+import { ChannelType, DmChannel } from "../../lib/utils/Types";
 import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
-import { searchMessages } from "../../lib/api/channelApi";
+import { searchMessages } from "../../lib/api/ChannelApi";
 import { useMessageState } from "../../lib/state/Messages";
+import { t, useLocale } from "../../lib/i18n/Index";
 
 export default function TitleBar() {
+  useLocale();
   const { currentChannel } = useChannelState();
   const { get } = useUserState();
   const { user, token } = useAuthState();
@@ -19,7 +21,8 @@ export default function TitleBar() {
   const [searching, setSearching] = useState(false);
 
   async function handleSearch() {
-    if (!currentChannel || !query.trim()) return;
+    if (!currentChannel || !query.trim())
+      return;
     setSearching(true);
     try {
       const results = await searchMessages(
@@ -36,9 +39,9 @@ export default function TitleBar() {
 
   function getTitle(): { icon: React.ReactNode; name: string; sub?: string } {
     if (!currentChannel)
-      return { icon: getChannelIcon(currentChannel, { className: "title-icon" }), name: "The Void" };
+      return { icon: getChannelIcon(currentChannel, { className: "title-icon" }), name: t("title.void") };
 
-    const type = currentChannel.channelType;
+    const type = currentChannel.type;
 
     if (type === ChannelType.DM) {
       const dm = currentChannel as DmChannel;
@@ -48,7 +51,7 @@ export default function TitleBar() {
         icon: other ? (
           <img src={getAvatar(other)} alt="" style={{ width: 20, height: 20, borderRadius: "50%", marginRight: 6 }} />
         ) : null,
-        name: other ? getDisplayName(other) : "DM",
+        name: other ? getDisplayName(other) : t("title.dm"),
         sub: other ? `@${other.username}` : undefined,
       };
     }
@@ -56,13 +59,13 @@ export default function TitleBar() {
     if (type === ChannelType.GroupDM) {
       return {
         icon: "👥",
-        name: currentChannel.name ?? "Group DM",
+        name: currentChannel.name ?? t("title.group_dm"),
       };
     }
 
     return {
       icon: getChannelIcon(currentChannel, { className: "icon" }),
-      name: currentChannel.name ?? "Channel",
+      name: currentChannel.name ?? t("title.channel"),
       sub: currentChannel.description ?? undefined
     };
   }

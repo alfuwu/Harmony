@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { renderEmoji } from "../../../lib/utils/MarkdownRenderer";
-import { UserSettings } from "../../../lib/utils/userSettings";
-import { t } from "../../../lib/i18n";
+import { UserSettings } from "../../../lib/utils/UserSettings";
+import { t } from "../../../lib/i18n/Index";
 
 function isFlag(native: string): boolean {
   const pts = [...(native ?? "")].map(c => c.codePointAt(0) ?? 0);

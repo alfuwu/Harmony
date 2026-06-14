@@ -1,5 +1,5 @@
 // arabic
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const ar: Record<TranslationKeys, string> = {
   

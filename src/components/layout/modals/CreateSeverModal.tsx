@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useAuthState } from "../../../lib/state/Auth";
 import { useServerState } from "../../../lib/state/Servers";
-import { createServer, loadServer } from "../../../lib/api/serverApi";
+import { createServer, loadServer } from "../../../lib/api/ServerApi";
 import { useChannelState } from "../../../lib/state/Channels";
 import { useMessageState } from "../../../lib/state/Messages";
 import { useUserState } from "../../../lib/state/Users";
+import { t, useLocale } from "../../../lib/i18n/Index";
 
 export default function CreateServerModal({ open, onClose }: any) {
+  useLocale();
   const { token } = useAuthState();
   const { setCurrentServer, addServer } = useServerState();
   const channelState = useChannelState();
@@ -40,10 +42,10 @@ export default function CreateServerModal({ open, onClose }: any) {
   return (
     <div className={"modal-backdrop" + (open ? " open" : "")} onClick={_ => onClose()}>
       <div className="modal-container" onClick={e => e.stopPropagation()}>
-        <h2>Create Your Server</h2>
+        <h2>{t("create_server.title")}</h2>
 
         <input
-          placeholder="Name"
+          placeholder={t("create_server.placeholder.name")}
           id="srvname"
           autoComplete="off"
           value={name}
@@ -51,7 +53,7 @@ export default function CreateServerModal({ open, onClose }: any) {
         />
 
         <textarea
-          placeholder="Description (optional)"
+          placeholder={t("create_server.placeholder.desc")}
           id="srvdesc"
           autoComplete="off"
           value={description}
@@ -59,7 +61,7 @@ export default function CreateServerModal({ open, onClose }: any) {
         />
 
         <input
-          placeholder="Tags (comma separated)"
+          placeholder={t("create_server.placeholder.tags")}
           id="srvtags"
           autoComplete="off"
           value={tags}
@@ -67,7 +69,7 @@ export default function CreateServerModal({ open, onClose }: any) {
         />
 
         <input
-          placeholder="Invite URLs (comma separated)"
+          placeholder={t("create_server.placeholder.invites")}
           id="srvurls"
           autoComplete="off"
           value={invites}
@@ -75,8 +77,8 @@ export default function CreateServerModal({ open, onClose }: any) {
         />
 
         <div className="modal-buttons">
-          <button className="cancel-btn" onClick={onClose}>Cancel</button>
-          <button className="create-btn" onClick={submit}>Create</button>
+          <button className="cancel-btn" onClick={onClose}>{t("cancel")}</button>
+          <button className="create-btn" onClick={submit}>{t("create")}</button>
         </div>
       </div>
     </div>

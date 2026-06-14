@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { t } from "../../../lib/i18n";
+import { t, useLocale } from "../../../lib/i18n/Index";
 
 export default function CroppingModal({
   src,
   onCancel,
   onComplete,
-  headerText = "Adjust Your Image",
+  headerText,
   shape = "circle",
   rectAspect = 2
 }: {
@@ -16,6 +16,7 @@ export default function CroppingModal({
   shape?: "circle" | "rect",
   rectAspect?: number
 }) {
+  useLocale();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef(new Image());
   const [dragging, setDragging] = useState(false);
@@ -269,7 +270,7 @@ export default function CroppingModal({
   return (
     <div className="modal-backdrop open" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
       <div className="modal-container" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onClick={e => e.stopPropagation()}>
-        <div className="cropper-header">{headerText}</div>
+        <div className="cropper-header">{headerText ?? t("avi.crop")}</div>
 
         <canvas
           ref={canvasRef}

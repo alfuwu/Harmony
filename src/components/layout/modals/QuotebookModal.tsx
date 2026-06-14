@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useAuthState } from "../../../lib/state/Auth";
-import { getQuotebook, removeFromQuotebook } from "../../../lib/api/socialApi";
+import { getQuotebook, removeFromQuotebook } from "../../../lib/api/SocialApi";
 import { useMessageState } from "../../../lib/state/Messages";
 import { useUserState } from "../../../lib/state/Users";
 import { getDisplayName, getAvatar } from "../../../lib/utils/UserUtils";
-import { QuotebookEntry } from "../../../lib/utils/types";
+import { QuotebookEntry } from "../../../lib/utils/Types";
+import { t, useLocale } from "../../../lib/i18n/Index";
 
 interface QuotebookModalProps {
   open: boolean;
@@ -12,6 +13,7 @@ interface QuotebookModalProps {
 }
 
 export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
+  useLocale();
   const { token } = useAuthState();
   const { messages } = useMessageState();
   const { get } = useUserState();
@@ -45,17 +47,17 @@ export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
         onClick={e => e.stopPropagation()}
         style={{ width: 520, maxHeight: "70vh", display: "flex", flexDirection: "column" }}
       >
-        <h2 style={{ margin: 0 }}>Quotebook</h2>
+        <h2 style={{ margin: 0 }}>{t("quotebook.title")}</h2>
         <p style={{ color: "var(--text-4)", margin: "4px 0 12px", fontSize: 13 }}>
-          Messages you've saved for yourself.
+          {t("quotebook.desc")}
         </p>
 
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-          {loading && <div style={{ color: "var(--text-4)", textAlign: "center" }}>Loading...</div>}
+          {loading && <div style={{ color: "var(--text-4)", textAlign: "center" }}>{t("loading")}</div>}
 
           {!loading && entries.length === 0 && (
             <div style={{ color: "var(--text-4)", textAlign: "center", padding: "20px 0" }}>
-              Nothing saved yet. Right-click a message to save it.
+              {t("quotebook.empty")}
             </div>
           )}
 
@@ -85,11 +87,11 @@ export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
                   </div>
                 )}
                 <div style={{ fontSize: 14, color: "var(--text-3)", whiteSpace: "pre-wrap" }}>
-                  {msg?.content ?? <em style={{ color: "var(--text-5)" }}>Message no longer loaded</em>}
+                  {msg?.content ?? <em style={{ color: "var(--text-5)" }}>{t("quotebook.not_loaded")}</em>}
                 </div>
                 {entry.note && (
                   <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-4)", fontStyle: "italic" }}>
-                    Note: {entry.note}
+                    {t("quotebook.note", { note: entry.note })}
                   </div>
                 )}
                 <button
@@ -99,7 +101,7 @@ export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
                     background: "none", border: "none", boxShadow: "none",
                     color: "var(--text-5)", cursor: "pointer", fontSize: 16, padding: 2,
                   }}
-                  title="Remove from quotebook"
+                  title={t("quotebook.remove")}
                 >
                   ×
                 </button>
@@ -109,7 +111,7 @@ export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
         </div>
 
         <div className="modal-buttons" style={{ marginTop: 12 }}>
-          <button onClick={onClose}>Close</button>
+          <button onClick={onClose}>{t("close")}</button>
         </div>
       </div>
     </div>

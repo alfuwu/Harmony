@@ -1,5 +1,5 @@
 // chinese
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const zh: Record<TranslationKeys, string> = {
   

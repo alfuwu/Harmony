@@ -22,6 +22,7 @@
   --text-3: hsl(0, 0%, 100%); /* normal text */
   --text-4: hsl(221, 14%, 70%); /* icon buttons and channels */
   --text-5: hsl(0, 0%, 50%); /* muted channels/chats and timestamps */
+  --text-trans: #ffffff99; /* semi transparent text */
   --text-gray-1: hsl(0, 0%, 100%);
   --text-gray-2: hsl(0, 0%, 100%);
   --text-gray-3: hsl(38, 41%, 71%);
@@ -783,6 +784,7 @@ textarea,
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding-top: 10px;
 }
 .channel-list {
   width: 240px;
@@ -928,6 +930,89 @@ textarea,
 }
 
 /* messages */
+.flash-highlight {
+  animation: flashMessage 2s ease;
+}
+
+@keyframes flashMessage {
+  0% {
+    background: color-mix(
+      in hsl,
+      var(--accent-1) 40%,
+      transparent
+    );
+  }
+
+  100% {
+    background: transparent;
+  }
+}
+
+.reply {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+
+.reply > .avatar {
+  width: 16px;
+  height: 16px;
+  margin-bottom: 0;
+}
+
+.reply {
+  font-size: 0.875rem;
+}
+
+.reply-bar.first {
+  border-radius: 10px 0 0 0;
+}
+
+.reply-bar {
+  border: 2.5px solid #666;
+  border-right: none;
+  border-bottom: none;
+  width: 25px;
+  height: 8px;
+  margin-top: 8px;
+  margin-left: 15px;
+}
+
+.reply .h1, .reply .h2, .reply .h3, .reply .h4, .reply .h5, .reply .h6 {
+  scroll-margin-top: revert;
+  font-size: revert;
+  margin-block-start: revert;
+  margin-block-end: revert;
+  margin-inline-start: revert;
+  margin-inline-end: revert;
+}
+
+.reply-content {
+  color: var(--text-trans);
+  user-select: none;
+  cursor: pointer;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--bg-1);
+  border-top-color: var(--accent-1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner.small {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .group-header {
   display: flex;
   align-items: center;
@@ -974,7 +1059,9 @@ textarea,
   width: 0%;
   height: 2px;
   background: var(--author-hover);
+  background-size: var(--author-hover-size);
   transition: left 150ms ease-out, width 150ms ease-out;
+  animation: var(--author-hover-animation);
 }
 .author:hover::after, .mention:hover::after {
   left: 0;
@@ -1078,7 +1165,7 @@ em-emoji-picker {
   min-width: 0;
 }
 .content.sending {
-  color: color-mix(in hsl, currentColor, transparent);
+  opacity: 0.5;
 }
 
 .deleted {
@@ -1099,12 +1186,11 @@ em-emoji-picker {
 }
 
 .mention {
-  /* we need to define these here instead of in :root to allow per-mention overrides */
   --mention-color: var(--special-mention-color, var(--default-mention-color));
   --mention-color-hover: var(--special-mention-color, color-mix(in hsl, var(--default-mention-color), white));
   --mention-foreground: var(--mention-color);
-  --mention-background-color: color-mix(in hsl, var(--mention-color), black);
-  --mention-background: color-mix(in hsl, var(--mention-background-color), transparent 70%);
+  --mention-background-color: color-mix(in hsl, var(--mention-color), transparent 70%);
+  --mention-background: color-mix(in hsl, var(--mention-color), transparent 90%);
   --mention-background-hover: var(--mention-background-color);
 
   background: var(--mention-background);
@@ -1692,6 +1778,12 @@ code {
 .colored {
   color: var(--color);
 }
+.colored.gradient {
+  background: var(--gradient);
+  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
 
 .highlight {
   background-color: #fff4aa99;
@@ -2233,4 +2325,89 @@ body[data-server-icon-shape="square"] .server-icon   { border-radius: 0; }
   display: inline !important;
   min-width: 42px;
   font-size: 10px;
+}
+
+@keyframes glow-pulse-text {
+  0%, 100% { text-shadow: 0 0 8px var(--role-glow-color, currentColor); }
+  50% {
+    text-shadow:
+      0 0 12px var(--role-glow-color, currentColor),
+      0 0 24px var(--role-glow-color, currentColor);
+  }
+}
+
+@keyframes gradient-glow-pulse {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.role-glow-hover:hover,
+.hover .role-glow-hover,
+.member:hover > .author.role-glow-hover { animation: glow-pulse-text 2s linear infinite; }
+.role-glow-hover.has-gradient-role:hover,
+.hover .role-glow-hover.has-gradient-role,
+.member:hover > .author.role-glow-hover.has-gradient-role { animation: gradient-glow-pulse 2s linear infinite; }
+.role-glow-click:active { animation: glow-pulse-text 0.5s linear; }
+.role-glow-click.has-gradient-role:active { animation: gradient-glow-pulse 0.5s linear; }
+
+.author.role-glow-hover.has-gradient-role:hover::after,
+.hover .author.role-glow-hover.has-gradient-role::after,
+.member:hover > .author.role-glow-hover.has-gradient-role::after { animation: gradient-glow-pulse 2s linear infinite; }
+.author.role-glow-click.has-gradient-role:active::after { animation: gradient-glow-pulse 0.5s linear; }
+
+.has-gradient-role code {
+  -webkit-text-fill-color: var(--role-fallback-color);
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: var(--role-fallback-color);
+}
+
+.has-gradient-role .hex-color {
+  -webkit-text-fill-color: var(--color);
+  -webkit-background-clip: initial;
+  background-clip: initial;
+}
+
+@supports (not (-moz-appearance: none)) {
+  .has-gradient-role .math-inline,
+  .has-gradient-role .math-inline .katex,
+  .has-gradient-role .math-inline .katex * {
+    -webkit-text-fill-color: initial;
+    -webkit-background-clip: initial;
+    background-clip: initial;
+    background: none;
+  }
+}
+
+.member-role-header {
+  padding: 16px 12px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-5);
+  user-select: none;
+}
+
+.member-offline-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 12px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-5);
+  cursor: pointer;
+  user-select: none;
+}
+.member-offline-header:hover { color: var(--text-4); }
+.member-offline-chevron {
+  transition: transform 150ms;
+  font-style: normal;
 }

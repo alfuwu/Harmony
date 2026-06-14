@@ -1,5 +1,5 @@
 // jeienese
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const jei: Record<TranslationKeys, string> = {
   

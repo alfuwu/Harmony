@@ -2,12 +2,12 @@ use tauri::Result;
 
 // https://tauri.app/develop/calling-rust/
 #[tauri::command]
-fn minimize(window: tauri::Window) -> Result<()> {
+fn minimize(window: tauri::Window<tauri::Cef>) -> Result<()> {
     window.minimize()
 }
 
 #[tauri::command]
-fn toggle_maximize(window: tauri::Window) -> Result<()> {
+fn toggle_maximize(window: tauri::Window<tauri::Cef>) -> Result<()> {
     if window.is_maximized()? {
         window.unmaximize()
     } else {
@@ -16,13 +16,13 @@ fn toggle_maximize(window: tauri::Window) -> Result<()> {
 }
 
 #[tauri::command]
-fn close(window: tauri::Window) -> Result<()> {
+fn close(window: tauri::Window<tauri::Cef>) -> Result<()> {
     window.close()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    tauri::Builder::<tauri::Cef>::default()
         .setup(|_app| {
             #[cfg(target_os = "macos")] {
                 setup_macos_defaults();

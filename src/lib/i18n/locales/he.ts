@@ -1,5 +1,5 @@
 // hebrew
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const he: Record<TranslationKeys, string> = {
   

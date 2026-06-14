@@ -1,5 +1,5 @@
 // italian
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const italian: Record<TranslationKeys, string> = {
   

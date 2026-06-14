@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { loadServer, leaveServer } from "../../lib/api/serverApi";
+import { loadServer, leaveServer } from "../../lib/api/ServerApi";
 import { useAuthState } from "../../lib/state/Auth";
 import { useChannelState } from "../../lib/state/Channels";
 import { useServerState } from "../../lib/state/Servers";
@@ -9,9 +9,10 @@ import { useLoadingState } from "../../lib/state/Loading";
 import { SkeletonServerList } from "./Skeleton";
 import CreateServerModal from "./modals/CreateSeverModal";
 import ContextMenu, { ContextMenuItem } from "./ContextMenu";
-import { joinServer } from "../../lib/api/signalrClient";
+import { joinServer } from "../../lib/api/SignalrClient";
 import { hostUrl } from "../../App";
 import { getIcon } from "../../lib/utils/ServerUtils";
+import { t, useLocale } from "../../lib/i18n/Index";
 
 interface Props {
   onDmClick: () => void;
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export default function ServerList({ onDmClick, showDms }: Props) {
+  useLocale();
   const { token } = useAuthState();
   const { servers, currentServer, setCurrentServer, removeServer } = useServerState();
   const { serversLoading, setChannelsLoading, setMembersLoading, setMessagesLoading } =
@@ -75,7 +77,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
 
     const items: ContextMenuItem[] = [
       {
-        label: "Copy Server ID",
+        label: t("server.copy_id"),
         icon: "🆔",
         onClick: () => navigator.clipboard.writeText(String(serverId)),
       },
@@ -83,7 +85,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
 
     if (server.inviteUrls?.[0]) {
       items.push({
-        label: "Copy Invite Link",
+        label: t("server.copy_invite"),
         icon: "🔗",
         onClick: () =>
           navigator.clipboard.writeText(
@@ -94,7 +96,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
 
     items.push({ label: "", onClick: () => {}, divider: true });
     items.push({
-      label: "Leave Server",
+      label: t("server.leave"),
       icon: "🚪",
       danger: true,
       onClick: () => handleLeaveServer(serverId),
@@ -107,7 +109,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
     <div className="server-list">
       <div
         className={"server uno" + (showDms && !currentServer ? " selected" : "")}
-        title="Direct Messages"
+        title={t("dm.title")}
         onClick={onDmClick}
         style={{ cursor: "pointer" }}
       >
@@ -147,7 +149,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
               onClick={() => handleSelectServer(s)}
               className="server-icon"
               src={getIcon(s)}
-              alt={s.name || "server"}
+              alt={s.name || t("alt.server")}
             />
           </div>
         ))

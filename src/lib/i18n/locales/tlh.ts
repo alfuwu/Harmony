@@ -1,5 +1,5 @@
 // klingon
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const tlh: Record<TranslationKeys, string> = {
   

@@ -1,5 +1,5 @@
 // vietnamese
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const vi: Record<TranslationKeys, string> = {
   

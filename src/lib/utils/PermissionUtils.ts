@@ -1,4 +1,4 @@
-import { Channel, Member, Server } from "./types";
+import { Channel, Member, Server } from "./Types";
 
 export const Permission = {
   ViewChannels:           1n << 0n,
@@ -34,7 +34,7 @@ export function computePermissions(
   server: Server,
   channel?: Channel | null
 ): bigint {
-  if (server.ownerId === member.user.id) return 0xFFFFFFFFFFFFFFFFn;
+  if (server.ownerId === member.userId) return 0xFFFFFFFFFFFFFFFFn;
 
   const memberRoles = server.roles
     .filter(r => member.roles.includes(r.id))
@@ -68,14 +68,14 @@ export function hasPermission(
   channel?: Channel | null
 ): boolean {
   if (!member || !server) return false;
-  if (server.ownerId === member.user.id) return true;
+  if (server.ownerId === member.userId) return true;
   const perms = computePermissions(member, server, channel);
   if (perms & Permission.Administrator) return true;
   return (perms & permission) !== 0n;
 }
 
 export const isOwner = (member: Member | null | undefined, server: Server | null | undefined) =>
-  !!(member && server && server.ownerId === member.user.id);
+  !!(member && server && server.ownerId === member.userId);
 
 export const canManageChannels = (m: Member | null | undefined, s: Server | null | undefined) =>
   hasPermission(m, s, Permission.ManageChannels);

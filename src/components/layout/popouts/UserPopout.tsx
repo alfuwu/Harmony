@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, useEffect } from "react";
-import { AbstractChannel, Member, OnlineStatus, Review, Server, User } from "../../../lib/utils/types";
+import { Member, OnlineStatus, Review, User } from "../../../lib/utils/Types";
 import {
   getAvatar,
   getBanner,
@@ -11,24 +11,22 @@ import {
 import { ServerState } from "../../../lib/state/Servers";
 import { ChannelState } from "../../../lib/state/Channels";
 import { UserState } from "../../../lib/state/Users";
-import { UserSettings } from "../../../lib/utils/userSettings";
+import { UserSettings } from "../../../lib/utils/UserSettings";
 import { Popout } from "../../../lib/state/Popouts";
-import { loadServer } from "../../../lib/api/serverApi";
 import { MessageState } from "../../../lib/state/Messages";
-import EmojiPopout from "./EmojiPopout";
-import { getEmojiDataFromNative } from "emoji-mart";
 import { RenderContext, RenderMarkdown } from "../../../lib/utils/MarkdownRenderer";
 import {
   getUserBadges,
   Badge,
   BadgeLabels,
   BadgeIcons,
-} from "../../../lib/api/socialApi";
-import { getReviews } from "../../../lib/api/userApi";
-import { t } from "../../../lib/i18n";
+} from "../../../lib/api/SocialApi";
+import { getReviews } from "../../../lib/api/UserApi";
+import { t, useLocale } from "../../../lib/i18n/Index";
+import type { TranslationKeys } from "../../../lib/i18n/Schema";
 import { Divider, Name, SectionLabel } from "../Generic";
 import ReviewsModal, { reviewsCache } from "../modals/ReviewsModal";
-import { formatDate, intToHex, roleToStyle } from "../../../lib/utils/funcs";
+import { formatDate, intToHex, makeMarkdownContext, roleToStyle } from "../../../lib/utils/Funcs";
 
 interface UserPopoutProps {
   user: User;
@@ -46,12 +44,12 @@ interface UserPopoutProps {
   position: { top: number; left?: number; right?: number };
 }
 
-const STATUS_META: Record<OnlineStatus, { label: string; color: string; dot: string }> = {
-  [OnlineStatus.Online]:   { label: "Online",         color: "var(--online)",  dot: "●" },
-  [OnlineStatus.Idle]:     { label: "Idle",           color: "var(--idle)",    dot: "◐" },
-  [OnlineStatus.Focusing]: { label: "Focusing",       color: "var(--blue-2)",  dot: "◎" },
-  [OnlineStatus.DND]:      { label: "Do Not Disturb", color: "var(--dnd)",     dot: "⊖" },
-  [OnlineStatus.Offline]:  { label: "Offline",        color: "var(--offline)", dot: "○" },
+const STATUS_META: Record<OnlineStatus, { labelKey: TranslationKeys; color: string; dot: string }> = {
+  [OnlineStatus.Online]:   { labelKey: "status.online",   color: "var(--online)",  dot: "●" },
+  [OnlineStatus.Idle]:     { labelKey: "status.idle",     color: "var(--idle)",    dot: "◐" },
+  [OnlineStatus.Focusing]: { labelKey: "status.focusing", color: "var(--blue-2)",  dot: "◎" },
+  [OnlineStatus.DND]:      { labelKey: "status.dnd",      color: "var(--dnd)",     dot: "⊖" },
+  [OnlineStatus.Offline]:  { labelKey: "status.offline",  color: "var(--offline)", dot: "○" },
 };
 
 function xpProgress(totalXp: number, level: number): [number, number, number] {
@@ -92,6 +90,7 @@ function XpBar({ label, level, totalXp, accentVar = "var(--accent-1)" }: {
   totalXp: number;
   accentVar?: string;
 }) {
+  useLocale();
   const [, needed, frac] = xpProgress(totalXp, level);
   const [xpInLevel] = xpProgress(totalXp, level);
   return (
@@ -108,7 +107,7 @@ function XpBar({ label, level, totalXp, accentVar = "var(--accent-1)" }: {
           padding: "1px 7px",
           flexShrink: 0,
         }}>
-          LV. {level}
+          {t("user.level", { level })}
         </span>
         <div style={{
           flex: 1,
@@ -131,7 +130,7 @@ function XpBar({ label, level, totalXp, accentVar = "var(--accent-1)" }: {
         </span>
       </div>
       <div style={{ fontSize: 11, color: "var(--text-5)" }}>
-        {totalXp.toLocaleString()} XP total
+        {t("user.xp_total", { xp: totalXp.toLocaleString() })}
       </div>
     </div>
   );
@@ -278,6 +277,7 @@ export default function UserPopout({
   token,
   position
 }: UserPopoutProps) {
+  useLocale();
   const name = getDisplayName(user, member);
   const avatar = getAvatar(user, member);
   const resolvedBannerUrl = getBanner(user, member);
@@ -361,55 +361,10 @@ export default function UserPopout({
     });
   }
 
-  const markdownData: RenderContext = {
-    serverState, channelState, userState, userSettings,
-    onMentionClick: (u: User, m: Member, event: React.MouseEvent) => {
-      event.stopPropagation();
-      event.preventDefault();
-      openUserPopout(event.currentTarget, u, m);
-    },
-    onChannelClick: (channel: AbstractChannel, event: React.MouseEvent) => {
-      event.stopPropagation();
-      if (channelState.currentChannel?.id !== channel.id) {
-        event.preventDefault();
-        if (serverState.currentServer?.id !== channel.serverId) {
-          const s = serverState.get(channel.serverId);
-          if (s) {
-            loadServer(s, channelState, userState, messageState, token!);
-            serverState.setCurrentServer(s);
-          } else return;
-        }
-        channelState.setCurrentChannel(channel);
-      }
-    },
-    onServerClick: (server: Server, event: React.MouseEvent) => {
-      event.stopPropagation();
-      event.preventDefault();
-      if (serverState.currentServer?.id !== server.id) {
-        loadServer(server, channelState, userState, messageState, token!);
-        serverState.setCurrentServer(server);
-        channelState.setCurrentChannel(null);
-      }
-    },
-    onEmojiClick: async (emoji: string, event: React.MouseEvent) => {
-      event.stopPropagation();
-      event.preventDefault();
-      const rect = event.currentTarget.getBoundingClientRect();
-      const emojiInfo = await getEmojiDataFromNative(emoji);
-      open({
-        id: "emoji",
-        element: (
-          <EmojiPopout
-            emoji={emoji}
-            emojiName={emojiInfo?.id ?? emoji}
-            userSettings={userSettings}
-            position={{ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX }}
-          />
-        ),
-        options: {}
-      });
-    },
-  };
+  const markdownData = makeMarkdownContext(
+    serverState, channelState, userState, messageState, userSettings, token,
+    open, openUserPopout
+  );
 
   return (
     <>
@@ -488,7 +443,7 @@ export default function UserPopout({
             {badges.map(b => (
               <span
                 key={b.type}
-                title={BadgeLabels[b.type] ?? `Badge ${b.type}`}
+                title={BadgeLabels[b.type] ?? t("user.badge_fallback", { type: b.type })}
                 style={{
                   fontSize: 15,
                   lineHeight: 1,
@@ -569,7 +524,7 @@ export default function UserPopout({
           }}>
             <StatusDot status={status} size={10} />
             <span style={{ fontSize: 12, color: statusMeta.color, fontWeight: 600 }}>
-              {statusMeta.label}
+              {t(statusMeta.labelKey)}
             </span>
             {user.status && (
               <span
@@ -589,7 +544,7 @@ export default function UserPopout({
 
           {resolvedBio && (
             <div style={{ marginBottom: 10 }}>
-              <SectionLabel>About me</SectionLabel>
+              <SectionLabel>{t("about.l")}</SectionLabel>
               <div style={{
                 fontSize: 13, color: "var(--text-3)",
                 lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
@@ -608,14 +563,14 @@ export default function UserPopout({
             gap: 8, marginBottom: 8,
           }}>
             <div>
-              <SectionLabel>Member since</SectionLabel>
+              <SectionLabel>{t("joined")}</SectionLabel>
               <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
                 {formatDate(user.joinedAt)}
               </div>
             </div>
             {member && (
               <div>
-                <SectionLabel>Joined server</SectionLabel>
+                <SectionLabel>{t("user.joined_server")}</SectionLabel>
                 <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
                   {formatDate(member.joinedAt)}
                 </div>
@@ -627,7 +582,7 @@ export default function UserPopout({
             <>
               <Divider />
               <div style={{ marginBottom: 8 }}>
-                <SectionLabel>Local time</SectionLabel>
+                <SectionLabel>{t("user.local_time")}</SectionLabel>
                 <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
                   🕐 {tzDisplay}
                 </div>
@@ -641,13 +596,13 @@ export default function UserPopout({
             {showBothLevels ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <XpBar
-                  label="Global level"
+                  label={t("user.global_level")}
                   level={globalLevel}
                   totalXp={globalXp}
                   accentVar="var(--accent-1)"
                 />
                 <XpBar
-                  label="Server level"
+                  label={t("user.server_level")}
                   level={memberLevel}
                   totalXp={memberXp}
                   accentVar="var(--blue-2)"
@@ -655,7 +610,7 @@ export default function UserPopout({
               </div>
             ) : (
               <XpBar
-                label={member ? "Server level" : "Global Level"}
+                label={member ? t("user.server_level") : t("user.global_level_title")}
                 level={hasMemberLevel ? memberLevel : globalLevel}
                 totalXp={hasMemberLevel ? memberXp : globalXp}
                 accentVar="var(--accent-1)"
@@ -684,7 +639,7 @@ export default function UserPopout({
             <>
               <Divider />
               <div style={{ marginBottom: 8 }}>
-                <SectionLabel>Roles — {member.roles.length}</SectionLabel>
+                <SectionLabel>{t("user.roles_count", { count: member.roles.length })}</SectionLabel>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                   {member.roles.map(roleId => {
                     const role = serverState?.get(member.serverId)?.roles.find(r => r.id === roleId);
@@ -707,7 +662,7 @@ export default function UserPopout({
                           width: 12, height: 12, borderRadius: "50%",
                           flexShrink: 0, display: "inline-block", transform: "translateY(-1px) translateX(-2px)", ...roleStyle
                         }} />
-                        {role?.name ?? `Role ${roleId}`}
+                        {role?.name ?? t("user.role_fallback", { id: roleId })}
                       </span>
                     );
                   })}
@@ -720,7 +675,7 @@ export default function UserPopout({
             <>
               <Divider />
               <div style={{ marginBottom: 4 }}>
-                <SectionLabel>DM accent</SectionLabel>
+                <SectionLabel>{t("user.dm_accent")}</SectionLabel>
                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                   {user.dmColors
                     ? user.dmColors.map((c, i) => (
@@ -757,7 +712,7 @@ export default function UserPopout({
             <>
               <Divider />
               <div>
-                <SectionLabel>Last seen</SectionLabel>
+                <SectionLabel>{t("user.last_seen")}</SectionLabel>
                 <div style={{ fontSize: 12, color: "var(--text-5)" }}>
                   {formatDate(user.lastSeen)}
                 </div>

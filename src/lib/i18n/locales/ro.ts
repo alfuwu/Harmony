@@ -1,5 +1,5 @@
 // romanian
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const ro: Record<TranslationKeys, string> = {
   

@@ -1,5 +1,5 @@
 // pig latin
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const en_PL: Record<TranslationKeys, string> = {
   

@@ -1,5 +1,5 @@
 // persian
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const fa: Record<TranslationKeys, string> = {
   

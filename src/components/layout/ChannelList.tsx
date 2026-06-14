@@ -6,64 +6,60 @@ import { useUserState } from "../../lib/state/Users";
 import { useMessageState } from "../../lib/state/Messages";
 import { useLoadingState } from "../../lib/state/Loading";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
-import { ChannelType, AbstractChannel } from "../../lib/utils/types";
-import {
-  canManageChannels,
-  canCreateInvites,
-  isOwner,
-} from "../../lib/utils/PermissionUtils";
-import { deleteChannel } from "../../lib/api/channelApi";
-import { getMessages } from "../../lib/api/messageApi";
-import { connection, joinChannel } from "../../lib/api/signalrClient";
+import { ChannelType, AbstractChannel } from "../../lib/utils/Types";
+import { canManageChannels, canCreateInvites, isOwner } from "../../lib/utils/PermissionUtils";
+import { deleteChannel } from "../../lib/api/ChannelApi";
+import { getMessages } from "../../lib/api/MessageApi";
+import { updateSettings } from "../../lib/api/UserApi";
+import { connection, joinChannel } from "../../lib/api/SignalrClient";
+import { useCacheState, CacheKey } from "../../lib/state/Cache";
+import { t, useLocale } from "../../lib/i18n/Index";
 import { SkeletonChannelList } from "./Skeleton";
 import ContextMenu, { ContextMenuItem } from "./ContextMenu";
 import CreateChannelModal from "./modals/CreateChannelModal";
 
 export default function ChannelList() {
+  useLocale();
   const { channels, currentChannel, setCurrentChannel } = useChannelState();
   const { currentServer } = useServerState();
-  const { user, token } = useAuthState();
+  const { user, token, userSettings, setUserSettings } = useAuthState();
   const { getMember } = useUserState();
   const { addMessages } = useMessageState();
   const { channelsLoading, setMessagesLoading } = useLoadingState();
 
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<number>>(
-    new Set()
-  );
-  const [ctxMenu, setCtxMenu] = useState<{
-    x: number;
-    y: number;
-    channel: AbstractChannel;
-  } | null>(null);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<number>>(new Set());
+  const [showHidden, setShowHidden] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; channel: AbstractChannel } | null>(null);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
 
-  const me = currentServer
-    ? getMember(user?.id, currentServer.id)
-    : undefined;
-  const canManage  = canManageChannels(me, currentServer);
-  const canInvite  = canCreateInvites(me, currentServer);
+  const me = currentServer ? getMember(user?.id, currentServer.id) : undefined;
+  const canManage = canManageChannels(me, currentServer);
+  const canInvite = canCreateInvites(me, currentServer);
   const serverOwner = isOwner(me, currentServer);
 
-  const serverChannels = channels.filter(c => c.serverId === currentServer?.id);
+  const hidden = userSettings?.hiddenChannels ?? [];
+  const muted = userSettings?.mutedChannels ?? [];
 
-  const categories = serverChannels
-    .filter(c => c.channelType === ChannelType.Category)
+  const serverChannels = channels.filter(c => c.serverId === currentServer?.id);
+  const visibleChannels = serverChannels.filter(c => !hidden.includes(c.id));
+  const hiddenChannels = serverChannels.filter(c => hidden.includes(c.id));
+
+  const categories = visibleChannels
+    .filter(c => c.type === ChannelType.Category)
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  const uncategorized = serverChannels
-    .filter(c => c.channelType !== ChannelType.Category && !c.parentId)
-    .sort(
-      (a, b) => (a.position ?? 0) - (b.position ?? 0)
-    );
+  const uncategorized = visibleChannels
+    .filter(c => c.type !== ChannelType.Category && !c.parentId)
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
   function getChildren(categoryId: number) {
-    return serverChannels
-      .filter(c => c.parentId === categoryId && c.channelType !== ChannelType.Category)
+    return visibleChannels
+      .filter(c => c.parentId === categoryId && c.type !== ChannelType.Category)
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }
 
   function toggleCategory(id: number) {
-    setCollapsedCategories((prev) => {
+    setCollapsedCategories(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
@@ -79,11 +75,16 @@ export default function ChannelList() {
     localStorage.setItem("currentChannelId", String(c.id));
 
     setMessagesLoading(true);
+    const cache = useCacheState.getState();
+    const key = CacheKey.messages(c.id);
     try {
-      const msgs = await getMessages(c.id, undefined, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      addMessages(msgs);
+      if (cache.isStale(key)) {
+        const msgs = await getMessages(c.id, undefined, undefined, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        addMessages(msgs);
+        cache.markFresh(key);
+      }
     } catch (e) {
       console.warn("Could not load messages", e);
     } finally {
@@ -98,7 +99,44 @@ export default function ChannelList() {
       await deleteChannel(currentServer.id, c.id, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (currentChannel?.id === c.id) setCurrentChannel(null);
+      if (currentChannel?.id === c.id)
+        setCurrentChannel(null);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function toggleHideChannel(channelId: number) {
+    if (!userSettings)
+      return;
+    const isHidden = hidden.includes(channelId);
+    const next = {
+      ...userSettings,
+      hiddenChannels: isHidden
+        ? hidden.filter(id => id !== channelId)
+        : [...hidden, channelId],
+    };
+    setUserSettings(next);
+    try {
+      await updateSettings(next, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function toggleMuteChannel(channelId: number) {
+    if (!userSettings)
+      return;
+    const isMuted = muted.includes(channelId);
+    const next = {
+      ...userSettings,
+      mutedChannels: isMuted
+        ? muted.filter(id => id !== channelId)
+        : [...muted, channelId],
+    };
+    setUserSettings(next);
+    try {
+      await updateSettings(next, { headers: { Authorization: `Bearer ${token}` } });
     } catch (e) {
       console.error(e);
     }
@@ -111,26 +149,24 @@ export default function ChannelList() {
   }
 
   function buildCtxItems(channel: AbstractChannel): ContextMenuItem[] {
+    const isMuted = muted.includes(channel.id);
+    const isHidden = hidden.includes(channel.id);
     const items: ContextMenuItem[] = [];
 
     if (canManage || serverOwner) {
       items.push({
-        label: "Delete Channel",
-        icon: "🗑️",
-        danger: true,
+        label: t("channel.delete"), icon: "🗑️", danger: true,
         onClick: () => handleDeleteChannel(channel),
       });
       items.push({
-        label: "Create Channel Here",
-        icon: "➕",
+        label: t("channel.create_here"), icon: "➕",
         onClick: () => setCreateChannelOpen(true),
       });
     }
 
     if (canInvite || serverOwner) {
       items.push({
-        label: "Copy Invite Link",
-        icon: "🔗",
+        label: t("channel.copy_invite"), icon: "🔗",
         onClick: () => {
           const url = currentServer?.inviteUrls?.[0];
           if (url) navigator.clipboard.writeText(url);
@@ -138,9 +174,20 @@ export default function ChannelList() {
       });
     }
 
+    items.push({ label: "", onClick: () => {}, divider: true });
     items.push({
-      label: "Copy Channel ID",
-      icon: "🆔",
+      label: isMuted ? t("channel.unmute") : t("channel.mute"),
+      icon: isMuted ? "🔔" : "🔕",
+      onClick: () => toggleMuteChannel(channel.id),
+    });
+    items.push({
+      label: isHidden ? t("channel.unhide") : t("channel.hide"),
+      icon: isHidden ? "👁" : "🚫",
+      onClick: () => toggleHideChannel(channel.id),
+    });
+    items.push({ label: "", onClick: () => {}, divider: true });
+    items.push({
+      label: t("channel.copy_id"), icon: "🆔",
       onClick: () => navigator.clipboard.writeText(String(channel.id)),
     });
 
@@ -148,42 +195,39 @@ export default function ChannelList() {
   }
 
   function renderChannel(c: AbstractChannel, indent = false) {
-    if (c.channelType === ChannelType.Category)
+    if (c.type === ChannelType.Category)
       return null;
     const isSelected = currentChannel?.id === c.id;
+    const isMuted = muted.includes(c.id);
     return (
       <div
         key={c.id}
         className={"channel uno int" + (isSelected ? " selected" : "")}
-        style={indent ? { paddingLeft: 20 } : undefined}
+        style={{
+          ...(indent ? { paddingLeft: 20 } : undefined),
+          ...(isMuted ? { opacity: 0.55 } : undefined),
+        }}
         onClick={() => handleSelectChannel(c)}
         onContextMenu={(e) => openCtx(e, c)}
       >
         {getChannelIcon(c, { className: "channel-icon" })}
-        <span
-          style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {c.name ?? "Unnamed"}
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+          {c.name ?? t("channel.unnamed")}
         </span>
+        {isMuted && (
+          <span style={{ fontSize: 12, opacity: 0.6, flexShrink: 0 }}>🔕</span>
+        )}
       </div>
     );
   }
 
   return (
-    <div
-      className="channel-list"
-      style={{ display: "flex", flexDirection: "column" }}
-    >
+    <div className="channel-list" style={{ display: "flex", flexDirection: "column" }}>
       <div className="server-header uno">
-        {currentServer?.name ?? "No server selected"}
+        {currentServer?.name ?? t("channel.no_server")}
       </div>
       <hr />
 
-      {/* Create channel button */}
       {currentServer && (canManage || serverOwner) && (
         <div
           className="channel uno int"
@@ -191,7 +235,7 @@ export default function ChannelList() {
           onClick={() => setCreateChannelOpen(true)}
         >
           <span style={{ fontSize: 18, lineHeight: 1 }}>＋</span>
-          <span style={{ fontSize: 12 }}>Create Channel</span>
+          <span style={{ fontSize: 12 }}>{t("channel.create")}</span>
         </div>
       )}
 
@@ -211,35 +255,22 @@ export default function ChannelList() {
                   onClick={() => toggleCategory(cat.id)}
                   onContextMenu={(e) => openCtx(e, cat)}
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "12px 8px 4px",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: "var(--text-4)",
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
+                    display: "flex", alignItems: "center",
+                    padding: "12px 8px 4px", fontSize: 12,
+                    fontWeight: 700, color: "var(--text-4)",
+                    letterSpacing: "0.05em", textTransform: "uppercase",
                     cursor: "pointer",
                   }}
                 >
-                  <span
-                    style={{
-                      marginRight: 4,
-                      transition: "transform 150ms",
-                      transform: collapsed ? "rotate(-90deg)" : "none",
-                    }}
-                  >
+                  <span style={{ marginRight: 4, transition: "transform 150ms", transform: collapsed ? "rotate(-90deg)" : "none" }}>
                     ›
                   </span>
                   {(cat as any).name}
                   {(canManage || serverOwner) && (
                     <span
                       style={{ marginLeft: "auto", fontSize: 16 }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCreateChannelOpen(true);
-                      }}
-                      title="Create channel in category"
+                      onClick={(e) => { e.stopPropagation(); setCreateChannelOpen(true); }}
+                      title={t("channel.create_in_category")}
                     >
                       ＋
                     </span>
@@ -249,6 +280,51 @@ export default function ChannelList() {
               </div>
             );
           })}
+
+          {hiddenChannels.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div
+                className="channel-category uno int"
+                onClick={() => setShowHidden(v => !v)}
+                style={{
+                  display: "flex", alignItems: "center",
+                  padding: "4px 8px", fontSize: 11,
+                  fontWeight: 700, color: "var(--text-5)",
+                  letterSpacing: "0.05em", textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ marginRight: 4, transition: "transform 150ms", transform: showHidden ? "rotate(0deg)" : "rotate(-90deg)" }}>
+                  ›
+                </span>
+                {t("channel.hidden_count", { count: hiddenChannels.length })}
+              </div>
+              {showHidden && hiddenChannels.map(c => (
+                <div
+                  key={c.id}
+                  className="channel uno"
+                  style={{ opacity: 0.4, gap: 6 }}
+                  onContextMenu={(e) => openCtx(e, c)}
+                >
+                  {getChannelIcon(c, { className: "channel-icon" })}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, fontSize: 12 }}>
+                    {c.name ?? t("channel.unnamed")}
+                  </span>
+                  <button
+                    title={t("channel.unhide_title")}
+                    onClick={(e) => { e.stopPropagation(); toggleHideChannel(c.id); }}
+                    style={{
+                      background: "none", border: "none", boxShadow: "none",
+                      padding: "0 2px", fontSize: 12, color: "var(--text-5)",
+                      cursor: "pointer", flexShrink: 0,
+                    }}
+                  >
+                    👁
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 

@@ -1,5 +1,5 @@
 // shakespearean
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const en_emodeng: Record<TranslationKeys, string> = {
   

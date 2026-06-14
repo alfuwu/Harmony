@@ -1,4 +1,4 @@
-import { t } from "../../lib/i18n";
+import { t, useLocale } from "../../lib/i18n/Index";
 import { useAuthState } from "../../lib/state/Auth";
 import { useChannelState } from "../../lib/state/Channels";
 import { useServerState } from "../../lib/state/Servers";
@@ -12,17 +12,18 @@ interface TypingIndicatorProps {
 }
 
 export default function TypingIndicator({ channelId, currentUserId }: TypingIndicatorProps) {
+  useLocale();
   const { userSettings } = useAuthState();
   const serverState = useServerState();
   const channelState = useChannelState();
   const userState = useUserState();
 
   const markdownData: RenderContext = {
-      serverState,
-      channelState,
-      userState,
-      userSettings
-    };
+    serverState,
+    channelState,
+    userState,
+    userSettings
+  };
 
   if (!channelId)
     return null;

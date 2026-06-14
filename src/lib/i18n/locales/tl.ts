@@ -1,5 +1,5 @@
 // tagalog
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const tl: Record<TranslationKeys, string> = {
   

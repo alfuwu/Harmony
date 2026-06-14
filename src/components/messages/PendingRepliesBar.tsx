@@ -1,7 +1,9 @@
 import { useChannelState } from "../../lib/state/Channels";
 import { useUserState } from "../../lib/state/Users";
+import { t, useLocale } from "../../lib/i18n/Index";
 
 export default function PendingRepliesBar() {
+  useLocale();
   const channelState = useChannelState();
   const userState = useUserState();
   const { currentChannel } = channelState;
@@ -16,10 +18,10 @@ export default function PendingRepliesBar() {
   return (
     <div className="pending-replies-bar">
       <div className="pending-replies-header">
-        <span>↩ Replying to {replies.length} message{replies.length !== 1 ? "s" : ""}</span>
+        <span>{t("replies.replying_to", { count: replies.length })}</span>
         <button
           className="uno"
-          title="Clear all replies"
+          title={t("replies.clear_all")}
           onClick={() => channelState.clearPendingReplies(currentChannel.id)}
         >
           ✕
@@ -28,7 +30,7 @@ export default function PendingRepliesBar() {
       <div className="pending-replies-list">
         {replies.map(msg => {
           const author = userState.get(msg.authorId);
-          const name = author?.displayName ?? author?.username ?? "Unknown";
+          const name = author?.displayName ?? author?.username ?? t("replies.unknown");
           const preview = msg.content.length > 72
             ? msg.content.slice(0, 72) + "..."
             : msg.content;
@@ -38,7 +40,7 @@ export default function PendingRepliesBar() {
               <span className="pending-reply-content">{preview}</span>
               <button
                 className="uno"
-                title="Remove"
+                title={t("remove")}
                 onClick={() => channelState.removePendingReply(currentChannel.id, msg.id)}
               >
                 ✕

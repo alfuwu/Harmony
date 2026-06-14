@@ -3,9 +3,9 @@ import {
   twoFactorBeginSetup,
   twoFactorConfirmSetup,
   twoFactorDisable,
-} from "../../../lib/api/authApi";
-import { t } from "../../../lib/i18n";
-import { TranslationKeys } from "../../../lib/i18n/schema";
+} from "../../../lib/api/AuthApi";
+import { t } from "../../../lib/i18n/Index";
+import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 type SetupStep = "loading" | "secret" | "confirm" | "recovery";
 

@@ -1,5 +1,5 @@
 // yoda speak
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const en_YD: Record<TranslationKeys, string> = {
   

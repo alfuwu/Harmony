@@ -1,5 +1,5 @@
 // norwegian
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const no: Record<TranslationKeys, string> = {
   

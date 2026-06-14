@@ -1,7 +1,7 @@
 import "./App.css";
 import 'katex/dist/katex.min.css';
 import { createRef, useEffect, useState } from "react";
-import { api } from "./lib/api/http";
+import { api } from "./lib/api/Http";
 import LoginScreen from "./components/auth/LoginScreen";
 import ChannelList from "./components/layout/ChannelList";
 import MemberList from "./components/layout/MemberList";
@@ -14,14 +14,16 @@ import { UserProvider, useUserState } from "./lib/state/Users";
 import { ServerProvider, useServerState } from "./lib/state/Servers";
 import { ChannelProvider, useChannelState } from "./lib/state/Channels";
 import { MessageProvider, useMessageState } from "./lib/state/Messages";
-import { initializeClient, syncSignalRRefs } from "./lib/client/init";
+import { initializeClient, syncSignalRRefs } from "./lib/client/Init";
 import { PopoutProvider } from "./lib/state/Popouts";
 import { getAvatar } from "./lib/utils/UserUtils";
 import UserSettingsModal from "./components/layout/modals/UserSettingsModal";
 import TypingIndicator from "./components/messages/TypingIndicator";
-import { Theme, UserSettings } from "./lib/utils/userSettings";
+import { Theme, UserSettings } from "./lib/utils/UserSettings";
 import PendingRepliesBar from "./components/messages/PendingRepliesBar";
-import ServerSettingsModal from "./components/layout/modals/ServerSettingsModal";
+import DmList from "./components/layout/DmList";
+import { t, useLocale, i18n } from "./lib/i18n/Index";
+import { localeFromLanguage } from "./lib/i18n/LocaleMap";
 
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
 export const hostUrl = "http://localhost:5000";
@@ -66,6 +68,7 @@ function applySettings(settings: UserSettings | null) {
 
 
 function AppInner() {
+  useLocale();
   const authState = useAuthState();
   const { user, setUser, token, setToken, userSettings, setUserSettings } = authState;
   const [loading, setLoading] = useState(true);
@@ -85,6 +88,10 @@ function AppInner() {
   useEffect(() => {
     applySettings(userSettings);
   }, [userSettings]);
+
+  useEffect(() => {
+    i18n.loadLocale(localeFromLanguage(userSettings?.language));
+  }, [userSettings?.language]);
  
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -128,6 +135,7 @@ function AppInner() {
       w.messages = messageState.messages;
       w.users = userState.users;
       w.userSettings = userSettings;
+      w.i18n = i18n;
     }, [serverState.servers, channelState.channels, userState.members, messageState.messages, userState.users, userSettings]);
   }
 
@@ -166,13 +174,13 @@ function AppInner() {
           <div className="valign-ungreedy">
             <div className="halign">
               <ServerList onDmClick={handleDmClick} showDms={showDms} />
-              {inDmView ? null : <ChannelList />}
+              {inDmView ? <DmList /> : <ChannelList />}
             </div>
             <div className="user-panel">
               <img
                 className="avatar uno int"
                 src={avatar}
-                alt="avatar"
+                alt={t("alt.avatar")}
                 onClick={_e => {
                   setModalOpen(true);
                   /*const rect = e.currentTarget.getBoundingClientRect();

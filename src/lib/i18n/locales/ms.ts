@@ -1,5 +1,5 @@
 // malay
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const ms: Record<TranslationKeys, string> = {
   

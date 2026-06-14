@@ -1,7 +1,8 @@
 import React, { useContext, useState, createContext } from "react";
-import { AbstractChannel, Message, Typing } from "../utils/types";
+import { AbstractChannel, Message, Typing } from "../utils/Types";
 
 const MAX_PENDING_REPLIES = 5;
+const MAX_PENDING_ATTACHMENTS = 10;
 
 export interface ChannelState {
   currentChannel: AbstractChannel | null;
@@ -23,6 +24,10 @@ export interface ChannelState {
   addPendingReply: (channelId: number, message: Message) => void;
   removePendingReply: (channelId: number, messageId: number) => void;
   clearPendingReplies: (channelId: number) => void;
+  getPendingAttachments: (channelId: number) => File[];
+  addPendingAttachment: (channelId: number, file: File) => void;
+  removePendingAttachment: (channelId: number, index: number) => void;
+  clearPendingAttachments: (channelId: number) => void;
 }
 
 const ChannelContext = createContext<ChannelState | undefined>(undefined);
@@ -33,6 +38,7 @@ export const ChannelProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [typing, setTyping] = useState<Record<number, number[]>>({});
   const [channelDrafts, setChannelDrafts] = useState<Record<number, string>>({});
   const [pendingReplies, setPendingReplies] = useState<Record<number, Message[]>>({});
+  const [pendingAttachments, setPendingAttachments] = useState<Record<number, File[]>>({});
 
   const get = (id: number) => channels.find(c => c.id === id);
 
@@ -94,6 +100,26 @@ export const ChannelProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const clearPendingReplies = (channelId: number) =>
     setPendingReplies(prev => ({ ...prev, [channelId]: [] }));
 
+  const getPendingAttachments = (channelId: number): File[] =>
+    pendingAttachments[channelId] ?? [];
+
+  const addPendingAttachment = (channelId: number, file: File) =>
+    setPendingAttachments(prev => {
+      const existing = prev[channelId] ?? [];
+      if (existing.length >= MAX_PENDING_ATTACHMENTS) return prev;
+      return { ...prev, [channelId]: [...existing, file] };
+    });
+
+  const removePendingAttachment = (channelId: number, index: number) =>
+    setPendingAttachments(prev => {
+      const existing = [...(prev[channelId] ?? [])];
+      existing.splice(index, 1);
+      return { ...prev, [channelId]: existing };
+    });
+
+  const clearPendingAttachments = (channelId: number) =>
+    setPendingAttachments(prev => ({ ...prev, [channelId]: [] }));
+
   const value: ChannelState = {
     currentChannel,
     setCurrentChannel,
@@ -114,6 +140,10 @@ export const ChannelProvider: React.FC<{ children: React.ReactNode }> = ({ child
     addPendingReply,
     removePendingReply,
     clearPendingReplies,
+    getPendingAttachments,
+    addPendingAttachment,
+    removePendingAttachment,
+    clearPendingAttachments
   };
 
   return <ChannelContext.Provider value={value}>{children}</ChannelContext.Provider>;

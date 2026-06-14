@@ -4,16 +4,15 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
 import { useLoadingState } from "../../lib/state/Loading";
-import { RenderContext, RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
+import { RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
 import {
   getAvatar,
   getPronouns,
   mentionedIn
 } from "../../lib/utils/UserUtils";
-import { AbstractChannel, Member, Message, Server, User } from "../../lib/utils/types";
+import { Member, Message, User } from "../../lib/utils/Types";
 import { usePopoutState } from "../../lib/state/Popouts";
 import { useAuthState } from "../../lib/state/Auth";
-import { loadServer } from "../../lib/api/serverApi";
 import {
   deleteMessage,
   editMessage,
@@ -21,24 +20,24 @@ import {
   pinMessage,
   react,
   unreact
-} from "../../lib/api/messageApi";
-import { addToQuotebook } from "../../lib/api/socialApi";
+} from "../../lib/api/MessageApi";
+import { addToQuotebook } from "../../lib/api/SocialApi";
 import {
   canManageMessages,
   canPinMessages,
   canEditOthers
 } from "../../lib/utils/PermissionUtils";
 import UserPopout from "../layout/popouts/UserPopout";
-import EmojiPopout from "../layout/popouts/EmojiPopout";
 import ContextMenu, { ContextMenuItem } from "../layout/ContextMenu";
-import { getEmojiDataFromNative } from "emoji-mart";
 import MessageInput, { MessageInputHandle } from "./MessageInput";
 import EmojiPickerPopout from "../layout/popouts/EmojiPickerPopout";
 import Twemoji from "react-twemoji";
-import { EmojiStyle } from "../../lib/utils/userSettings";
+import { EmojiStyle } from "../../lib/utils/UserSettings";
 import { SkeletonMessages } from "../layout/Skeleton";
-import { t } from "../../lib/i18n";
+import { t, useLocale } from "../../lib/i18n/Index";
 import { Name } from "../layout/Generic";
+import { makeMarkdownContext } from "../../lib/utils/Funcs";
+import MessageAttachment from "./MessageAttachment";
 
 const MERGE_WINDOW  = 7 * 60 * 1000; // 7 minutes in ms
 const SCROLL_THRESHOLD = 120;
@@ -49,6 +48,7 @@ function getId(msg: Message): string {
 }
 
 export default function MessageList() {
+  useLocale();
   const { token, user, userSettings } = useAuthState();
   const serverState = useServerState();
   const channelState = useChannelState();
@@ -59,6 +59,10 @@ export default function MessageList() {
   const container = useRef<HTMLDivElement>(null);
 
   const wasAtBottomRef = useRef(true);
+
+  const messageRefs = useRef(new Map<number, HTMLDivElement>());
+
+  const [highlightedMessage, setHighlightedMessage] = useState<number | null>(null);
 
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const hasMoreRef = useRef(true);
@@ -116,7 +120,7 @@ export default function MessageList() {
     prevScrollHeightRef.current = 0;
   }, [currentChan?.id]);
 
-  const loadMoreMessages = useCallback(async () => {
+  const loadMoreMessages = useCallback(async (around?: number, amount?: number) => {
     if (
       isLoadingMoreRef.current ||
       !hasMoreRef.current ||
@@ -125,15 +129,17 @@ export default function MessageList() {
     )
       return;
 
+    amount ??= 50;
+
     isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
 
-    const oldestMsg = channelMessages[0];
+    const oldestMsg = around ? Math.min(channelMessages[0].id, Math.floor(around + amount / 2)) : channelMessages[0].id;
     prevScrollHeightRef.current = container.current.scrollHeight;
     restoringScrollRef.current = true;
 
     try {
-      const msgs = await getMessages(currentChan.id, oldestMsg?.id, {
+      const msgs = await getMessages(currentChan.id, oldestMsg, amount, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -222,11 +228,10 @@ export default function MessageList() {
   function startEditing(msg: Message, useAnimationFrame = false) {
     setEditingId(msg.id);
     setEditContent(msg.content);
-    if (useAnimationFrame) {
+    if (useAnimationFrame)
       requestAnimationFrame(() => inputRef.current?.focus(true, true));
-    } else {
+    else
       inputRef.current?.focus(true, true);
-    }
   }
 
   function handleReply(msg: Message) {
@@ -244,11 +249,11 @@ export default function MessageList() {
     const yesterday = new Date(now);
     yesterday.setDate(now.getDate() - 1);
 
-    const t = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const timeStr = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     if (date.toDateString() === now.toDateString())
-      return t;
+      return timeStr;
     if (date.toDateString() === yesterday.toDateString())
-      return `Yesterday at ${t}`;
+      return t("messages.yesterday", { time: timeStr });
     return `${(date.getMonth() + 1).toString().padStart(2, "0")}/${date
       .getDate()
       .toString()
@@ -282,6 +287,41 @@ export default function MessageList() {
       ),
       options: {}
     });
+  }
+
+  async function jumpToMessage(messageId: number) {
+    let msg = messageState.get(messageId);
+
+    if (!msg) {
+      await loadMoreMessages(messageId);
+      msg = messageState.get(messageId);
+    }
+
+    const element = messageRefs.current.get(messageId);
+    if (!element || !container.current)
+      return;
+
+    const containerRect = container.current.getBoundingClientRect();
+    const elRect = element.getBoundingClientRect();
+
+    const fullyVisible =
+      elRect.top >= containerRect.top &&
+      elRect.bottom <= containerRect.bottom;
+
+    if (!fullyVisible) {
+      element.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
+    }
+
+    setHighlightedMessage(messageId);
+
+    setTimeout(() => {
+      setHighlightedMessage((current) =>
+        current === messageId ? null : current
+      );
+    }, 2000);
   }
 
   function openCtxMenu(e: React.MouseEvent, msg: Message) {
@@ -387,7 +427,7 @@ export default function MessageList() {
             <EmojiPickerPopout
               userSettings={userSettings}
               position={{ top: ctxMenu?.y ?? 0, left: ctxMenu?.x ?? 0 }}
-              onSelect={emoji => { handleReact(msg, emoji); close(id); }}
+              onSelect={(emoji, e) => { handleReact(msg, emoji); if (!e.shiftKey) close(id); }}
             />
           ),
           options: {}
@@ -448,61 +488,10 @@ export default function MessageList() {
     return items;
   }
 
-  const markdownData: RenderContext = {
-    serverState,
-    channelState,
-    userState,
-    userSettings,
-    onMentionClick: (u: User, m: Member, event: React.MouseEvent) => {
-      event.stopPropagation();
-      event.preventDefault();
-      openUserPopout(event.currentTarget, u, m);
-    },
-    onChannelClick: (channel: AbstractChannel, event: React.MouseEvent) => {
-      event.stopPropagation();
-      if (channelState.currentChannel?.id !== channel.id) {
-        event.preventDefault();
-        if (serverState.currentServer?.id !== channel.serverId) {
-          const s = serverState.get(channel.serverId);
-          if (s) {
-            loadServer(s, channelState, userState, messageState, token!);
-            serverState.setCurrentServer(s);
-          } else return;
-        }
-        channelState.setCurrentChannel(channel);
-      }
-    },
-    onServerClick: (server: Server, event: React.MouseEvent) => {
-      event.stopPropagation();
-      event.preventDefault();
-      if (serverState.currentServer?.id !== server.id) {
-        loadServer(server, channelState, userState, messageState, token!);
-        serverState.setCurrentServer(server);
-        channelState.setCurrentChannel(null);
-      }
-    },
-    onEmojiClick: async (emoji: string, event: React.MouseEvent) => {
-      event.stopPropagation();
-      event.preventDefault();
-      const rect = event.currentTarget.getBoundingClientRect();
-      const name = await getEmojiDataFromNative(emoji);
-      open({
-        id: "emoji",
-        element: (
-          <EmojiPopout
-            emoji={emoji}
-            emojiName={name?.id ?? emoji}
-            userSettings={userSettings}
-            position={{
-              top: rect.bottom + window.scrollY,
-              left: rect.right + window.scrollX
-            }}
-          />
-        ),
-        options: {}
-      });
-    },
-    onToggleDetails: () => {
+  const markdownData = makeMarkdownContext(
+    serverState, channelState, userState, messageState, userSettings, token,
+    open, openUserPopout,
+    () => {
       if (!container.current)
         return;
 
@@ -511,7 +500,7 @@ export default function MessageList() {
         el.scrollTop = el.scrollHeight;
       }
     }
-  };
+  );
 
   const typingIds = (
     (currentChan && channelState.getTyping(currentChan.id)) ?? []
@@ -547,7 +536,7 @@ export default function MessageList() {
               userSelect: "none"
             }}
           >
-            {t("messages.beginning", { name: currentChan?.name ?? "the channel" })}
+            {t("messages.beginning", { name: currentChan?.name ?? t("messages.unknown_channel") })}
           </div>
         )}
 
@@ -555,7 +544,7 @@ export default function MessageList() {
           const author = userState.get(msg.authorId) ?? ({
             id: msg.authorId,
             displayName: null,
-            username: "Unknown User",
+            username: t("user.unknown"),
             avatar: null,
             nameFont: null
           } as User);
@@ -577,11 +566,18 @@ export default function MessageList() {
           return (
             <div
               key={getId(msg)}
+              ref={(el) => {
+                if (el)
+                  messageRefs.current.set(msg.id, el);
+                else
+                  messageRefs.current.delete(msg.id);
+              }}
               className={
                 "message" +
                 (isMentioned ? " mentioned" : "") +
                 (isHovered ? " hover" : "") +
-                (isPendingReply ? " pending-reply" : "")
+                (isPendingReply ? " pending-reply" : "") +
+                (highlightedMessage === msg.id ? " flash-highlight" : "")
               }
               onMouseEnter={() => setMessageHover(getId(msg))}
               onMouseLeave={() => setMessageHover(null)}
@@ -597,13 +593,68 @@ export default function MessageList() {
                 handleReply(msg);
               }}
             >
+              {msg.references && (
+                <div className="replies">
+                  {msg.references.map((r, i) => {
+                    const reply = messageState.get(r);
+                    const repAuthor = userState.get(reply?.authorId!) ?? ({
+                      id: reply?.authorId,
+                      displayName: null,
+                      username: t("user.unknown"),
+                      avatar: null,
+                      nameFont: null
+                    } as User);
+                    const repMember = userState.getMember(repAuthor.id, serverState.currentServer?.id);
+                    const repAvatar = getAvatar(repAuthor, repMember);
+
+                    return (
+                      <div className="reply">
+                        <div className={"reply-bar" + (i === 0 ? " first" : "")} />
+                        <img
+                          className="avatar uno int"
+                          src={repAvatar}
+                          alt={t("alt.avatar")}
+                          onClick={e => openUserPopout(e.currentTarget, repAuthor, repMember)}
+                          onDoubleClick={e => e.stopPropagation()}
+                        />
+                        <Name
+                          user={repAuthor}
+                          member={repMember}
+                          serverState={serverState}
+                          md={markdownData}
+                          spoilerState={spoilerState}
+                          className="author int"
+                          onClick={e => openUserPopout(e.currentTarget, repAuthor, repMember)}
+                          onDoubleClick={e => e.stopPropagation()}
+                        />
+                        <div
+                          className="reply-content"
+                          onClick={() => jumpToMessage(r)}
+                        >
+                          {RenderMarkdown({
+                            content: reply?.content.split('\n')[0] ?? t("message.unknown"),
+                            spoilerStateRef: spoilerState,
+                            allowBlocks: false,
+                            noBigEmoji: true,
+                            userState,
+                            serverState,
+                            channelState,
+                            userSettings
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {showHeader && (
                 <div className="group-header">
                   <img
                     className="avatar uno int"
                     src={avatar}
-                    alt="avatar"
+                    alt={t("alt.avatar")}
                     onClick={e => openUserPopout(e.currentTarget, author, member)}
+                    onDoubleClick={e => e.stopPropagation()}
                   />
                   <div className="header-meta">
                     <Name
@@ -614,13 +665,14 @@ export default function MessageList() {
                       spoilerState={spoilerState}
                       className="author int"
                       onClick={e => openUserPopout(e.currentTarget, author, member)}
+                      onDoubleClick={e => e.stopPropagation()}
                     />
-                    <span className="timestamp">
+                    <span className="timestamp" onDoubleClick={e => e.stopPropagation()}>
                       <span className="mr uno">•</span>
                       {formatTimestamp(msg.timestamp)}
                     </span>
                     {pronouns && (
-                      <span className="timestamp">
+                      <span className="timestamp" onDoubleClick={e => e.stopPropagation()}>
                         <span className="mr ml uno">•</span>
                         {pronouns}
                       </span>
@@ -706,17 +758,23 @@ export default function MessageList() {
                     </div>
                   </div>
                 ) : (
-                  <span className={"content" + (msg.sending ? " sending" : "")}>
-                    {RenderMarkdown({
-                      content: msg.content,
-                      spoilerStateRef: spoilerState,
-                      ...markdownData
-                    })}
-                    {msg.editedTimestamp && !isEditing && (
-                      <span className="edited-mark uno">{t("messages.edited")}</span>
-                    )}
-                  </span>
+                  msg.content && (
+                    <span className={"content" + (msg.sending ? " sending" : "")}>
+                      {RenderMarkdown({
+                        content: msg.content,
+                        spoilerStateRef: spoilerState,
+                        ...markdownData
+                      })}
+                      {msg.editedTimestamp && (
+                        <span className="edited-mark uno">{t("messages.edited")}</span>
+                      )}
+                    </span>
+                  )
                 )}
+
+                {msg.attachments?.map(a => (
+                  <MessageAttachment key={a.fileName} attachment={a} sending={msg.sending} />
+                ))}
                 
                 {msg.reactions && msg.reactions.length > 0 && (
                   <div
@@ -798,7 +856,7 @@ export default function MessageList() {
                             <EmojiPickerPopout
                               userSettings={userSettings}
                               position={{ top: rect.bottom, left: rect.left + 32 }}
-                              onSelect={emoji => { handleReact(msg, emoji); close(id); }}
+                              onSelect={emoji => { handleReact(msg, emoji); if (!e.shiftKey) close(id); }}
                             />
                           ),
                           options: {}
@@ -829,7 +887,7 @@ export default function MessageList() {
               {isHovered && !isEditing && !!!msg.sending && (
                 <div className="message-actions">
                   <button
-                    title="React"
+                    title={t("messages.react")}
                     onClick={e => {
                       const rect = e.currentTarget.getBoundingClientRect();
                       const id = `emoji-picker-${msg.id}`;
@@ -839,7 +897,7 @@ export default function MessageList() {
                           <EmojiPickerPopout
                             userSettings={userSettings}
                             position={{ top: rect.bottom, left: rect.left + 32 }}
-                            onSelect={emoji => { handleReact(msg, emoji); close(id); }}
+                            onSelect={emoji => { handleReact(msg, emoji); if (!e.shiftKey) close(id); }}
                           />
                         ),
                         options: {}
@@ -849,7 +907,7 @@ export default function MessageList() {
                     😊
                   </button>
                   <button
-                    title={isPendingReply ? "Remove Reply" : "Reply"}
+                    title={isPendingReply ? t("messages.reply.cancel") : t("messages.reply")}
                     onClick={() => handleReply(msg)}
                     style={{ color: isPendingReply ? "var(--accent-1)" : undefined }}
                   >

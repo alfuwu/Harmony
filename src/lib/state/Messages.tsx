@@ -1,5 +1,5 @@
 import React, { useContext, useState, createContext } from "react";
-import { Message, Reaction } from "../utils/types";
+import { Message, Reaction } from "../utils/Types";
 
 export interface MessageState {
   messages: Message[];
@@ -7,6 +7,8 @@ export interface MessageState {
   addMessage: (msg: Message) => void;
   addMessages: (msgs: Message[]) => void;
   updateMessage: (msg: Partial<Message> & { id: number }) => void;
+  get: (id?: number | null) => Message | undefined;
+  getMessage: (id?: number | null) => Message | undefined;
   removeMessage: (id: number) => void;
   removeMessages: (ids: number[]) => void;
   removeMessageByNonce: (nonce: number) => void;
@@ -43,6 +45,10 @@ export const MessageProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setMessages(prev =>
       prev.map(m => m.id === patch.id ? { ...m, ...patch } : m)
     );
+
+
+  const get = (id?: number | null) =>
+    messages.find(c => c.id === id);
 
   const removeMessage = (id: number) =>
     setMessages(prev => prev.filter(m => m.id !== id));
@@ -84,11 +90,13 @@ export const MessageProvider: React.FC<{ children: React.ReactNode }> = ({ child
     addMessage,
     addMessages,
     updateMessage,
+    get,
+    getMessage: get,
     removeMessage,
     removeMessages,
     removeMessageByNonce,
     addReaction,
-    removeReaction,
+    removeReaction
   };
 
   return <MessageContext.Provider value={value}>{children}</MessageContext.Provider>;

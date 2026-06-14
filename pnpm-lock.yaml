@@ -35,6 +35,9 @@ importers:
       '@vscode/vscode-languagedetection':
         specifier: ^1.0.23
         version: 1.0.23
+      blurhash:
+        specifier: ^2.0.5
+        version: 2.0.5
       emoji-mart:
         specifier: ^5.6.0
         version: 5.6.0
@@ -706,6 +709,9 @@ packages:
     resolution: {integrity: sha512-wbPvpyjJPC0zdfdKXxqEL3Ea+bOMD/87X4lftiJkkaBiuG6ALQy1SLmEd7BSmVCuwCQsBrCamgBoLyfFDD1EPg==}
     engines: {node: '>=6.0.0'}
     hasBin: true
+
+  blurhash@2.0.5:
+    resolution: {integrity: sha512-cRygWd7kGBQO3VEhPiTgq4Wc43ctsM+o46urrmPOiuAe+07fzlSB9OJVdpgDL0jPqXUVQ9ht7aq7kxOeJHRK+w==}
 
   browserslist@4.28.2:
     resolution: {integrity: sha512-48xSriZYYg+8qXna9kwqjIVzuQxi+KYWp2+5nCYnYKPTr0LvD89Jqk2Or5ogxz0NUMfIjhh2lIUX/LyX9B4oIg==}
@@ -1803,6 +1809,8 @@ snapshots:
       event-target-shim: 5.0.1
 
   baseline-browser-mapping@2.10.32: {}
+
+  blurhash@2.0.5: {}
 
   browserslist@4.28.2:
     dependencies:

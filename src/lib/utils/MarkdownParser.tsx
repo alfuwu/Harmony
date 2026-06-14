@@ -1,6 +1,8 @@
 import { COLORS } from './MarkdownAST';
 import type { InlineNode, BlockNode, DocumentAST, DecoToken, TextNode, TableRowNode, TableCellNode } from './MarkdownAST';
 
+const MARKDOWN_SYMBOLS = "[*_@|`~<\\^\-:#>&=#]";
+
 class InlineParser {
   private pos = 0;
 
@@ -42,7 +44,7 @@ class InlineParser {
       const c = this.src[i];
       if (c === '\\') {
         let skip = 2;
-        if (dc !== '\\' && this.src[i + 1] === this.src[i + 1])
+        if (dc !== '\\' && MARKDOWN_SYMBOLS.includes(this.src[i + 1]))
           while (this.src[i + skip] === this.src[i + 1])
             skip++;
         i += skip;
@@ -130,7 +132,7 @@ class InlineParser {
 
     if (c === '\\') {
       const nx = this.peek(1);
-      if (nx && /[*_@|`~<\\^\-:#>&=#]/.test(nx)) {
+      if (nx && MARKDOWN_SYMBOLS.includes(nx)) {
         let count = 1;
         if (nx === '*' || nx === '_' || nx === '~')
           while (this.src[p + 1 + count] === nx)
@@ -352,22 +354,25 @@ class InlineParser {
     const p = this.pos;
     const rest = this.rest();
 
-    const colorM = /^<(c|col|colou?r):(?<hex>#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})|[a-zA-Z]{1,21})>/i.exec(rest);
+    const colorM = /^<(c|col|colou?r):((?:#[0-9A-Fa-f]{3,6}|[a-zA-Z]{1,21})(?: ?[,|/;:-] ?(?:#[0-9A-Fa-f]{3,6}|[a-zA-Z]{1,21}))*)\s*>/i.exec(rest);
     if (colorM) {
-      const { hex } = colorM.groups!;
-      if (hex[0] === '#' || COLORS.includes(hex.toLowerCase())) {
+      const colors = colorM[2].split(/ ?[,|/;:-] ?/).map(s => s.trim());
+      const hex = colors[0];
+      const allValid = colors.every(c => c[0] === '#' || COLORS.includes(c.toLowerCase()));
+      if (allValid) {
         const tag = colorM[1].toLowerCase();
         const close = `</${tag}>`;
         const after = p + colorM[0].length;
         const ci = this.src.indexOf(close, after);
         if (ci !== -1) {
+          const gradient = colors.length > 1;
           this.deco('mds', p, after);
-          this.deco('color', after, ci, { hex });
+          this.deco('color', after, ci, gradient ? { hex, colors } : { hex });
           this.deco('mds', ci, ci + close.length);
           this.pos = after;
           const children = this.inner(this.pos, ci);
           this.pos = ci + close.length;
-          return { type: 'color', hex, children };
+          return { type: 'color', hex, ...(gradient ? { colors } : {}), children };
         }
       }
     }
@@ -458,13 +463,13 @@ class InlineParser {
         const ch = this.eat(1);
         const last = nodes[nodes.length - 1];
         if (last?.type === 'text')
-          (last as TextNode).content += ch;
+          last.content += ch;
         else
           nodes.push({ type: 'text', content: ch });
       } else {
         const last = nodes[nodes.length - 1];
         if (node.type === 'text' && last?.type === 'text')
-          (last as TextNode).content += (node as TextNode).content;
+          last.content += node.content;
         else
           nodes.push(node);
       }
@@ -483,7 +488,7 @@ export function tokenizeInline(text: string): DecoToken[] {
   return tokens;
 }
 
-export function parseDocument(text: string, allowBlocks = true): DocumentAST {
+export function parseDocument(text: string, allowBlocks = true, noHeaders = false): DocumentAST {
   const lines  = text.split('\n');
   const blocks: BlockNode[] = [];
   let i = 0;
@@ -530,9 +535,9 @@ export function parseDocument(text: string, allowBlocks = true): DocumentAST {
       }
 
       // Heading: #{1,6} text
-      const hM = /^(#{1,6}) (.+)/.exec(line);
+      const hM = noHeaders && /^(#{1,6}) (.+)/.exec(line);
       if (hM) {
-        blocks.push({ type: 'header', level: hM[1].length as 1|2|3|4|5|6, children: parseInline(hM[2]) });
+        blocks.push({ type: 'header', level: hM[1].length as 1|2|3|4|5|6, children: parseInline(hM[2], noHeaders) });
         i++;
         continue;
       }
@@ -540,7 +545,7 @@ export function parseDocument(text: string, allowBlocks = true): DocumentAST {
       // Subheader: -# text
       const shM = /^-# (.+)/.exec(line);
       if (shM) {
-        blocks.push({ type: 'subheader', children: parseInline(shM[1]) });
+        blocks.push({ type: 'subheader', children: parseInline(shM[1], noHeaders) });
         i++;
         continue;
       }
@@ -552,7 +557,7 @@ export function parseDocument(text: string, allowBlocks = true): DocumentAST {
         let j = i + 1;
         while (j < lines.length && lines[j].trim() !== '>-')
           bodyLines.push(lines[j++]);
-        blocks.push({ type: 'collapsible', title: parseInline(title), children: parseDocument(bodyLines.join('\n')) });
+        blocks.push({ type: 'collapsible', title: parseInline(title, noHeaders), children: parseDocument(bodyLines.join('\n')) });
         i = j < lines.length ? j + 1 : lines.length;
         continue;
       }
@@ -563,18 +568,17 @@ export function parseDocument(text: string, allowBlocks = true): DocumentAST {
         const inner = qM[1];
         if (inner.startsWith('> ')) {
           // Nested quote: > > text
-          blocks.push({ type: 'nestedQuote', children: parseInline(inner.slice(2)) });
+          blocks.push({ type: 'nestedQuote', children: parseInline(inner.slice(2), noHeaders) });
         } else if ((inner[0] === '-' || inner[0] === '*') && inner[1] === ' ') {
-          // Quote containing unordered list item: > - text  (headers disabled inside)
-          blocks.push({ type: 'quoteListItem', children: parseInline(inner.slice(2), true) });
+          // Quote containing unordered list item: > - text
+          blocks.push({ type: 'quoteListItem', children: parseInline(inner.slice(2), noHeaders) });
         } else {
           const qnlM = /^(\d+)\. (.*)/.exec(inner);
-          if (qnlM) {
-            // Quote containing numbered list item: > 1. text  (headers disabled inside)
-            blocks.push({ type: 'quoteNumberedListItem', number: parseInt(qnlM[1]), children: parseInline(qnlM[2], true) });
-          } else {
+          if (qnlM)
+            // Quote containing numbered list item: > 1. text
+            blocks.push({ type: 'quoteNumberedListItem', number: parseInt(qnlM[1]), children: parseInline(qnlM[2], noHeaders) });
+          else
             blocks.push({ type: 'quote', children: parseInline(inner) });
-          }
         }
         i++;
         continue;
@@ -583,13 +587,10 @@ export function parseDocument(text: string, allowBlocks = true): DocumentAST {
       // Unordered list: "- " or "* "
       if ((line[0] === '-' || line[0] === '*') && line[1] === ' ') {
         const content = line.slice(2);
-        if (content.startsWith('> ')) {
-          // List item containing a blockquote: - > text
-          blocks.push({ type: 'listItemQuote', children: parseInline(content.slice(2)) });
-        } else {
-          // Regular list item — disable full headers (#), allow subheaders (-#)
+        if (content.startsWith('> '))
+          blocks.push({ type: 'listItemQuote', children: parseInline(content.slice(2), true) });
+        else
           blocks.push({ type: 'listItem', children: parseInline(content, true) });
-        }
         i++;
         continue;
       }
@@ -598,13 +599,10 @@ export function parseDocument(text: string, allowBlocks = true): DocumentAST {
       const nlM = /^(\d+)\. (.+)/.exec(line);
       if (nlM) {
         const content = nlM[2];
-        if (content.startsWith('> ')) {
-          // Numbered list item containing a blockquote: N. > text
-          blocks.push({ type: 'numberedListItemQuote', number: parseInt(nlM[1]), children: parseInline(content.slice(2)) });
-        } else {
-          // Regular numbered list item — disable full headers, allow subheaders
+        if (content.startsWith('> '))
+          blocks.push({ type: 'numberedListItemQuote', number: parseInt(nlM[1]), children: parseInline(content.slice(2), true) });
+        else
           blocks.push({ type: 'numberedListItem', number: parseInt(nlM[1]), children: parseInline(content, true) });
-        }
         i++;
         continue;
       }
@@ -618,17 +616,17 @@ export function parseDocument(text: string, allowBlocks = true): DocumentAST {
         !lines[i + 1].startsWith('||')
       ) {
         const aligns = parseTableAlignments(lines[i + 1]);
-        const rows: TableRowNode[] = [{ type: 'tableRow', cells: parseTableCells(lines[i], true, aligns) }];
+        const rows: TableRowNode[] = [{ type: 'tableRow', cells: parseTableCells(lines[i], true, aligns, noHeaders) }];
         let j = i + 2;
         while (j < lines.length && lines[j].startsWith('|') && !lines[j].startsWith('||'))
-          rows.push({ type: 'tableRow', cells: parseTableCells(lines[j++], false, aligns) });
+          rows.push({ type: 'tableRow', cells: parseTableCells(lines[j++], false, aligns, noHeaders) });
         blocks.push({ type: 'table', rows });
         i = j;
         continue;
       }
     }
 
-    blocks.push({ type: 'paragraph', children: parseInline(line) });
+    blocks.push({ type: 'paragraph', children: parseInline(line, noHeaders) });
     i++;
   }
 
@@ -692,11 +690,12 @@ function parseTableCells(
   line: string,
   header: boolean,
   aligns: ('left' | 'center' | 'right' | null)[],
+  allowBig?: boolean
 ): TableCellNode[] {
   return splitTableRow(line).map((cell, idx) => ({
     type: 'tableCell' as const,
     header,
     align: aligns[idx] ?? null,
-    children: parseInline(cell.trim())
+    children: parseInline(cell.trim(), allowBig)
   }));
 }

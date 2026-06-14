@@ -8,8 +8,8 @@ import {
   updateProfile, updateSettings, updatePrivacy,
   changeAvatar, changeBanner, changeFont,
   deleteAvatar, deleteBanner, deleteFont,
-} from "../../../lib/api/userApi";
-import { sendVerificationEmail } from "../../../lib/api/authApi";
+} from "../../../lib/api/UserApi";
+import { sendVerificationEmail } from "../../../lib/api/AuthApi";
 import { getAvatar, getBanner, getDisplayName } from "../../../lib/utils/UserUtils";
 import Search from "../../svgs/settings/Search";
 import CroppingModal from "./CroppingModal";
@@ -18,10 +18,10 @@ import TwoFactorModal from "./TwoFactorModal";
 import ChangeUsernameModal from "./ChangeUsernameModal";
 import ChangePhoneModal from "./ChangePhoneModal";
 
-import type { UserSettings } from "../../../lib/utils/userSettings";
-import { User } from "../../../lib/utils/types";
-import { t } from "../../../lib/i18n";
-import { TranslationKeys } from "../../../lib/i18n/schema";
+import type { UserSettings } from "../../../lib/utils/UserSettings";
+import { User } from "../../../lib/utils/Types";
+import { t, useLocale } from "../../../lib/i18n/Index";
+import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 function intToHex(n: number): string {
   return "#" + Math.max(0, n >>> 0).toString(16).padStart(6, "0");
@@ -56,9 +56,10 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
   );
 }
 
-type Opt = { value: number; label: string };
+type Opt = { value: number; label: TranslationKeys };
 
 function Sel({ value, onChange, options }: { value: number; onChange: (v: number) => void; options: Opt[] }) {
+  useLocale();
   return (
     <select
       value={value}
@@ -70,14 +71,14 @@ function Sel({ value, onChange, options }: { value: number; onChange: (v: number
         minWidth: 170, boxShadow: "none",
       }}
     >
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      {options.map(o => <option key={o.value} value={o.value}>{t(o.label)}</option>)}
     </select>
   );
 }
 
 interface VisualOpt {
   value: number;
-  label: string;
+  label: TranslationKeys;
   preview: React.ReactNode;
 }
 
@@ -86,6 +87,7 @@ function BoxGroup({ value, onChange, options }: {
   onChange: (v: number) => void;
   options: VisualOpt[];
 }) {
+  useLocale();
   return (
     <div style={{
       display: "grid",
@@ -120,7 +122,7 @@ function BoxGroup({ value, onChange, options }: {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-              <span style={{ lineHeight: 1.3 }}>{opt.label}</span>
+              <span style={{ lineHeight: 1.3 }}>{t(opt.label)}</span>
               <span style={{
                 flexShrink: 0,
                 width: 15, height: 15,
@@ -338,41 +340,50 @@ function EmojiStylePreview({ system }: { system: boolean }) {
   );
 }
 
+function UserPrefPreview() {
+  useLocale();
+  return (
+    <div style={{ fontSize: 10, color: "var(--text-5)", padding: "4px 0", lineHeight: 1.4 }}>
+      {t("opt.user_preference.desc")}
+    </div>
+  );
+}
+
 const THEME_VISUAL: VisualOpt[] = [
-  { value: 1, label: "Dark", preview: <ThemePreview theme={1} /> },
-  { value: 0, label: "Light", preview: <ThemePreview theme={0} /> },
-  { value: 2, label: "Follow System", preview: <div style={{ display: "flex", gap: 4 }}><ThemePreview theme={0} /><ThemePreview theme={1} /></div> },
+  { value: 1, label: "opt.theme.dark", preview: <ThemePreview theme={1} /> },
+  { value: 0, label: "opt.theme.light", preview: <ThemePreview theme={0} /> },
+  { value: 2, label: "opt.theme.system", preview: <div style={{ display: "flex", gap: 4 }}><ThemePreview theme={0} /><ThemePreview theme={1} /></div> },
 ];
 const COMPACT_VISUAL: VisualOpt[] = [
-  { value: 0, label: "Cozy (default)", preview: <CompactPreview compact={false} /> },
-  { value: 1, label: "Compact", preview: <CompactPreview compact={true} /> },
+  { value: 0, label: "opt.compact.cozy", preview: <CompactPreview compact={false} /> },
+  { value: 1, label: "opt.compact.compact", preview: <CompactPreview compact={true} /> },
 ];
 const AVATAR_SHAPE_VISUAL: VisualOpt[] = [
-  { value: 0, label: "Circle", preview: <AvatarShapePreview shape="circle" /> },
-  { value: 1, label: "Rounded Square", preview: <AvatarShapePreview shape="rounded" /> },
-  { value: 2, label: "Square", preview: <AvatarShapePreview shape="square" /> },
+  { value: 0, label: "opt.circle", preview: <AvatarShapePreview shape="circle" /> },
+  { value: 1, label: "opt.rounded_square", preview: <AvatarShapePreview shape="rounded" /> },
+  { value: 2, label: "opt.square", preview: <AvatarShapePreview shape="square" /> },
 ];
 const USER_AVATAR_SHAPE_VISUAL: VisualOpt[] = [
-  { value: 0, label: "Circle", preview: <AvatarShapePreview shape="circle" /> },
-  { value: 1, label: "Rounded Square", preview: <AvatarShapePreview shape="rounded" /> },
-  { value: 2, label: "Square", preview: <AvatarShapePreview shape="square" /> },
-  { value: 3, label: "User Preference", preview: <div style={{ fontSize: 10, color: "var(--text-5)", padding: "4px 0", lineHeight: 1.4 }}>Respects each user's own shape choice</div> },
+  { value: 0, label: "opt.circle", preview: <AvatarShapePreview shape="circle" /> },
+  { value: 1, label: "opt.rounded_square", preview: <AvatarShapePreview shape="rounded" /> },
+  { value: 2, label: "opt.square", preview: <AvatarShapePreview shape="square" /> },
+  { value: 3, label: "opt.user_preference", preview: <UserPrefPreview /> },
 ];
 const ROLE_COLOR_VISUAL: VisualOpt[] = [
-  { value: 0, label: "Color Names", preview: <RoleColorPreview mode={0} /> },
-  { value: 1, label: "Role Dot", preview: <RoleColorPreview mode={1} /> },
-  { value: 2, label: "Dot + Name Color", preview: <RoleColorPreview mode={2} /> },
-  { value: 3, label: "Don't Show", preview: <RoleColorPreview mode={3} /> },
+  { value: 0, label: "opt.role_color.names", preview: <RoleColorPreview mode={0} /> },
+  { value: 1, label: "opt.role_color.dot", preview: <RoleColorPreview mode={1} /> },
+  { value: 2, label: "opt.role_color.both", preview: <RoleColorPreview mode={2} /> },
+  { value: 3, label: "opt.role_color.none", preview: <RoleColorPreview mode={3} /> },
 ];
 const SPOILER_VISUAL: VisualOpt[] = [
-  { value: 0, label: "Always Reveal", preview: <SpoilerPreview reveal={0} /> },
-  { value: 1, label: "On Click", preview: <SpoilerPreview reveal={1} /> },
-  { value: 2, label: "On Hover", preview: <SpoilerPreview reveal={2} /> },
-  { value: 3, label: "Moderated Only", preview: <SpoilerPreview reveal={3} /> },
+  { value: 0, label: "opt.spoiler.always", preview: <SpoilerPreview reveal={0} /> },
+  { value: 1, label: "opt.spoiler.click", preview: <SpoilerPreview reveal={1} /> },
+  { value: 2, label: "opt.spoiler.hover", preview: <SpoilerPreview reveal={2} /> },
+  { value: 3, label: "opt.spoiler.moderated", preview: <SpoilerPreview reveal={3} /> },
 ];
 const EMOJI_STYLE_VISUAL: VisualOpt[] = [
-  { value: 0, label: "Twemoji", preview: <EmojiStylePreview system={false} /> },
-  { value: 1, label: "System", preview: <EmojiStylePreview system={true} /> },
+  { value: 0, label: "opt.emoji.twemoji", preview: <EmojiStylePreview system={false} /> },
+  { value: 1, label: "opt.emoji.system", preview: <EmojiStylePreview system={true} /> },
 ];
 
 const LANGUAGE_DATA: Array<{ value: number; flag: string; english: string; native: string; search: string[] }> = [
@@ -577,52 +588,52 @@ function LanguageSelect({ value, onChange }: { value: number; onChange: (v: numb
 }
 
 const APP_ICON_OPTS: Opt[] = [
-  { value: 0, label: "Default" },
-  { value: 1, label: "Classic" },
-  { value: 2, label: "Modern" },
-  { value: 3, label: "Minimal" }
+  { value: 0, label: "opt.default" },
+  { value: 1, label: "opt.classic" },
+  { value: 2, label: "opt.modern" },
+  { value: 3, label: "opt.minimal" }
 ];
 const ICON_OPTS: Opt[] = [
-  { value: 0, label: "Circle" },
-  { value: 1, label: "Rounded" },
-  { value: 2, label: "Square" }
+  { value: 0, label: "opt.circle" },
+  { value: 1, label: "opt.rounded_square" },
+  { value: 2, label: "opt.square" }
 ];
 const NAME_HOVER_OPTS: Opt[] = [
-  { value: 0, label: "Nothing" },
-  { value: 1, label: "Show Handle (@username)" }
+  { value: 0, label: "opt.hover.nothing" },
+  { value: 1, label: "opt.hover.handle" }
 ];
 const FONT_DISPLAY_OPTS: Opt[] = [
-  { value: 0, label: "Everyone" },
-  { value: 1, label: "Friends" },
-  { value: 2, label: "Friends of Friends" },
-  { value: 3, label: "No One" }
+  { value: 0, label: "opt.everyone" },
+  { value: 1, label: "opt.friends" },
+  { value: 2, label: "opt.friends_of_friends" },
+  { value: 3, label: "opt.no_one" }
 ];
 const ANIMATE_OPTS: Opt[] = [
-  { value: 0, label: "Always" },
-  { value: 1, label: "When App is Focused" },
-  { value: 2, label: "On Hover" },
-  { value: 3, label: "On Click" },
-  { value: 4, label: "Never" }
+  { value: 0, label: "opt.animate.always" },
+  { value: 1, label: "opt.animate.focused" },
+  { value: 2, label: "opt.animate.hover" },
+  { value: 3, label: "opt.animate.click" },
+  { value: 4, label: "opt.animate.never" }
 ];
 const VOICE_OPTS: Opt[] = [
-  { value: 0, label: "Voice Activity" },
-  { value: 1, label: "Push to Talk" }
+  { value: 0, label: "opt.voice.activity" },
+  { value: 1, label: "opt.voice.ptt" }
 ];
 const FRIEND_REQ_OPTS: Opt[] = [
-  { value: 0, label: "Everyone" },
-  { value: 1, label: "Friends of Friends" },
-  { value: 2, label: "Mutuals and Friends of Friends" },
-  { value: 3, label: "Mutual Servers Only" },
-  { value: 4, label: "No One" }
+  { value: 0, label: "opt.everyone" },
+  { value: 1, label: "opt.friends_of_friends" },
+  { value: 2, label: "opt.friend_req.mutuals_fof" },
+  { value: 3, label: "opt.friend_req.mutual_servers" },
+  { value: 4, label: "opt.no_one" }
 ];
 const USER_CTX_OPTS: Opt[] = [
-  { value: 0, label: "Everyone" },
-  { value: 1, label: "Friends of Friends" },
-  { value: 2, label: "Friends Only" },
-  { value: 3, label: "Mutuals and Friends of Friends" },
-  { value: 4, label: "Mutual Servers and Friends" },
-  { value: 5, label: "Mutual Servers Only" },
-  { value: 6, label: "No One" }
+  { value: 0, label: "opt.everyone" },
+  { value: 1, label: "opt.friends_of_friends" },
+  { value: 2, label: "opt.friends" },
+  { value: 3, label: "opt.user_ctx.mutual_fof" },
+  { value: 4, label: "opt.user_ctx.mutual_friends" },
+  { value: 5, label: "opt.user_ctx.mutual_servers" },
+  { value: 6, label: "opt.no_one" }
 ];
 
 interface PrivacyState {
@@ -771,6 +782,7 @@ function ProfilePreviewCard({ user, displayName, pronouns, bio, bannerColorHex, 
 }
 
 export default function UserSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  useLocale();
   const { token, user, setUser, userSettings, setUserSettings } = useAuthState();
   const { addUser, setMembers } = useUserState();
   const { setMessages } = useMessageState();
@@ -1061,7 +1073,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
               </div>
               <div className="profile-id">{t("id", { "id": String(user?.id) } )}</div>
             </div>
-            <button onClick={() => selectTab("Profiles")}>Edit User Profile</button>
+            <button onClick={() => selectTab("Profiles")}>{t("settings.edit_profile")}</button>
           </div>
           <div className="profile-details uno">
             <div className="profile-item">
@@ -1128,7 +1140,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
                         try {
                           await sendVerificationEmail(null, opts);
                           setEmailResendCooldown(60);
-                          setEmailResendMsg("Verification email sent!");
+                          setEmailResendMsg(t("settings.email_sent"));
                           setTimeout(() => setEmailResendMsg(""), 4000);
                         } catch (e: any) {
                           setEmailResendMsg(e.message ?? "Failed to resend");

@@ -1,5 +1,5 @@
 // thai
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const th: Record<TranslationKeys, string> = {
   

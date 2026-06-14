@@ -1,7 +1,7 @@
 import { ServerState } from "../../lib/state/Servers";
-import { roleToStyle } from "../../lib/utils/funcs";
+import { getRoleGlowClass, isGradientRole, roleToStyle } from "../../lib/utils/Funcs";
 import { RenderContext, RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
-import { Member, User } from "../../lib/utils/types";
+import { Member, Role, User } from "../../lib/utils/Types";
 import { getDisplayName, getDisplayRole } from "../../lib/utils/UserUtils";
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -32,35 +32,52 @@ type Props = React.HTMLAttributes<HTMLSpanElement | HTMLDivElement> & {
   allowDmColors?: boolean;
   md?: RenderContext;
   spoilerState?: React.MutableRefObject<Map<number, boolean>>;
+  overRole?: Role; // haha get it "overrole" as in "overrule" im so funny
+  prefix?: string;
+  text?: string;
   as?: "span" | "div";
 };
 
-export function Name({ user, member, serverState, allowDmColors = false, md, spoilerState, as = "span", ...opts }: Props) {
+export function Name({ user, member, serverState, allowDmColors = false, md, spoilerState, as = "span", overRole, prefix, text, ...opts }: Props) {
   const Component = as ?? "span";
-
-  const role = serverState && member && getDisplayRole(serverState, member, true);
-  const textStyle = role ? roleToStyle(role) : {};
-  const name = getDisplayName(user, member);
-
+ 
+  const role = overRole ?? (serverState && member && getDisplayRole(serverState, member, true));
+  const userSettings = md?.userSettings ?? null;
+  const textStyle = role ? roleToStyle(role, true, userSettings, true) : {};
+  const name = text ?? getDisplayName(user, member);
+ 
+  const extraClasses: string[] = [];
+  if (role && isGradientRole(role))
+    extraClasses.push("has-gradient-role");
+  if (role) {
+    const glowClass = getRoleGlowClass(role, userSettings);
+    if (glowClass)
+      extraClasses.push(glowClass);
+  }
+ 
+  const combinedClassName = [opts.className, ...extraClasses].filter(Boolean).join(" ");
+ 
   return (
     <Component
       {...opts}
+      className={combinedClassName}
       style={{
         ...opts.style,
         ...textStyle,
-        fontFamily: member?.nameFont || user?.nameFont ?
-          `"${member?.nameFont ?? ""}", "${user?.nameFont ?? ""}", ${opts.style?.fontFamily}, Inter, sans-serif` :
-          opts.style?.fontFamily,
-        // @ts-expect-error
-        "--author-hover": textStyle.background ?? "currentColor"
-      }}
+        fontFamily: member?.nameFont || user?.nameFont
+          ? `"${member?.nameFont ?? ""}", "${user?.nameFont ?? ""}", ${opts.style?.fontFamily}, Inter, sans-serif`
+          : opts.style?.fontFamily,
+        "--author-hover": textStyle.background ?? textStyle.color ?? "currentColor",
+        "--author-hover-size": textStyle.backgroundSize ?? undefined
+      } as React.CSSProperties}
     >
-      {md ? RenderMarkdown({
+      {prefix}{md ? RenderMarkdown({
         content: name,
         spoilerStateRef: spoilerState,
         allowBlocks: false,
         ...md
       }) : name}
     </Component>
-  )
+  );
 }
+ 

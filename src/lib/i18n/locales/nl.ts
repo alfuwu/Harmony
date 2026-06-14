@@ -1,5 +1,5 @@
 // dutch
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const nl: Record<TranslationKeys, string> = {
   

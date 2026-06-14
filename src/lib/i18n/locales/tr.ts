@@ -1,5 +1,5 @@
 // turkish
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const tr: Record<TranslationKeys, string> = {
   

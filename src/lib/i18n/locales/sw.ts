@@ -1,5 +1,5 @@
 // swahili
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const sw: Record<TranslationKeys, string> = {
   

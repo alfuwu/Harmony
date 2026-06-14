@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useAuthState } from "../../../lib/state/Auth";
-import { setNickname, deleteNickname } from "../../../lib/api/socialApi";
-import { User } from "../../../lib/utils/types";
+import { setNickname, deleteNickname } from "../../../lib/api/SocialApi";
+import { User } from "../../../lib/utils/Types";
 import { getDisplayName } from "../../../lib/utils/UserUtils";
+import { t, useLocale } from "../../../lib/i18n/Index";
+import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 interface NicknameModalProps {
   open: boolean;
@@ -13,6 +15,7 @@ interface NicknameModalProps {
 }
 
 export default function NicknameModal({ open, target, currentNickname, onClose, onSaved }: NicknameModalProps) {
+  useLocale();
   const { token } = useAuthState();
   const [value, setValue] = useState(currentNickname ?? "");
   const [loading, setLoading] = useState(false);
@@ -30,24 +33,24 @@ export default function NicknameModal({ open, target, currentNickname, onClose, 
       }
       onClose();
     } catch (e: any) {
-      setError(e.message ?? "Failed to save nickname");
+      setError(e.message ?? "nickname.failed");
     } finally {
       setLoading(false);
     }
   }
 
-  if (!open) return null;
+  if (!open)
+    return null;
 
   return (
     <div className="modal-backdrop open" onClick={onClose}>
       <div className="modal-container" onClick={e => e.stopPropagation()}>
-        <h2 style={{ margin: 0 }}>Set Nickname</h2>
+        <h2 style={{ margin: 0 }}>{t("nickname.title")}</h2>
         <p style={{ color: "var(--text-4)", margin: 0, fontSize: 13 }}>
-          This nickname is only visible to you. It overrides how
-          <strong> {getDisplayName(target)}</strong>'s name appears.
+          {t("nickname.desc")}
         </p>
         <div className="form-group">
-          <label>Nickname (leave blank to remove)</label>
+          <label>{t("nickname.placeholder")}</label>
           <input
             value={value}
             onChange={e => setValue(e.target.value)}
@@ -57,11 +60,11 @@ export default function NicknameModal({ open, target, currentNickname, onClose, 
             onKeyDown={e => e.key === "Enter" && handleSave()}
           />
         </div>
-        {error && <div className="error-msg">{error}</div>}
+        {error && <div className="error-msg">{t(error as TranslationKeys)}</div>}
         <div className="modal-buttons">
-          <button onClick={onClose}>Cancel</button>
+          <button onClick={onClose}>{t("cancel")}</button>
           <button className="create-btn" onClick={handleSave} disabled={loading}>
-            {loading ? "Saving..." : "Save"}
+            {loading ? t("saving") : t("save")}
           </button>
         </div>
       </div>

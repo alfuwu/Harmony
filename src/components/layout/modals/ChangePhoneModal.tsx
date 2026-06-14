@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { sendPhoneVerification, verifyPhone } from "../../../lib/api/authApi";
-import { t } from "../../../lib/i18n";
+import { sendPhoneVerification, verifyPhone } from "../../../lib/api/AuthApi";
+import { t, useLocale } from "../../../lib/i18n/Index";
+import type { TranslationKeys } from "../../../lib/i18n/Schema";
 
 type Step = "enter" | "verify";
 
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function ChangePhoneModal({ open, currentPhone, token, onClose, onSaved }: Props) {
+  useLocale();
   const opts = { headers: { Authorization: `Bearer ${token}` } };
 
   const [step, setStep] = useState<Step>("enter");
@@ -109,7 +111,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
         borderRadius: 6,
       }}
     >
-      {error}
+      {t(error as TranslationKeys)}
     </div>
   ) : null;
 

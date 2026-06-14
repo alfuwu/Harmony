@@ -1,6 +1,6 @@
 import { hostUrl } from "../../App";
 import { ServerState } from "../state/Servers";
-import { Member, Message, Role, User } from "./types";
+import { Member, Message, Role, User } from "./Types";
 
 const DEFAULT_AVATAR = "https://cdn.discordapp.com/avatars/1038466644353232967/2cf70b3cc2b0314758dd9f8155228c89.png?size=1024";
 

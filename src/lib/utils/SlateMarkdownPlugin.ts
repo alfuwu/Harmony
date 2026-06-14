@@ -1,6 +1,6 @@
 import { Editor, Transforms, Range, Node, Text } from 'slate';
 import data from '@emoji-mart/data';
-import { AbstractChannel, Server, User } from './types';
+import { AbstractChannel, Server, User } from './Types';
 
 function currentBlock(editor: Editor): [any, number[]] | null {
   const m = Editor.above<any>(editor, {
@@ -155,7 +155,7 @@ export function withMarkdownBlocks(editor: Editor): Editor {
         });
         return;
       }
-      
+
       if ((node as any).type === 'paragraph' && blockText.trim() === '$$') {
         Editor.withoutNormalizing(editor, () => {
           Transforms.select(editor, { anchor: Editor.start(editor, path), focus: Editor.end(editor, path) });
@@ -222,7 +222,7 @@ export function withMarkdownBlocks(editor: Editor): Editor {
     if (block) {
       const [node, path] = block as [any, number[]];
       if ((node as any).type !== 'paragraph' && isAtBlockStart(editor)) {
-        const type = REVERSIONS[(node as any).type] ?? 'paragraph'
+        const type = REVERSIONS[(node as any).type] ?? 'paragraph';
         Transforms.setNodes(editor, { type } as any, { at: path });
         return;
       }
@@ -263,7 +263,7 @@ function serializeBlock(block: any): string {
 export function slateFromMarkdown(text: string | null | undefined): any[] {
   if (!text)
     return [{ type: 'paragraph', children: [{ text: '' }] }];
-  const lines  = text.split('\n');
+  const lines = text.split('\n');
   const result: any[] = [];
   let i = 0;
 
@@ -418,19 +418,19 @@ export function withAutoFormatMentions(
   const MENTION_PATTERNS = [
     {
       re: /<@&(\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mentionRole', id, children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mentionRole', id, children: [{ text: raw }] })
     },
     {
       re: /<@(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mentionUser', id, user: getUser(id), children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mentionUser', id, user: getUser(id), children: [{ text: raw }] })
     },
     {
       re: /<#&(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mentionServer', id, server: getServer(id), children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mentionServer', id, server: getServer(id), children: [{ text: raw }] })
     },
     {
       re: /<#(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mentionChannel', id, channel: getChannel(id), children: [{ text: raw }] }),
+      build: (id: number, raw: string) => ({ type: 'mentionChannel', id, channel: getChannel(id), children: [{ text: raw }] })
     }
   ];
 
@@ -481,6 +481,20 @@ export function withAutoFormatMentions(
             index: m.index,
             end: m.index + m[0].length,
             voidNode: build(Number(m[1]), m[0])
+          };
+      }
+
+      const everyoneM = /@(everyone|here)(?!\w)/.exec(text);
+      if (everyoneM) {
+        if (!best || everyoneM.index < best.index)
+          best = {
+            index: everyoneM.index,
+            end: everyoneM.index + everyoneM[0].length,
+            voidNode: {
+              type: 'mentionEveryone',
+              subtype: everyoneM[1] as 'everyone' | 'here',
+              children: [{ text: `@${everyoneM[1]}` }]
+            }
           };
       }
 

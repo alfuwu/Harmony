@@ -1,5 +1,5 @@
 // bengali
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const bn: Record<TranslationKeys, string> = {
   

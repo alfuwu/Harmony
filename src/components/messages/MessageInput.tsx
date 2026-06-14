@@ -1,7 +1,7 @@
 import {
   useState, useMemo, useEffect, useRef,
   forwardRef, useImperativeHandle, CSSProperties,
-  ReactNode
+  ReactNode, useCallback
 } from "react";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { createEditor, Node, Editor, Transforms, Range, Text, BaseElement, BaseEditor } from "slate";
@@ -14,10 +14,10 @@ import { AuthState, useAuthState } from "../../lib/state/Auth";
 import { UserState, useUserState } from "../../lib/state/Users";
 import { ServerState, useServerState } from "../../lib/state/Servers";
 
-import { AbstractChannel, Channel, Role, Server, User, Emoji as CustomEmoji } from "../../lib/utils/types";
-import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
+import { AbstractChannel, Channel, Role, Server, User, Emoji as CustomEmoji } from "../../lib/utils/Types";
+import { getAvatar, getDisplayName, getDisplayRole } from "../../lib/utils/UserUtils";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
-import { sendMessage } from "../../lib/api/messageApi";
+import { sendMessage, uploadAttachment } from "../../lib/api/MessageApi";
 import { rootRef } from "../../App";
 
 import { ShikiEditorHighlighter } from "../../lib/utils/ShikiEditorHighlighter";
@@ -28,7 +28,8 @@ import {
   superHighlighter,
   highlighterReady,
   ensureLanguageLoaded,
-  getShikiTheme
+  getShikiTheme,
+  RenderMarkdown
 } from "../../lib/utils/MarkdownRenderer";
 import {
   withMarkdownBlocks,
@@ -39,10 +40,16 @@ import {
 
 import data, { Emoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
-import { connection } from "../../lib/api/signalrClient";
+import { connection } from "../../lib/api/SignalrClient";
 import { getEmojiUrl, getIcon } from "../../lib/utils/ServerUtils";
+import { t, useLocale } from "../../lib/i18n/Index";
 
 import katex from 'katex';
+import EmojiPickerPopout from "../layout/popouts/EmojiPickerPopout";
+import { PopoutState, usePopoutState } from "../../lib/state/Popouts";
+import TextDocument from "../svgs/other/TextDocument";
+import { intToHex, makeMarkdownContext } from "../../lib/utils/Funcs";
+import { Name } from "../layout/Generic";
 
 init({ data });
 
@@ -112,6 +119,84 @@ function CodeBlockElement({
   );
 }
 
+function AttachmentPreview({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const isImage = file.type.startsWith('image/');
+
+  useEffect(() => {
+    if (!isImage)
+      return;
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, isImage]);
+
+  const sizeLabel = file.size < 1024
+    ? `${file.size} B`
+    : file.size < 1024 * 1024
+      ? `${(file.size / 1024).toFixed(1)} KB`
+      : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+
+  return (
+    <div style={{
+      position: 'relative',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      background: 'var(--bg-2)',
+      border: '1px solid var(--border)',
+      borderRadius: 8,
+      padding: 6,
+      gap: 4,
+      minWidth: 80,
+      maxWidth: 100,
+      flexShrink: 0,
+    }}>
+      {isImage && previewUrl
+        ? (
+          <img
+            src={previewUrl}
+            alt={file.name}
+            style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6 }}
+          />
+        )
+        : (
+          <div style={{
+            width: 64, height: 64, borderRadius: 6,
+            background: 'var(--bg-3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 26,
+          }}>
+            <TextDocument />
+          </div>
+        )
+      }
+      <div style={{
+        fontSize: 10, color: 'var(--text-4)',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        maxWidth: '100%',
+      }} title={file.name}>
+        {file.name}
+      </div>
+      <div style={{ fontSize: 9, color: 'var(--text-5)' }}>{sizeLabel}</div>
+      <button
+        onClick={onRemove}
+        style={{
+          position: 'absolute', top: 2, right: 2,
+          width: 16, height: 16, padding: 0,
+          background: 'var(--bg-1)', border: '1px solid var(--border)',
+          borderRadius: '50%', cursor: 'pointer', fontSize: 9,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'var(--text-4)', lineHeight: 1,
+        }}
+        title="Remove attachment"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 const REGIONAL_INDICATOR_LETTERS = 'abcdefghijklmnopqrstuvwxyz'.split('').map((c, i) => ({
   id: `regional_indicator_letter_${c}`,
   type: 'emoji' as const,
@@ -150,7 +235,7 @@ const insertUserMention = (editor: Editor, user: User) =>
   ins(editor, { type: 'mentionUser', id: user.id, user, children: [{ text: `<@${user.id}>` }] });
 const insertChannelMention = (editor: Editor, ch: AbstractChannel) =>
   ins(editor, { type: 'mentionChannel', id: ch.id, channel: ch, children: [{ text: `<#${ch.id}>` }] });
-const insertServerMention  = (editor: Editor, srv: Server) =>
+const insertServerMention = (editor: Editor, srv: Server) =>
   ins(editor, { type: 'mentionServer', id: srv.id, server: srv, children: [{ text: `<#&${srv.id}>` }] });
 const insertRoleMention = (editor: Editor, role: Role) =>
   ins(editor, { type: 'mentionRole', id: role.id, role, children: [{ text: `<@&${role.id}>` }] });
@@ -176,6 +261,7 @@ function serializeInlineNode(node: any): string {
     case 'mentionChannel': return `<#${node.id}>`;
     case 'mentionServer': return `<#&${node.id}>`;
     case 'mentionRole': return `<@&${node.id}>`;
+    case 'mentionEveryone': return `@${node.subtype}`;
     case "emoji": return (node.emoji as string) ?? "";
     case "customEmoji": return `<:${node.emojiName}:${node.emojiId}>`;
     default:
@@ -195,10 +281,10 @@ function serializeFragmentToText(
       const isFirst = i === 0;
       const isLast  = i === nodes.length - 1;
       const content = (block.children ?? []).map(serializeInlineNode).join('');
- 
+
       const partialStart = isFirst && !startsAtFirstBlock;
       const partialEnd = isLast  && !endsAtLastBlock;
- 
+
       switch (block.type) {
         case 'quote':
           return partialStart ? content : `> ${content}`;
@@ -272,7 +358,8 @@ const MessageInput = forwardRef(function MessageInput({
   channelState,
   messageState,
   userState,
-  serverState
+  serverState,
+  popoutState
 }: {
   isChannel?: boolean;
   placeholderText?: string;
@@ -288,13 +375,24 @@ const MessageInput = forwardRef(function MessageInput({
   messageState?: MessageState;
   userState?: UserState;
   serverState?: ServerState;
+  popoutState?: PopoutState;
 }, ref) {
+  useLocale();
   const { token, user, userSettings } = authState ?? useAuthState();
-  const { channels, currentChannel, getChannelDraft, setChannelDraft, getPendingReplies, clearPendingReplies } = channelState ?? useChannelState();
-  const { addMessage } = messageState ?? useMessageState();
-  const { users, getMember } = userState ?? useUserState();
   serverState ??= useServerState();
+  channelState ??= useChannelState();
+  messageState ??= useMessageState();
+  userState ??= useUserState();
+  const {
+    channels, currentChannel,
+    getChannelDraft, setChannelDraft,
+    getPendingReplies, clearPendingReplies,
+    getPendingAttachments, addPendingAttachment, removePendingAttachment, clearPendingAttachments
+  } = channelState;
+  const { addMessage, updateMessage } = messageState;
+  const { users, getMember } = userState;
   const { servers, currentServer } = serverState;
+  const { open, close } = popoutState ?? usePopoutState();
 
   const usersRef = useRef(users);
   const channelsRef = useRef(channels);
@@ -351,11 +449,13 @@ const MessageInput = forwardRef(function MessageInput({
     try { Editor.normalize(editor, { force: true }); } catch { /* ignore */ }
     try { Transforms.select(editor, Editor.end(editor, [])); } catch { editor.selection = null; }
     editor.onChange();
+    triggerShikiAll();
 
     prevChannelIdRef.current = newId;
   }, [currentChannel?.id]);
 
   const editableRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [target, setTarget] = useState<Range | null>(null);
   const [search, setSearch] = useState("");
   const [index, setIndex] = useState(0);
@@ -377,6 +477,39 @@ const MessageInput = forwardRef(function MessageInput({
     run();
     return () => { cancelled = true; };
   }, [search]);
+
+  const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopTypingIndicator = useCallback(() => {
+    if (typingIntervalRef.current === null)
+      return;
+    clearInterval(typingIntervalRef.current);
+    typingIntervalRef.current = null;
+    if (isChannel && currentChannel)
+      connection?.invoke("StopTyping", currentChannel.id).catch(() => {});
+  }, [isChannel, currentChannel]);
+
+  const startTypingIndicator = useCallback(() => {
+    if (!isChannel || !currentChannel || typingIntervalRef.current !== null)
+      return;
+    connection?.invoke("StartTyping", currentChannel.id).catch(() => {});
+    // Keep the server-side cache alive while the user is actively typing
+    typingIntervalRef.current = setInterval(() => {
+      connection?.invoke("StartTyping", currentChannel.id).catch(() => {});
+    }, 6000);
+  }, [isChannel, currentChannel]);
+
+  useEffect(() => () => {
+    if (typingIntervalRef.current !== null)
+      clearInterval(typingIntervalRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (typingIntervalRef.current !== null) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+  }, [currentChannel?.id]);
 
   const shikiHighlighter = useMemo(() => new ShikiEditorHighlighter(ensureLanguageLoaded), []);
   const [hlReady, setHlReady] = useState(() => !!superHighlighter);
@@ -407,10 +540,12 @@ const MessageInput = forwardRef(function MessageInput({
       }
     });
   };
+
   const shikiTheme = useMemo(
     () => getShikiTheme(userSettings ?? null),
     [userSettings?.theme]
   );
+
   useEffect(() => {
     if (hlReady && superHighlighter)
       triggerShikiAll();
@@ -419,6 +554,24 @@ const MessageInput = forwardRef(function MessageInput({
   useEffect(() => {
     return () => shikiHighlighter.clearAll();
   }, [shikiHighlighter]);
+
+  useEffect(() => {
+    if (!isChannel)
+      return;
+    const onDragOver = (e: DragEvent) => e.preventDefault();
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length > 0 && currentChannel)
+        files.forEach(f => addPendingAttachment(currentChannel.id, f));
+    };
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [isChannel, currentChannel?.id, addPendingAttachment]);
 
   useEffect(() => {
     if (!isChannel)
@@ -453,6 +606,7 @@ const MessageInput = forwardRef(function MessageInput({
         editor.selection = null;
       }
       editor.onChange();
+      triggerShikiAll();
     },
     focus(moveToEnd = false, preventScroll = false) {
       if (moveToEnd) {
@@ -483,6 +637,52 @@ const MessageInput = forwardRef(function MessageInput({
     editor.selection = { anchor: { path: [0, 0], offset: 0 }, focus: { path: [0, 0], offset: 0 } };
     editor.history = { undos: [], redos: [] };
     editor.onChange();
+  };
+
+  const pendingFiles = isChannel && currentChannel
+    ? getPendingAttachments(currentChannel.id)
+    : [];
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 0 && currentChannel)
+      files.forEach(f => addPendingAttachment(currentChannel.id, f));
+    e.target.value = '';
+    ReactEditor.focus(editor);
+  };
+
+  const openFilePicker = () => fileInputRef.current?.click();
+
+  const openEmojiPicker = (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const id = 'emoji-picker';
+    open({
+      id,
+      element: (
+        <EmojiPickerPopout
+          userSettings={userSettings}
+          position={{ top: rect.top - 480, left: rect.left }}
+          servers={servers}
+          onSelect={(emoji, e) => {
+            const native = typeof emoji === 'string' ? emoji : emoji;
+            Transforms.insertText(editor, native);
+            ReactEditor.focus(editor);
+            if (!e.shiftKey)
+              close(id);
+          }}
+          onSelectCustomEmoji={(name, emojiId) => {
+            const srv = servers.find(s => s.emojis?.some(em => em.id === Number(emojiId)));
+            const em = srv?.emojis?.find(em => em.id === Number(emojiId));
+            if (em)
+              insertCustomEmoji(editor, name, Number(emojiId), getEmojiUrl(em) ?? '');
+            ReactEditor.focus(editor);
+            if (!e.shiftKey)
+              close(id);
+          }}
+        />
+      ),
+      options: {}
+    });
   };
 
   const decorate = ([node, path]: any): any[] => {
@@ -516,7 +716,7 @@ const MessageInput = forwardRef(function MessageInput({
       const nodeStart = offset;
       const nodeEnd = offset + nodeText.length;
       const overlapStart = Math.max(t.start, nodeStart);
-      const overlapEnd = Math.min(t.end,   nodeEnd);
+      const overlapEnd = Math.min(t.end, nodeEnd);
       if (overlapStart < overlapEnd) {
         results.push({
           [t.style]: true,
@@ -553,7 +753,7 @@ const MessageInput = forwardRef(function MessageInput({
     if (leaf.subscript)
       rendered = <sub>{rendered}</sub>;
     if (leaf.color)
-      rendered = <span className="colored" style={{ '--color': leaf.hex } as any}>{rendered}</span>;
+      rendered = <span className={"colored" + (leaf.colors ? " gradient" : "")} style={{ '--color': leaf.hex, ...(leaf.colors && { '--gradient': `linear-gradient(90deg, ${leaf.colors.join(", ")})` }) } as any}>{rendered}</span>;
     if (leaf.link)
       rendered = <a>{rendered}</a>;
     if (leaf.timestamp)
@@ -577,7 +777,7 @@ const MessageInput = forwardRef(function MessageInput({
       rendered = (
         <span
           className="progress-bar-edit"
-          title={leaf.label ? `Progress: ${leaf.label}` : `Progress: ${Math.round(pct)}%`}
+          title={t("input.progress", { percent: leaf.label ?? `${Math.round(pct)}%` })}
           style={{
             backgroundImage: `linear-gradient(90deg, rgba(88, 101, 242, 0.28) ${pct}%, rgba(114, 118, 125, 0.15) ${pct}%)`,
             borderRadius: '4px',
@@ -600,44 +800,68 @@ const MessageInput = forwardRef(function MessageInput({
     switch (element.type) {
       case 'mentionUser': {
         const m = getMember(element.user?.id, currentServer?.id);
+        const r = m && getDisplayRole(serverState, m, true);
+        const col = r?.colors?.[0] ?? r?.color;
         return (
           <span
             {...attributes}
             contentEditable={false}
             className="mention int"
-            style={{
-              fontFamily: `${m?.nameFont}, ${element.user?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`,
-              "--special-mention-color": undefined// getRoleColor(serverState, element.user, m, currentServer === null),
-            } as any}
+            style={{ "--special-mention-color": col && intToHex(col) }}
           >
-            @{getDisplayName(element.user)}
+            <Name
+              user={element.user}
+              member={m}
+              serverState={serverState}
+              allowDmColors={!!!currentServer}
+              md={markdownContext}
+              spoilerState={spoilerState}
+              prefix="@"
+            />
           </span>
         );
       }
 
       case 'mentionRole':
+        const col = element.role?.colors?.[0] ?? element.role?.color;
         return (
           <span
             {...attributes}
             contentEditable={false}
             className="mention int"
-            style={{ "--special-mention-color": element.role?.color ? `#${element.role.color.toString(16).padStart(6, "0")}` : undefined } as any}
+            style={{ "--special-mention-color": col && intToHex(col) }}
           >
-            @{element.role?.name}
+            <Name
+              user={null}
+              serverState={serverState}
+              allowDmColors={!!!currentServer}
+              md={markdownContext}
+              spoilerState={spoilerState}
+              overRole={element.role}
+              prefix="@"
+              text={element.role?.name}
+            />
           </span>
         );
 
       case 'mentionChannel':
         return (
           <span {...attributes} contentEditable={false} className="mention int">
-            {getChannelIcon(element.channel, { className: "icon" })}{element.channel?.name}
+            {getChannelIcon(element.channel, { className: "icon" })}{RenderMarkdown({ content: element.channel?.name, spoilerStateRef: spoilerState, ...markdownContext })}
           </span>
         );
 
       case 'mentionServer':
         return (
           <span {...attributes} contentEditable={false} className="mention int">
-            <img src={getIcon(element.server)} className="server-icon2" />{element.server?.name}
+            <img src={getIcon(element.server)} className="server-icon2" />{RenderMarkdown({ content: element.server?.name, spoilerStateRef: spoilerState, ...markdownContext })}
+          </span>
+        );
+      
+      case 'mentionEveryone':
+        return (
+          <span {...attributes} contentEditable={false} className="mention int">
+            @{element.subtype}
           </span>
         );
 
@@ -647,7 +871,7 @@ const MessageInput = forwardRef(function MessageInput({
             {renderEmoji(userSettings, element.emoji)}
           </span>
         );
-      
+
       case "customEmoji":
         return (
           <span {...attributes} contentEditable={false}>
@@ -660,7 +884,7 @@ const MessageInput = forwardRef(function MessageInput({
                     width: "1.375em", height: "1.375em",
                     verticalAlign: "-0.3em",
                     display: "inline-block",
-                    objectFit: "contain",
+                    objectFit: "contain"
                   }}
                 />
               : <code>:{element.emojiName}:</code>
@@ -724,7 +948,7 @@ const MessageInput = forwardRef(function MessageInput({
 
       case "code-block":
         return (
-          <CodeBlockElement 
+          <CodeBlockElement
             attributes={attributes}
             element={element}
             editor={editor}
@@ -818,6 +1042,9 @@ const MessageInput = forwardRef(function MessageInput({
 
   const initialValue = useMemo(() => slateFromMarkdown(initialText), []);
 
+  const markdownContext = makeMarkdownContext(serverState, channelState, userState, messageState, userSettings, token);
+  const spoilerState = useRef<Map<number, boolean>>(new Map());
+
   const getCurrentBlockType = (): string | null => {
     const m = Editor.above(editor, { match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any) });
     return m ? (m[0] as any).type ?? null : null;
@@ -883,6 +1110,12 @@ const MessageInput = forwardRef(function MessageInput({
           });
         }
 
+        if (isChannel && editor.children.length > 0) {
+          const md = getMarkdown();
+          if (md === '')
+            stopTypingIndicator();
+        }
+
         if (setText) {
           const md = getMarkdown();
           setText(giveNull && md.length === 0 ? null : md);
@@ -917,11 +1150,11 @@ const MessageInput = forwardRef(function MessageInput({
             className="ven-colors mention-popup uno"
           >
             <span className="mention-title">
-              {search.startsWith("@&") ? "ROLES"
-               : search.startsWith("#&") ? "SERVERS"
-               : search[0] === "@" ? "MEMBERS"
-               : search[0] === "#" ? "CHANNELS"
-               : "EMOJIS"}
+              {search.startsWith("@&") ? t("input.mention.roles")
+               : search.startsWith("#&") ? t("input.mention.servers")
+               : search[0] === "@" ? t("input.mention.members")
+               : search[0] === "#" ? t("input.mention.channels")
+               : t("input.mention.emojis")}
             </span>
             {mentionResults().map((item, i) => {
               switch (item.type) {
@@ -932,7 +1165,7 @@ const MessageInput = forwardRef(function MessageInput({
                     <div key={u.id} className={`mention-item int ${i === index ? "active" : ""}`}
                       onMouseDown={e => { e.preventDefault(); Transforms.select(editor, target!); insertUserMention(editor, u); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
-                      <img className="avatar" src={getAvatar(u, m)} alt="avatar" />
+                      <img className="avatar" src={getAvatar(u, m)} alt={t("alt.avatar")} />
                       <span style={{ fontFamily: `${m?.nameFont}, ${u.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif` }}>{getDisplayName(u, m)}</span>
                       <span className="username">@{u.username}</span>
                     </div>
@@ -1012,429 +1245,591 @@ const MessageInput = forwardRef(function MessageInput({
           rootRef.current ?? document.body
         )}
 
-      <Editable
-        ref={editableRef}
-        className="msg-input"
-        placeholder=" "
-        renderPlaceholder={({ attributes }) => (
-          <span {...attributes}>
-            {placeholder !== undefined
-              ? placeholder
-              : placeholderText !== undefined
-                ? placeholderText
-                : isChannel
-                  ? currentChannel
-                    ? <>Send a message in {getChannelIcon(currentChannel, { className: "inline-icon" })}{currentChannel.name}</>
-                    : "Send a message into the void"
-                  : "Type..."}
-          </span>
+      {isChannel && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+      )}
+
+      {isChannel && pendingFiles.length > 0 && (
+        <div style={{
+          display: 'flex',
+          gap: 8,
+          padding: '6px 0 4px',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          marginBottom: 15
+        }}>
+          {pendingFiles.map((file, i) => (
+            <AttachmentPreview
+              key={`${file.name}-${i}`}
+              file={file}
+              onRemove={() => currentChannel && removePendingAttachment(currentChannel.id, i)}
+            />
+          ))}
+        </div>
+      )}
+
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-end',
+        gap: 6,
+      }}>
+        {isChannel && (
+          <button
+            type="button"
+            onMouseDown={e => { e.preventDefault(); openFilePicker(); }}
+            style={{
+              flexShrink: 0,
+              background: 'none',
+              border: 'none',
+              boxShadow: 'none',
+              padding: '2px 4px',
+              color: 'var(--text-4)',
+              cursor: 'pointer',
+              fontSize: 18,
+              lineHeight: 1,
+              alignSelf: 'center',
+              transition: 'color 150ms',
+            }}
+            title="Attach file"
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-4)')}
+          >
+            ➕
+          </button>
         )}
-        decorate={decorate}
-        renderLeaf={Leaf}
-        renderElement={renderElement}
-        style={style}
-        spellCheck
-        // Suppress Slate's built-in scroll-cursor-into-view behaviour.
-        // For the channel input this is a no-op (it's always visible at the
-        // bottom). For inline message editing it prevents the message list
-        // from jumping when focus() is called.
-        scrollSelectionIntoView={() => {}}
 
-        onCopy={e => {
-          const { selection } = editor;
-          if (!selection || Range.isCollapsed(selection))
-            return;
-          e.preventDefault();
-          const fragment = Editor.fragment(editor, selection);
-          const [start, end] = Range.edges(selection);
-          
-          const text = serializeFragmentToText(
-            fragment,
-            selectionAtBlockBoundary(editor, start, 'start'),
-            selectionAtBlockBoundary(editor, end, 'end')
-          );
+        <Editable
+          ref={editableRef}
+          className="msg-input"
+          placeholder=" "
+          renderPlaceholder={({ attributes }) => (
+            <span {...attributes}>
+              {placeholder !== undefined
+                ? placeholder
+                : placeholderText !== undefined
+                  ? placeholderText
+                  : isChannel
+                    ? currentChannel
+                      ? <>{t("input.placeholder", { channel: "" }).replace("{channel}", "").trimEnd()}{" "}{getChannelIcon(currentChannel, { className: "inline-icon" })}{currentChannel.name}</>
+                      : t("input.placeholder_void")
+                    : t("input.type")}
+            </span>
+          )}
+          decorate={decorate}
+          renderLeaf={Leaf}
+          renderElement={renderElement}
+          style={style}
+          spellCheck
+          scrollSelectionIntoView={(_, domRange) => {
+            const container = editableRef.current;
+            if (!container)
+              return;
+            const containerRect = container.getBoundingClientRect();
+            const rangeRect = domRange.getBoundingClientRect();
+            if (rangeRect.bottom > containerRect.bottom)
+              container.scrollTop += rangeRect.bottom - containerRect.bottom + 4;
+            else if (rangeRect.top < containerRect.top)
+              container.scrollTop -= containerRect.top - rangeRect.top + 4;
+          }}
 
-          e.clipboardData.setData("text/plain", text);
-          try {
-            const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
-            e.clipboardData.setData("application/x-slate-fragment", encoded);
-          } catch { /* btoa can fail on certain unicode */ }
-        }}
-        onCut={e => {
-          const { selection } = editor;
-          if (!selection || Range.isCollapsed(editor.selection!))
-            return;
-          e.preventDefault();
-          const fragment = Editor.fragment(editor, selection);
-          const [start, end] = Range.edges(selection);
-
-          const text = serializeFragmentToText(
-            fragment,
-            selectionAtBlockBoundary(editor, start, 'start'),
-            selectionAtBlockBoundary(editor, end, 'end')
-          );
-
-          e.clipboardData.setData("text/plain", text);
-          try {
-            const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
-            e.clipboardData.setData("application/x-slate-fragment", encoded);
-          } catch {}
-          Transforms.delete(editor);
-        }}
-
-        onKeyDown={e => {
-          if (onKey && onKey(e))
-            return;
-
-          if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.metaKey) {
+          onCopy={e => {
             const { selection } = editor;
-            if (selection) {
-              const isForward = e.key === 'ArrowRight';
-              const isExpanding = e.shiftKey;
-              const isWordJump = e.ctrlKey || e.altKey;
+            if (!selection || Range.isCollapsed(selection))
+              return;
+            e.preventDefault();
+            const fragment = Editor.fragment(editor, selection);
+            const [start, end] = Range.edges(selection);
+            
+            const text = serializeFragmentToText(
+              fragment,
+              selectionAtBlockBoundary(editor, start, 'start'),
+              selectionAtBlockBoundary(editor, end, 'end')
+            );
 
-              const isVoidInline = (n: Node): boolean =>
-                !Editor.isEditor(n) && editor.isInline(n as any) && editor.isVoid(n as any);
+            e.clipboardData.setData("text/plain", text);
+            try {
+              const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
+              e.clipboardData.setData("application/x-slate-fragment", encoded);
+            } catch { /* btoa can fail on certain unicode */ }
+          }}
+          onCut={e => {
+            const { selection } = editor;
+            if (!selection || Range.isCollapsed(editor.selection!))
+              return;
+            e.preventDefault();
+            const fragment = Editor.fragment(editor, selection);
+            const [start, end] = Range.edges(selection);
 
-              const applyDest = (dest: ReturnType<typeof Editor.after>) => {
-                if (!dest)
+            const text = serializeFragmentToText(
+              fragment,
+              selectionAtBlockBoundary(editor, start, 'start'),
+              selectionAtBlockBoundary(editor, end, 'end')
+            );
+
+            e.clipboardData.setData("text/plain", text);
+            try {
+              const encoded = window.btoa(encodeURIComponent(JSON.stringify(fragment)));
+              e.clipboardData.setData("application/x-slate-fragment", encoded);
+            } catch {}
+            Transforms.delete(editor);
+          }}
+
+          onKeyDown={e => {
+            if (onKey && onKey(e))
+              return;
+
+            if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.metaKey) {
+              const { selection } = editor;
+              if (selection) {
+                const isForward = e.key === 'ArrowRight';
+                const isExpanding = e.shiftKey;
+                const isWordJump = e.ctrlKey || e.altKey;
+
+                const isVoidInline = (n: Node): boolean =>
+                  !Editor.isEditor(n) && editor.isInline(n as any) && editor.isVoid(n as any);
+
+                const applyDest = (dest: ReturnType<typeof Editor.after>) => {
+                  if (!dest)
+                    return;
+                  isExpanding
+                    ? Transforms.select(editor, { anchor: selection.anchor, focus: dest })
+                    : Transforms.select(editor, dest);
+                };
+
+                if (isWordJump) {
+                  e.preventDefault();
+                  const startPoint = isExpanding
+                    ? selection.focus
+                    : isForward
+                      ? Range.end(selection)
+                      : Range.start(selection);
+
+                  const blockIdx = startPoint.path[0];
+                  let cur = startPoint;
+
+                  try {
+                    const trapped = Editor.above(editor, { at: cur, match: isVoidInline, voids: true });
+                    if (trapped) {
+                      const out = isForward
+                        ? Editor.after(editor, trapped[1])
+                        : Editor.before(editor, trapped[1]);
+                      if (out && out.path[0] === blockIdx)
+                        cur = out;
+                    }
+                  } catch {}
+
+                  const nextStep = (p: typeof startPoint) => {
+                    try {
+                      const adj = isForward
+                        ? Editor.after(editor, p, { voids: true })
+                        : Editor.before(editor, p, { voids: true });
+                      if (!adj || adj.path[0] !== blockIdx)
+                        return null;
+
+                      const voidEntry = Editor.above(editor, { at: adj, match: isVoidInline, voids: true });
+                      if (voidEntry) {
+                        const pastVoid = isForward
+                          ? Editor.after(editor, voidEntry[1])
+                          : Editor.before(editor, voidEntry[1]);
+                        if (!pastVoid || pastVoid.path[0] !== blockIdx)
+                          return null;
+                        return { dest: pastVoid, char: '\x01', isVoid: true };
+                      }
+
+                      const range = isForward
+                        ? Editor.range(editor, p, adj)
+                        : Editor.range(editor, adj, p);
+                      return { dest: adj, char: Editor.string(editor, range), isVoid: false };
+                    } catch { return null; }
+                  };
+
+                  let phase: 'skipSpaces' | 'skipWord' = isForward ? 'skipSpaces' : 'skipWord';
+                  let moved = false;
+
+                  for (let i = 0; i < 500; i++) {
+                    const step = nextStep(cur);
+                    if (!step)
+                      break;
+                    const isSpace = !step.isVoid && /\s/.test(step.char);
+
+                    if (isForward) {
+                      if (phase === 'skipSpaces') {
+                        if (isSpace) {
+                          cur = step.dest;
+                        } else {
+                          phase = 'skipWord';
+                          cur = step.dest;
+                          moved = true;
+                          if (step.isVoid)
+                            break;
+                        }
+                      } else {
+                        if (isSpace)
+                          break;
+                        cur = step.dest; moved = true;
+                        if (step.isVoid)
+                          break;
+                      }
+                    } else {
+                      if (phase === 'skipWord') {
+                        if (isSpace) {
+                          if (!moved) {
+                            phase = 'skipSpaces';
+                            cur = step.dest;
+                          } else break;
+                        } else if (step.isVoid) {
+                          if (!moved) {
+                            cur = step.dest;
+                            moved = true;
+                          }
+                          break;
+                        } else {
+                          cur = step.dest;
+                          moved = true;
+                        }
+                      } else {
+                        if (isSpace) {
+                          cur = step.dest;
+                        } else if (step.isVoid) {
+                          cur = step.dest;
+                          break;
+                        } else {
+                          phase = 'skipWord';
+                          cur = step.dest;
+                          moved = true;
+                        }
+                      }
+                    }
+                  }
+
+                  applyDest(cur);
                   return;
-                isExpanding
-                  ? Transforms.select(editor, { anchor: selection.anchor, focus: dest })
-                  : Transforms.select(editor, dest);
-              };
+                }
 
-              if (isWordJump) {
-                e.preventDefault();
-                const startPoint = isExpanding
+                const movingPoint = isExpanding
                   ? selection.focus
                   : isForward
                     ? Range.end(selection)
                     : Range.start(selection);
 
-                const blockIdx = startPoint.path[0];
-                let cur = startPoint;
-
                 try {
-                  const trapped = Editor.above(editor, { at: cur, match: isVoidInline, voids: true });
+                  const trapped = Editor.above(editor, { at: movingPoint, match: isVoidInline, voids: true });
                   if (trapped) {
-                    const out = isForward
-                      ? Editor.after(editor, trapped[1])
-                      : Editor.before(editor, trapped[1]);
-                    if (out && out.path[0] === blockIdx) cur = out;
-                  }
-                } catch {}
-
-                const nextStep = (p: typeof startPoint) => {
-                  try {
-                    const adj = isForward
-                      ? Editor.after(editor, p, { voids: true })
-                      : Editor.before(editor, p, { voids: true });
-                    if (!adj || adj.path[0] !== blockIdx)
-                      return null;
-
-                    const voidEntry = Editor.above(editor, { at: adj, match: isVoidInline, voids: true });
-                    if (voidEntry) {
-                      const pastVoid = isForward
-                        ? Editor.after(editor, voidEntry[1])
-                        : Editor.before(editor, voidEntry[1]);
-                      if (!pastVoid || pastVoid.path[0] !== blockIdx)
-                        return null;
-                      return { dest: pastVoid, char: '\x01', isVoid: true };
-                    }
-
-                    const range = isForward
-                      ? Editor.range(editor, p, adj)
-                      : Editor.range(editor, adj, p);
-                    return { dest: adj, char: Editor.string(editor, range), isVoid: false };
-                  } catch { return null; }
-                };
-
-                let phase: 'skipSpaces' | 'skipWord' = isForward ? 'skipSpaces' : 'skipWord';
-                let moved = false;
-
-                for (let i = 0; i < 500; i++) {
-                  const step = nextStep(cur);
-                  if (!step)
-                    break;
-                  const isSpace = !step.isVoid && /\s/.test(step.char);
-
-                  if (isForward) {
-                    if (phase === 'skipSpaces') {
-                      if (isSpace) {
-                        cur = step.dest;
-                      } else {
-                        phase = 'skipWord';
-                        cur = step.dest;
-                        moved = true;
-                        if (step.isVoid)
-                          break;
-                        }
-                    } else {
-                      if (isSpace)
-                        break;
-                      cur = step.dest; moved = true;
-                      if (step.isVoid)
-                        break;
-                    }
-                  } else {
-                    if (phase === 'skipWord') {
-                      if (isSpace) {
-                        if (!moved) {
-                          phase = 'skipSpaces';
-                          cur = step.dest;
-                        } else break;
-                      } else if (step.isVoid) {
-                        if (!moved) {
-                          cur = step.dest;
-                          moved = true;
-                        }
-                        break;
-                      } else {
-                        cur = step.dest;
-                        moved = true;
-                      }
-                    } else {
-                      if (isSpace) {
-                        cur = step.dest;
-                      } else if (step.isVoid) {
-                        cur = step.dest;
-                        break;
-                      } else {
-                        phase = 'skipWord';
-                        cur = step.dest;
-                        moved = true;
-                      }
-                    }
-                  }
-                }
-
-                applyDest(cur);
-                return;
-              }
-
-              const movingPoint = isExpanding
-                ? selection.focus
-                : isForward
-                  ? Range.end(selection)
-                  : Range.start(selection);
-
-              try {
-                const trapped = Editor.above(editor, { at: movingPoint, match: isVoidInline, voids: true });
-                if (trapped) {
-                  e.preventDefault();
-                  applyDest(isForward ? Editor.after(editor, trapped[1]) : Editor.before(editor, trapped[1]));
-                  return;
-                }
-
-                const peek = isForward
-                  ? Editor.after(editor, movingPoint, { voids: true })
-                  : Editor.before(editor, movingPoint, { voids: true });
-
-                if (peek) {
-                  const adjacent = Editor.above(editor, { at: peek, match: isVoidInline, voids: true });
-                  if (adjacent) {
                     e.preventDefault();
-                    applyDest(isForward ? Editor.after(editor, adjacent[1]) : Editor.before(editor, adjacent[1]));
+                    applyDest(isForward ? Editor.after(editor, trapped[1]) : Editor.before(editor, trapped[1]));
                     return;
                   }
-                }
-              } catch {}
-            }
-          }
 
-          const t = target;
-          const results = mentionResults();
+                  const peek = isForward
+                    ? Editor.after(editor, movingPoint, { voids: true })
+                    : Editor.before(editor, movingPoint, { voids: true });
 
-          if (t && results.length > 0) {
-            switch (e.key) {
-              case "ArrowDown":
-                e.preventDefault();
-                setIndex((index + 1) % results.length);
-                return;
-              case "ArrowUp":
-                e.preventDefault();
-                setIndex((index - 1 + results.length) % results.length);
-                return;
-              case "Tab":
-              case "Enter":
-                e.preventDefault();
-                Transforms.select(editor, t);
-                switch (results[index].type) {
-                  case "channel":
-                    insertChannelMention(editor, results[index] as Channel);
-                    break;
-                  case "user":
-                    insertUserMention(editor, results[index] as User);
-                    break;
-                  case "server":
-                    insertServerMention(editor, results[index] as Server);
-                    break;
-                  case "role":
-                    insertRoleMention(editor, results[index] as Role);
-                    break;
-                  case "emoji":
-                    setEmojiResults([]);
-                    insertEmoji(editor, results[index] as Emoji);
-                    break;
-                  case "customEmoji": {
-                    const ce = results[index] as CustomEmoji;
-                    insertCustomEmoji(editor, ce.name, ce.id!, getEmojiUrl(ce) ?? "");
-                    break;
+                  if (peek) {
+                    const adjacent = Editor.above(editor, { at: peek, match: isVoidInline, voids: true });
+                    if (adjacent) {
+                      e.preventDefault();
+                      applyDest(isForward ? Editor.after(editor, adjacent[1]) : Editor.before(editor, adjacent[1]));
+                      return;
+                    }
                   }
-                }
-                setTarget(null);
-                return;
-              case "Escape":
-                setTarget(null);
-                return;
+                } catch {}
+              }
             }
-          }
 
-          if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-            const blockType = getCurrentBlockType();
-            if (['code-block', 'math-block'].includes(blockType ?? '')) {
-              e.preventDefault();
-              Transforms.select(editor, {
-                anchor: Editor.start(editor, []),
-                focus: Editor.end(editor, [])
-              });
-              return;
+            const t = target;
+            const results = mentionResults();
+
+            if (t && results.length > 0) {
+              switch (e.key) {
+                case "ArrowDown":
+                  e.preventDefault();
+                  setIndex((index + 1) % results.length);
+                  return;
+                case "ArrowUp":
+                  e.preventDefault();
+                  setIndex((index - 1 + results.length) % results.length);
+                  return;
+                case "Tab":
+                case "Enter":
+                  e.preventDefault();
+                  Transforms.select(editor, t);
+                  switch (results[index].type) {
+                    case "channel":
+                      insertChannelMention(editor, results[index] as Channel);
+                      break;
+                    case "user":
+                      insertUserMention(editor, results[index] as User);
+                      break;
+                    case "server":
+                      insertServerMention(editor, results[index] as Server);
+                      break;
+                    case "role":
+                      insertRoleMention(editor, results[index] as Role);
+                      break;
+                    case "emoji":
+                      setEmojiResults([]);
+                      insertEmoji(editor, results[index] as Emoji);
+                      break;
+                    case "customEmoji": {
+                      const ce = results[index] as CustomEmoji;
+                      insertCustomEmoji(editor, ce.name, ce.id!, getEmojiUrl(ce) ?? "");
+                      break;
+                    }
+                  }
+                  setTarget(null);
+                  return;
+                case "Escape":
+                  setTarget(null);
+                  return;
+              }
             }
-          }
 
-          // todo: make StartTyping only invoke when actually typing text
-          // todo: make StopTyping invoke when text is cleared
-          if (isChannel)
-            connection?.invoke("StartTyping", currentChannel?.id ?? 0);
-
-          if (e.key === "Enter") {
-            const blockType = getCurrentBlockType();
-            if (e.shiftKey) {
-              if ([
-                'quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block',
-                'nested-quote', 'quote-list-item', 'quote-numbered-list-item',
-                'list-item-quote', 'numbered-list-item-quote'
-              ].includes(blockType ?? '')) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+              const blockType = getCurrentBlockType();
+              if (['code-block', 'math-block'].includes(blockType ?? '')) {
                 e.preventDefault();
-                editor.insertBreak();
+                Transforms.select(editor, {
+                  anchor: Editor.start(editor, []),
+                  focus: Editor.end(editor, [])
+                });
                 return;
               }
+            }
 
-              if (blockType === 'paragraph') {
-                const blockEntry = Editor.above(editor, { match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any) });
-                if (blockEntry && /^```(.*)$/.test(Node.string(blockEntry[0]))) {
+            const isTextProducing =
+              !e.ctrlKey && !e.metaKey && !e.altKey && (
+                e.key.length === 1 ||
+                e.key === 'Backspace' ||
+                e.key === 'Delete' ||
+                e.key === 'Enter'
+              );
+            if (isChannel && isTextProducing)
+              startTypingIndicator();
+
+            if (e.key === "Enter") {
+              const blockType = getCurrentBlockType();
+              if (e.shiftKey) {
+                if ([
+                  'quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block',
+                  'nested-quote', 'quote-list-item', 'quote-numbered-list-item',
+                  'list-item-quote', 'numbered-list-item-quote'
+                ].includes(blockType ?? '')) {
                   e.preventDefault();
                   editor.insertBreak();
                   return;
                 }
-              }
-            } else {
-              if (!e.ctrlKey && blockType === 'code-block') {
-                e.preventDefault();
-                editor.insertBreak();
-                return;
-              }
 
-              if (isChannel) {
-                e.preventDefault();
-                const md = getMarkdown();
-                if (md === "")
+                if (blockType === 'paragraph') {
+                  const blockEntry = Editor.above(editor, { match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any) });
+                  if (blockEntry && /^```(.*)$/.test(Node.string(blockEntry[0]))) {
+                    e.preventDefault();
+                    editor.insertBreak();
+                    return;
+                  }
+                }
+              } else {
+                if (!e.ctrlKey && blockType === 'code-block') {
+                  e.preventDefault();
+                  editor.insertBreak();
                   return;
-                clearEditor();
-                if (!currentChannel || !user)
-                  return;
+                }
 
-                const references = getPendingReplies(currentChannel.id).map(msg => msg.id);
-                clearPendingReplies(currentChannel.id);
+                if (isChannel) {
+                  e.preventDefault();
+                  const md = getMarkdown();
+                  const hasPendingAttachments = pendingFiles.length > 0;
+                  if (md === "" && !hasPendingAttachments)
+                    return;
 
-                const msg = {
-                  id: -1, channelId: currentChannel.id, authorId: user.id,
-                  mentions: [], reactions: [], content: md, previousContent: null,
-                  timestamp: new Date().toString(), editedTimestamp: null,
-                  isDeleted: false, isPinned: false, sending: true,
-                  nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`),
-                  references
-                };
-                addMessage(msg);
-                sendMessage(currentChannel.id, md, msg.nonce, references, { headers: { Authorization: `Bearer ${token}` } })
-                  .then(sentMsg => addMessage(sentMsg));
-              } else if (onEnter) {
-                e.preventDefault();
-                const md = getMarkdown();
-                if (md === "")
-                  return;
-                onEnter(md);
+                  clearEditor();
+                  stopTypingIndicator();
+
+                  if (!currentChannel || !user)
+                    return;
+
+                  const references = getPendingReplies(currentChannel.id).map(msg => msg.id);
+                  clearPendingReplies(currentChannel.id);
+
+                  const filesToUpload = [...pendingFiles];
+                  clearPendingAttachments(currentChannel.id);
+
+                  const msg = {
+                    id: -1,
+                    channelId: currentChannel.id,
+                    authorId: user.id,
+                    mentions: [],
+                    reactions: [],
+                    content: md,
+                    previousContent: null,
+                    timestamp: new Date().toString(),
+                    editedTimestamp: null,
+                    isDeleted: false,
+                    isPinned: false,
+                    sending: true,
+                    nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`),
+                    references,
+                    attachments: filesToUpload.map(f => ({
+                      fileName: f.name,
+                      localUrl: URL.createObjectURL(f),
+                      progress: 0,
+                      contentType: f.type || "application/octet-stream",
+                      size: f.size
+                    }))
+                  };
+                  addMessage(msg);
+
+                  const opts = { headers: { Authorization: `Bearer ${token}` } };
+                  const progressMap = new Map<string, number>(filesToUpload.map(f => [f.name, 0]));
+
+                  const reportProgress = (fileName: string, percent: number) => {
+                    progressMap.set(fileName, percent);
+                    updateMessage({
+                      id: msg.id,
+                      nonce: msg.nonce,
+                      attachments: msg.attachments.map(a => ({
+                        ...a,
+                        progress: progressMap.get(a.fileName) ?? a.progress,
+                      })),
+                    });
+                  };
+
+                  Promise.all(filesToUpload.map(f => uploadAttachment(f, opts, pct => reportProgress(f.name, pct))))
+                    .then(uploaded => uploaded.map(r => r.id))
+                    .catch(() => [])
+                    .then(attachmentIds =>
+                      sendMessage(currentChannel.id, md, msg.nonce!, references, attachmentIds, opts))
+                    .then(sentMsg => addMessage(sentMsg));
+                } else if (onEnter) {
+                  e.preventDefault();
+                  const md = getMarkdown();
+                  if (md === "")
+                    return;
+                  onEnter(md);
+                }
               }
             }
-          }
 
-          // allow escaping block elements via arrow keys either at the start of the block or the end
-          if (["ArrowDown", "ArrowUp"].includes(e.key) && ['code-block', 'math-block'].includes(getCurrentBlockType() ?? '')) {
-            const sel = editor.selection;
-            if (sel && Range.isCollapsed(sel)) {
-              const path = Editor.path(editor, sel);
-              const down = e.key === "ArrowDown";
-              
-              if (down && Editor.isEnd(editor, sel.anchor, path) || !down && Editor.isStart(editor, sel.anchor, path)) {
-                const end = down ? Editor.end(editor, path) : Editor.start(editor, path);
-                const next = down ? Editor.after(editor, end) : Editor.before(editor, end);
-                if (!next) {
+            // allow escaping block elements via arrow keys either at the start of the block or the end
+            if (["ArrowDown", "ArrowUp"].includes(e.key) && ['code-block', 'math-block'].includes(getCurrentBlockType() ?? '')) {
+              const sel = editor.selection;
+              if (sel && Range.isCollapsed(sel)) {
+                const path = Editor.path(editor, sel);
+                const down = e.key === "ArrowDown";
+                
+                if (down && Editor.isEnd(editor, sel.anchor, path) || !down && Editor.isStart(editor, sel.anchor, path)) {
+                  const end = down ? Editor.end(editor, path) : Editor.start(editor, path);
+                  const next = down ? Editor.after(editor, end) : Editor.before(editor, end);
+                  if (!next) {
+                    Editor.withoutNormalizing(editor, () => {
+                      const nextPath = [path[0] + (down ? 1 : 0)] as [number];
+                      Transforms.insertNodes(editor, { type: 'paragraph', children: [{ text: '' }] } as any, { at: nextPath });
+                      Transforms.select(editor, Editor.start(editor, nextPath));
+                    });
+                    return;
+                  }
+                }
+              }
+            }
+          }}
+
+          onPaste={e => {
+            if (isChannel && currentChannel) {
+              const items = Array.from(e.clipboardData.items);
+              const fileItems = items.filter(it => it.kind === 'file');
+              if (fileItems.length > 0) {
+                e.preventDefault();
+                fileItems.forEach(it => {
+                  const file = it.getAsFile();
+                  if (file)
+                    addPendingAttachment(currentChannel.id, file);
+                });
+                return;
+              }
+            }
+
+            const text = e.clipboardData.getData("text/plain");
+            if (!text)
+              return;
+            e.preventDefault();
+
+            if (isChannel && currentChannel) {
+              const lines = text.split('\n');
+              if (lines.length > 250) {
+                const blob = new Blob([text], { type: 'text/plain' });
+                const file = new File([blob], 'paste.txt', { type: 'text/plain' });
+                addPendingAttachment(currentChannel.id, file);
+                return;
+              }
+            }
+
+            if (editor.selection && !Range.isCollapsed(editor.selection))
+              Transforms.delete(editor);
+
+            const blockType = getCurrentBlockType();
+
+            if (blockType === "code-block") {
+              Transforms.insertText(editor, text);
+              return;
+            }
+
+            const fragment = slateFromMarkdown(text);
+            const hasComplexBlocks = fragment.some(b => b.type !== "paragraph");
+
+            if (hasComplexBlocks) {
+              const blockEntry = Editor.above(editor, {
+                match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any)
+              });
+              if (blockEntry) {
+                const [bNode, bPath] = blockEntry;
+                if (Node.string(bNode) === "") {
                   Editor.withoutNormalizing(editor, () => {
-                    const nextPath = [path[0] + (down ? 1 : 0)] as [number];
-                    Transforms.insertNodes(editor, { type: 'paragraph', children: [{ text: '' }] } as any, { at: nextPath });
-                    Transforms.select(editor, Editor.start(editor, nextPath));
+                    Transforms.removeNodes(editor, { at: bPath });
+                    Transforms.insertNodes(editor, fragment, { at: bPath });
                   });
+                  try {
+                    const lastIdx = bPath[0] + fragment.length - 1;
+                    Transforms.select(editor, Editor.end(editor, [lastIdx]));
+                  } catch {}
                   return;
                 }
               }
             }
-          }
-        }}
 
-        onPaste={e => {
-          const text = e.clipboardData.getData("text/plain");
-          console.log(text);
-          if (!text)
-            return;
-          e.preventDefault();
+            Transforms.insertFragment(editor, fragment);
+          }}
+        />
 
-          if (editor.selection && !Range.isCollapsed(editor.selection))
-            Transforms.delete(editor);
-
-          const blockType = getCurrentBlockType();
-
-          if (blockType === "code-block") {
-            Transforms.insertText(editor, text);
-            return;
-          }
-
-          const fragment = slateFromMarkdown(text);
-          const hasComplexBlocks = fragment.some(b => b.type !== "paragraph");
-
-          if (hasComplexBlocks) {
-            const blockEntry = Editor.above(editor, {
-              match: n => !Editor.isEditor(n) && Editor.isBlock(editor, n as any)
-            });
-            if (blockEntry) {
-              const [bNode, bPath] = blockEntry;
-              if (Node.string(bNode) === "") {
-                Editor.withoutNormalizing(editor, () => {
-                  Transforms.removeNodes(editor, { at: bPath });
-                  Transforms.insertNodes(editor, fragment, { at: bPath });
-                });
-                try {
-                  const lastIdx = bPath[0] + fragment.length - 1;
-                  Transforms.select(editor, Editor.end(editor, [lastIdx]));
-                } catch {}
-                return;
-              }
-            }
-          }
-
-          Transforms.insertFragment(editor, fragment);
-        }}
-      />
+        {isChannel && (
+          <button
+            type="button"
+            onMouseUp={e => { e.preventDefault(); openEmojiPicker(e); }}
+            style={{
+              flexShrink: 0,
+              background: 'none',
+              border: 'none',
+              boxShadow: 'none',
+              padding: '2px 4px',
+              color: 'var(--text-4)',
+              cursor: 'pointer',
+              fontSize: 18,
+              lineHeight: 1,
+              alignSelf: 'center',
+              transition: 'color 150ms'
+            }}
+            title="Pick emoji"
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-2)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-4)')}
+          >
+            😊
+          </button>
+        )}
+      </div>
     </Slate>
   );
 });

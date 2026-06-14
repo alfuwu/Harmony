@@ -1,5 +1,5 @@
 // indonesian
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const id: Record<TranslationKeys, string> = {
   

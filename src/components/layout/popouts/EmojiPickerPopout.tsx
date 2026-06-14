@@ -4,8 +4,10 @@ import {
 import data from "@emoji-mart/data";
 import { SearchIndex, init } from "emoji-mart";
 import { renderEmoji } from "../../../lib/utils/MarkdownRenderer";
-import type { UserSettings } from "../../../lib/utils/userSettings";
-import type { Server } from "../../../lib/utils/types";
+import type { UserSettings } from "../../../lib/utils/UserSettings";
+import type { Server } from "../../../lib/utils/Types";
+import { t, useLocale } from "../../../lib/i18n/Index";
+import type { TranslationKeys } from "../../../lib/i18n/Schema";
 
 init({ data });
 
@@ -32,27 +34,27 @@ function saveArr(key: string, val: unknown[]): void {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
 }
 
-const CATEGORY_META: Record<string, { icon: string; label: string }> = {
-  people:   { icon: "😀", label: "Smileys & People"  },
-  nature:   { icon: "🐶", label: "Animals & Nature"  },
-  foods:    { icon: "🍔", label: "Food & Drink"       },
-  activity: { icon: "⚽", label: "Activities"         },
-  places:   { icon: "✈️", label: "Travel & Places"    },
-  objects:  { icon: "💡", label: "Objects"            },
-  symbols:  { icon: "❤️", label: "Symbols"            },
-  flags:    { icon: "🏳️", label: "Flags"              },
+const CATEGORY_META: Record<string, { icon: string; labelKey: TranslationKeys }> = {
+  people:   { icon: "😀", labelKey: "emoji_picker.cat.people"   },
+  nature:   { icon: "🐶", labelKey: "emoji_picker.cat.nature"   },
+  foods:    { icon: "🍔", labelKey: "emoji_picker.cat.foods"    },
+  activity: { icon: "⚽", labelKey: "emoji_picker.cat.activity"  },
+  places:   { icon: "✈️", labelKey: "emoji_picker.cat.places"    },
+  objects:  { icon: "💡", labelKey: "emoji_picker.cat.objects"   },
+  symbols:  { icon: "❤️", labelKey: "emoji_picker.cat.symbols"   },
+  flags:    { icon: "🏳️", labelKey: "emoji_picker.cat.flags"     },
 };
 
-const KAOMOJI: { label: string; items: string[] }[] = [
-  { label: "Happy",     items: ["(｡◕‿◕｡)", "(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧", "(^▽^)", "(*^▽^*)", "＼(^o^)／", "(✿◠‿◠)", "(ﾉ´ヮ`)ﾉ*: ･ﾟ", "(*^‿^*)"] },
-  { label: "Sad",       items: ["(╥﹏╥)", "(T▽T)", "(；￣Д￣)", "(´；ω；`)", "இ_இ", "(ò_ó)", "(｡╯︵╰｡)", "(⌣_⌣\")"] },
-  { label: "Surprised", items: ["(⊙_⊙)", "Σ(°△°|||)︴", "(ﾟДﾟ;)", "Σ(ﾟДﾟ)", "⊙▂⊙", "(°o°)", "(ﾟдﾟ)"] },
-  { label: "Angry",     items: ["(╬ ಠ益ಠ)", "(ノಠ益ಠ)ノ彡┻━┻", "(>﹏<)", "(ᗒᗩᗕ)", "凸(｀△´#)", "(ー_ーゞ"] },
-  { label: "Love",      items: ["(♥ω♥*)", "(◍•ᴗ•◍)❤", "(≧◡≦)", "(づ｡◕‿‿◕｡)づ", "(ﾉ´з`)♥", "♡(˃͈ દ ˂͈ ༶ )"] },
-  { label: "Shrug",     items: ["¯\\_(ツ)_/¯", "╮(─▽─)╭", "┐(´д｀)┌", "¯\\(°_o)/¯", "ヽ(ー_ー )ノ", "┐(￣ヘ￣)┌"] },
-  { label: "Tableflip", items: ["(╯°□°）╯︵ ┻━┻", "┻━┻ ︵ヽ(`Д´)ﾉ︵ ┻━┻", "┬─┬ ノ( ゜-゜ノ)", "(ノಥ益ಥ)ノ ┻━┻"] },
-  { label: "Bear",      items: ["ʕ•ᴥ•ʔ", "ʕ◕ᴥ◕ʔ", "(ᵔᴥᵔ)", "ฅ^•ﻌ•^ฅ", "ʕ•̫͡•ʔ"] },
-  { label: "Other",     items: ["(づ￣ ³￣)づ", "(´・ω・`)", "(°ロ°)", "(¬‿¬)", "(ó﹏ò｡)", "ب_ب", "(｡•́‿•̀｡)"] },
+const KAOMOJI: { labelKey: TranslationKeys; items: string[] }[] = [
+  { labelKey: "emoji_picker.kao.happy",     items: ["(｡◕‿◕｡)", "(ﾉ◕ヮ◕)ﾉ*:･ﾟ✧", "(^▽^)", "(*^▽^*)", "＼(^o^)／", "(✿◠‿◠)", "(ﾉ´ヮ`)ﾉ*: ･ﾟ", "(*^‿^*)"] },
+  { labelKey: "emoji_picker.kao.sad",       items: ["(╥﹏╥)", "(T▽T)", "(；￣Д￣)", "(´；ω；`)", "இ_இ", "(ò_ó)", "(｡╯︵╰｡)", "(⌣_⌣\")"] },
+  { labelKey: "emoji_picker.kao.surprised", items: ["(⊙_⊙)", "Σ(°△°|||)︴", "(ﾟДﾟ;)", "Σ(ﾟДﾟ)", "⊙▂⊙", "(°o°)", "(ﾟдﾟ)"] },
+  { labelKey: "emoji_picker.kao.angry",     items: ["(╬ ಠ益ಠ)", "(ノಠ益ಠ)ノ彡┻━┻", "(>﹏<)", "(ᗒᗩᗕ)", "凸(｀△´#)", "(ー_ーゞ"] },
+  { labelKey: "emoji_picker.kao.love",      items: ["(♥ω♥*)", "(◍•ᴗ•◍)❤", "(≧◡≦)", "(づ｡◕‿‿◕｡)づ", "(ﾉ´з`)♥", "♡(˃͈ દ ˂͈ ༶ )"] },
+  { labelKey: "emoji_picker.kao.shrug",     items: ["¯\\_(ツ)_/¯", "╮(─▽─)╭", "┐(´д｀)┌", "¯\\(°_o)/¯", "ヽ(ー_ー )ノ", "┐(￣ヘ￣)┌"] },
+  { labelKey: "emoji_picker.kao.tableflip", items: ["(╯°□°）╯︵ ┻━┻", "┻━┻ ︵ヽ(`Д´)ﾉ︵ ┻━┻", "┬─┬ ノ( ゜-゜ノ)", "(ノಥ益ಥ)ノ ┻━┻"] },
+  { labelKey: "emoji_picker.kao.bear",      items: ["ʕ•ᴥ•ʔ", "ʕ◕ᴥ◕ʔ", "(ᵔᴥᵔ)", "ฅ^•ﻌ•^ฅ", "ʕ•̫͡•ʔ"] },
+  { labelKey: "emoji_picker.kao.other",     items: ["(づ￣ ³￣)づ", "(´・ω・`)", "(°ロ°)", "(¬‿¬)", "(ó﹏ò｡)", "ب_ب", "(｡•́‿•̀｡)"] },
 ];
 
 interface CustomEmoji { id: string; name: string; url: string; }
@@ -60,9 +62,9 @@ interface GifResult   { id: string; url: string; preview: string; title: string;
 
 interface Props {
   position: { top: number; left?: number; right?: number };
-  onSelect: (emoji: string) => void;
-  onSelectCustomEmoji?: (name: string, id: string) => void;
-  onSelectGif?: (url: string, preview: string) => void;
+  onSelect: (emoji: string, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
+  onSelectCustomEmoji?: (name: string, id: string, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
+  onSelectGif?: (url: string, preview: string, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
   userSettings: UserSettings | null;
   servers?: Server[];
 }
@@ -73,8 +75,9 @@ const PICKER_H = 460;
 const TENOR_KEY: string = (import.meta as any).env?.VITE_TENOR_API_KEY ?? "";
 
 export default function EmojiPickerPopout({
-  position, onSelect, onSelectCustomEmoji, onSelectGif, userSettings, servers = [],
+  position, onSelect, onSelectCustomEmoji, onSelectGif, userSettings, servers = []
 }: Props) {
+  useLocale();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
 
@@ -186,11 +189,11 @@ export default function EmojiPickerPopout({
     return () => scroll.removeEventListener("scroll", handle);
   }, [tab, emojiSearch, allCatIds]);
 
-  function selectEmoji(native: string, id: string) {
+  function selectEmoji(native: string, id: string, e: React.MouseEvent<HTMLButtonElement, MouseEvent>) {
     const nf = [id, ...frequent.filter(f => f !== id)].slice(0, 36);
     setFrequent(nf);
     saveArr(FREQ_KEY, nf);
-    onSelect(native);
+    onSelect(native, e);
   }
 
   function scrollToCategory(catId: string) {
@@ -247,7 +250,7 @@ export default function EmojiPickerPopout({
     letterSpacing: "0.08em", color: "var(--text-5)",
     padding: "8px 12px 4px",
     position: "sticky", top: 0, zIndex: 1,
-    background: "var(--bg-2)",
+    background: "var(--bg-2)"
   };
 
   const emojiBtn: React.CSSProperties = {
@@ -255,7 +258,7 @@ export default function EmojiPickerPopout({
     display: "flex", alignItems: "center", justifyContent: "center",
     background: "none", border: "1px solid transparent",
     borderRadius: "6px", cursor: "pointer", fontSize: "22px", lineHeight: 1,
-    transition: "background 80ms, border-color 80ms",
+    transition: "background 80ms, border-color 80ms"
   };
 
   function renderEmojiCell(emojiId: string, native: string) {
@@ -265,16 +268,16 @@ export default function EmojiPickerPopout({
         key={emojiId}
         style={emojiBtn}
         onMouseEnter={e => {
-          (e.currentTarget as HTMLElement).style.background = "var(--bg-3)";
-          (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+          e.currentTarget.style.background = "var(--bg-3)";
+          e.currentTarget.style.borderColor = "var(--border)";
           hoverEmoji(normId, native);
         }}
         onMouseLeave={e => {
-          (e.currentTarget as HTMLElement).style.background = "none";
-          (e.currentTarget as HTMLElement).style.borderColor = "transparent";
+          e.currentTarget.style.background = "none";
+          e.currentTarget.style.borderColor = "transparent";
           hoverEmoji("");
         }}
-        onMouseDown={e => { e.preventDefault(); selectEmoji(native, emojiId); }}
+        onMouseDown={e => { e.preventDefault(); selectEmoji(native, emojiId, e); }}
         title={`:${normId}:`}
       >
         {renderEmoji(userSettings, native)}
@@ -288,16 +291,16 @@ export default function EmojiPickerPopout({
         key={e.id}
         style={emojiBtn}
         onMouseEnter={ev => {
-          (ev.currentTarget as HTMLElement).style.background = "var(--bg-3)";
-          (ev.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+          ev.currentTarget.style.background = "var(--bg-3)";
+          ev.currentTarget.style.borderColor = "var(--border)";
           hoverEmoji(e.name);
         }}
         onMouseLeave={ev => {
-          (ev.currentTarget as HTMLElement).style.background = "none";
-          (ev.currentTarget as HTMLElement).style.borderColor = "transparent";
+          ev.currentTarget.style.background = "none";
+          ev.currentTarget.style.borderColor = "transparent";
           hoverEmoji("");
         }}
-        onMouseDown={ev => { ev.preventDefault(); onSelectCustomEmoji?.(e.name, e.id); }}
+        onMouseDown={ev => { ev.preventDefault(); onSelectCustomEmoji?.(e.name, e.id, ev); }}
         title={`:${e.name}:`}
       >
         <img src={e.url} alt={e.name} style={{ width: 22, height: 22, objectFit: "contain" }} />
@@ -309,7 +312,7 @@ export default function EmojiPickerPopout({
     catId: string,
     label: string,
     emojiIds?: string[],
-    customEmojis?: CustomEmoji[],
+    customEmojis?: CustomEmoji[]
   ) {
     const hasContent = (emojiIds?.length ?? 0) > 0 || (customEmojis?.length ?? 0) > 0;
     if (!hasContent) return null;
@@ -344,9 +347,11 @@ export default function EmojiPickerPopout({
           overflow: "hidden", cursor: "pointer",
           border: "1px solid var(--border)", breakInside: "avoid" as any,
         }}
-        onClick={() => {
-          if (onSelectGif) onSelectGif(gif.url, gif.preview);
-          else onSelect(gif.url);
+        onClick={e => {
+          if (onSelectGif)
+            onSelectGif(gif.url, gif.preview, e);
+          else
+            onSelect(gif.url, e);
         }}
       >
         <img
@@ -364,7 +369,7 @@ export default function EmojiPickerPopout({
             color: "white", fontSize: "12px", display: "flex",
             alignItems: "center", justifyContent: "center", padding: 0,
           }}
-          title={isFav ? "Remove from favorites" : "Add to favorites"}
+          title={isFav ? t("emoji_picker.remove_favorite") : t("emoji_picker.add_favorite")}
         >
           {isFav ? "★" : "☆"}
         </button>
@@ -378,7 +383,7 @@ export default function EmojiPickerPopout({
     background: active ? "color-mix(in hsl, var(--accent-1), transparent 80%)" : "none",
     border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "17px",
     outline: "none", opacity: active ? 1 : 0.55,
-    transition: "opacity 100ms, background 100ms",
+    transition: "opacity 100ms, background 100ms"
   });
 
   const inputStyle: React.CSSProperties = {
@@ -386,7 +391,7 @@ export default function EmojiPickerPopout({
     background: "var(--bg-1)", border: "1px solid var(--border)",
     borderRadius: "8px", padding: "6px 10px",
     color: "var(--text-1)", fontSize: "13px",
-    outline: "none",
+    outline: "none"
   };
 
   return (
@@ -400,28 +405,28 @@ export default function EmojiPickerPopout({
         background: "var(--bg-2)", border: "1px solid var(--border)",
         borderRadius: "12px",
         boxShadow: "0 8px 28px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.25)",
-        overflow: "hidden",
+        overflow: "hidden"
       }}
     >
       <div style={{
         display: "flex", flexShrink: 0,
         borderBottom: "1px solid var(--border)",
-        background: "color-mix(in hsl, var(--bg-3), transparent 25%)",
+        background: "color-mix(in hsl, var(--bg-3), transparent 25%)"
       }}>
-        {(["gif", "emoji", "kaomoji"] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
+        {(["gif", "emoji", "kaomoji"] as const).map(tabId => (
+          <button key={tabId} onClick={() => setTab(tabId)} style={{
             flex: 1, padding: "9px 0",
             background: "none", border: "none",
-            borderBottom: `2px solid ${tab === t ? "var(--accent-1)" : "transparent"}`,
-            color: tab === t ? "var(--text-1)" : "var(--text-4)",
+            borderBottom: `2px solid ${tab === tabId ? "var(--accent-1)" : "transparent"}`,
+            color: tab === tabId ? "var(--text-1)" : "var(--text-4)",
             cursor: "pointer", fontSize: "12px", fontWeight: 600,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-            transition: "color 150ms, border-color 150ms",
+            transition: "color 150ms, border-color 150ms"
           }}>
             <span style={{ fontSize: 14 }}>
-              {t === "gif" ? "🎞" : t === "emoji" ? "😀" : "ᴥ"}
+              {tabId === "gif" ? "🎞" : tabId === "emoji" ? "😀" : "ᴥ"}
             </span>
-            <span>{t === "gif" ? "GIF" : t === "emoji" ? "Emoji" : "Kaomoji"}</span>
+            <span>{tabId === "gif" ? t("emoji_picker.tab.gif") : tabId === "emoji" ? t("emoji_picker.tab.emoji") : t("emoji_picker.tab.kaomoji")}</span>
           </button>
         ))}
       </div>
@@ -431,7 +436,7 @@ export default function EmojiPickerPopout({
           <div style={{ padding: "8px 10px 6px", flexShrink: 0 }}>
             <input
               ref={emojiInputRef}
-              placeholder="Search emojis..."
+              placeholder={t("emoji_picker.search")}
               value={emojiSearch}
               onChange={e => setEmojiSearch(e.target.value)}
               style={inputStyle}
@@ -443,21 +448,21 @@ export default function EmojiPickerPopout({
               display: "flex", alignItems: "center", gap: "2px",
               padding: "0 8px 6px", flexShrink: 0,
               overflowX: "auto", scrollbarWidth: "none",
-              borderBottom: "1px solid var(--border)",
+              borderBottom: "1px solid var(--border)"
             }}>
               {favorites.length > 0 && (
-                <button style={navBtnStyle(activeCat === "favorites")} title="Favorites"
+                <button style={navBtnStyle(activeCat === "favorites")} title={t("emoji_picker.favorites")}
                   onClick={() => scrollToCategory("favorites")}>⭐</button>
               )}
               {frequent.length > 0 && (
-                <button style={navBtnStyle(activeCat === "frequent")} title="Frequently Used"
+                <button style={navBtnStyle(activeCat === "frequent")} title={t("emoji_picker.frequent")}
                   onClick={() => scrollToCategory("frequent")}>🕐</button>
               )}
               {serverGroups.map(({ server }) => (
                 <button key={server.id} style={navBtnStyle(activeCat === `server:${server.id}`)}
                   title={server.name} onClick={() => scrollToCategory(`server:${server.id}`)}>
-                  {(server as any).icon
-                    ? <img src={(server as any).icon}
+                  {server.icon
+                    ? <img src={server.icon}
                         style={{ width: 18, height: 18, borderRadius: "50%", objectFit: "cover" }} alt="" />
                     : <span style={{ fontSize: "11px", fontWeight: 700 }}>{server.name[0]}</span>
                   }
@@ -467,15 +472,16 @@ export default function EmojiPickerPopout({
               {serverGroups.length > 0 && (
                 <div style={{
                   width: 1, height: 20, background: "var(--border)",
-                  flexShrink: 0, margin: "0 2px",
+                  flexShrink: 0, margin: "0 2px"
                 }} />
               )}
               {stdCats.map(cat => {
                 const meta = CATEGORY_META[cat.id];
-                if (!meta) return null;
+                if (!meta)
+                  return null;
                 return (
                   <button key={cat.id} style={navBtnStyle(activeCat === cat.id)}
-                    title={meta.label} onClick={() => scrollToCategory(cat.id)}>
+                    title={t(meta.labelKey)} onClick={() => scrollToCategory(cat.id)}>
                     {meta.icon}
                   </button>
                 );
@@ -488,10 +494,10 @@ export default function EmojiPickerPopout({
           }}>
             {emojiSearch ? (
               <div>
-                <div style={sectionHeader}>Search Results</div>
+                <div style={sectionHeader}>{t("emoji_picker.search_results")}</div>
                 {searchResults.length === 0
                   ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--text-5)", fontSize: "13px" }}>
-                      No emojis found for "{emojiSearch}"
+                      {t("emoji_picker.no_results", { query: emojiSearch })}
                     </div>
                   : <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 36px)", gap: "2px", padding: "0 12px 8px" }}>
                       {searchResults.map(e =>
@@ -505,13 +511,13 @@ export default function EmojiPickerPopout({
             ) : (
               <>
                 {favorites.length > 0 &&
-                  renderSection("favorites", "⭐ Favorites", favorites.filter(id => (data as any).emojis[id]))}
+                  renderSection("favorites", t("emoji_picker.favorites_star"), favorites.filter(id => (data as any).emojis[id]))}
                 {frequent.length > 0 &&
-                  renderSection("frequent", "🕐 Frequently Used", frequent.filter(id => (data as any).emojis[id]))}
+                  renderSection("frequent", `🕐 ${t("emoji_picker.frequent")}`, frequent.filter(id => (data as any).emojis[id]))}
                 {serverGroups.map(({ server, emojis }) =>
                   renderSection(`server:${server.id}`, server.name, undefined, emojis))}
                 {stdCats.map(cat =>
-                  renderSection(cat.id, CATEGORY_META[cat.id]?.label ?? cat.id, cat.emojis))}
+                  renderSection(cat.id, t(CATEGORY_META[cat.id]?.labelKey ?? "emoji_picker.cat.people"), cat.emojis))}
               </>
             )}
           </div>
@@ -521,7 +527,7 @@ export default function EmojiPickerPopout({
             borderTop: "1px solid var(--border)",
             display: "flex", alignItems: "center", gap: 8,
             padding: "0 12px",
-            background: "color-mix(in hsl, var(--bg-3), transparent 25%)",
+            background: "color-mix(in hsl, var(--bg-3), transparent 25%)"
           }}>
             <span style={{ fontSize: "18px", lineHeight: 1, flexShrink: 0 }}>
               {hoveredNative
@@ -532,9 +538,9 @@ export default function EmojiPickerPopout({
             <span style={{
               fontSize: "12px", fontFamily: "monospace",
               color: hoveredName ? "var(--text-3)" : "var(--text-5)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
             }}>
-              {hoveredName ? `:${hoveredName}:` : "Hover over an emoji…"}
+              {hoveredName ? `:${hoveredName}:` : t("emoji_picker.hover_hint")}
             </span>
           </div>
         </>
@@ -545,7 +551,7 @@ export default function EmojiPickerPopout({
           <div style={{ padding: "8px 10px 6px", flexShrink: 0 }}>
             <input
               ref={gifInputRef}
-              placeholder="Search GIFs via Tenor…"
+              placeholder={t("emoji_picker.gif.search")}
               value={gifSearch}
               onChange={e => setGifSearch(e.target.value)}
               style={inputStyle}
@@ -555,30 +561,30 @@ export default function EmojiPickerPopout({
             {!TENOR_KEY ? (
               <div style={{ padding: "28px 20px", textAlign: "center" }}>
                 <div style={{ fontSize: "28px", marginBottom: 8 }}>🎞</div>
-                <div style={{ color: "var(--text-3)", fontSize: "13px", marginBottom: 6 }}>GIFs not configured</div>
+                <div style={{ color: "var(--text-3)", fontSize: "13px", marginBottom: 6 }}>{t("emoji_picker.gif.not_configured")}</div>
                 <div style={{ color: "var(--text-5)", fontSize: "12px" }}>
-                  Add <code style={{ background: "var(--bg-1)", borderRadius: 4, padding: "1px 5px", border: "1px solid var(--border)" }}>VITE_TENOR_API_KEY</code> to your <code style={{ background: "var(--bg-1)", borderRadius: 4, padding: "1px 5px", border: "1px solid var(--border)" }}>.env</code> file.
+                  {t("emoji_picker.gif.api_hint")}
                 </div>
               </div>
             ) : (
               <>
                 {gifFavs.length > 0 && (
                   <>
-                    <div style={sectionHeader}>⭐ Favorites</div>
+                    <div style={sectionHeader}>{t("emoji_picker.favorites_star")}</div>
                     <div style={{ columns: 2, columnGap: 4, padding: "0 8px 4px" }}>
                       {gifFavs.map(gif => renderGifCell(gif))}
                     </div>
                   </>
                 )}
-                <div style={sectionHeader}>{gifSearch ? "Search Results" : "🔥 Trending"}</div>
+                <div style={sectionHeader}>{gifSearch ? t("emoji_picker.search_results") : t("emoji_picker.gif.trending")}</div>
                 {gifLoading && (
                   <div style={{ padding: "20px", textAlign: "center", color: "var(--text-5)", fontSize: "13px" }}>
-                    Loading…
+                    {t("loading")}
                   </div>
                 )}
                 {!gifLoading && gifResults.length === 0 && gifSearch && (
                   <div style={{ padding: "20px", textAlign: "center", color: "var(--text-5)", fontSize: "13px" }}>
-                    No GIFs found for "{gifSearch}"
+                    {t("emoji_picker.gif.no_results", { query: gifSearch })}
                   </div>
                 )}
                 {!gifLoading && gifResults.length > 0 && (
@@ -595,22 +601,22 @@ export default function EmojiPickerPopout({
       {tab === "kaomoji" && (
         <div style={{ flex: 1, overflowY: "auto" }}>
           {KAOMOJI.map(cat => (
-            <div key={cat.label}>
-              <div style={sectionHeader}>{cat.label}</div>
+            <div key={cat.labelKey}>
+              <div style={sectionHeader}>{t(cat.labelKey)}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", padding: "2px 10px 8px" }}>
                 {cat.items.map(k => (
                   <button
                     key={k}
-                    onMouseDown={e => { e.preventDefault(); onSelect(k); }}
-                    title={`Insert ${k}`}
+                    onMouseDown={e => { e.preventDefault(); onSelect(k, e); }}
+                    title={t("emoji_picker.insert", { name: k })}
                     style={{
                       background: "var(--bg-3)", border: "1px solid var(--border)",
                       borderRadius: "6px", padding: "4px 8px",
                       color: "var(--text-2)", cursor: "pointer", fontSize: "13px",
-                      whiteSpace: "nowrap", transition: "background 80ms",
+                      whiteSpace: "nowrap", transition: "background 80ms"
                     }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "var(--bg-4)"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "var(--bg-3)"; }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-4)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "var(--bg-3)"; }}
                   >
                     {k}
                   </button>

@@ -1,17 +1,17 @@
 import React, { useState, useCallback, JSX, useEffect } from 'react';
 import type {
   DocumentAST, BlockNode, InlineNode,
-  TextNode, ListItemNode, NumberedListItemNode,
-  TableNode,
-  CollapsibleNode, NestedQuoteNode,
-  QuoteListItemNode, QuoteNumberedListItemNode,
-  ListItemQuoteNode, NumberedListItemQuoteNode
+  ListItemNode, NumberedListItemNode,
+  TableNode, CollapsibleNode,
+  NestedQuoteNode, QuoteListItemNode,
+  QuoteNumberedListItemNode, ListItemQuoteNode,
+  NumberedListItemQuoteNode
 } from './MarkdownAST';
 import { parseDocument, isBigEmoji } from './MarkdownParser';
-import { getDisplayName } from './UserUtils';
+import { getDisplayRole } from './UserUtils';
 import { getChannelIcon } from './ChannelUtils';
-import type { AbstractChannel, Server, User } from './types';
-import { EmojiStyle, Theme, type UserSettings } from './userSettings';
+import type { AbstractChannel, Server, User } from './Types';
+import { EmojiStyle, Theme, type UserSettings } from './UserSettings';
 import type { UserState } from '../state/Users';
 import type { ServerState } from '../state/Servers';
 import type { ChannelState } from '../state/Channels';
@@ -22,7 +22,9 @@ import { ModelOperations } from '@vscode/vscode-languagedetection';
 import katex from 'katex';
 import { createHighlighterCore, createOnigurumaEngine } from 'react-shiki/core';
 import { BundledLanguage, bundledLanguages, HighlighterCore } from 'shiki';
-import { t } from '../i18n';
+import { t, useLocale } from '../i18n/Index';
+import { intToHex } from './Funcs';
+import { Name } from '../../components/layout/Generic';
 
 export const modelOperations = new ModelOperations(
   {
@@ -221,6 +223,7 @@ function SpoilerSpan({ children, stateMap, id, showAlways }: {
   return (
     <span
       className={`spoiler${shown || showAlways ? ' shown' : ''}`}
+      data-md-pre="||" data-md-post="||"
       onClickCapture={shown || showAlways ? undefined : reveal}
       onClick={shown ? reveal : undefined}
       onDoubleClick={e => e.stopPropagation()}
@@ -241,6 +244,7 @@ const CodeBlock = React.memo(function CodeBlock({
   theme?: Theme;
   showLineNumbers?: boolean;
 }) {
+  useLocale();
   const [copied, setCopied] = useState(false);
   const [detectedLanguage, setDetectedLanguage] = useState<string | undefined>(undefined);
 
@@ -323,11 +327,11 @@ const CodeBlock = React.memo(function CodeBlock({
     <div className="code-block-wrapper">
       <div className="code-block-header">
         <span className="code-block-lang">{effectiveLanguage}</span>
-        <button className="code-block-copy" onClick={copy} onDoubleClick={e => e.stopPropagation()} title="Copy code">
+        <button className="code-block-copy" onClick={copy} onDoubleClick={e => e.stopPropagation()} title={t("code.copy_title")}>
           {copied ? t("copied") : t("copy")}
         </button>
       </div>
-      <div className="multiline-code">
+      <div className="multiline-code" data-md-pre={`\`\`\`${effectiveLanguage}\n`} data-md-post="\n```">
         <div data-testid="shiki-container" data-slot="container" className="rs-root not-prose rs-default-styles shiki">
           {highlighter ?? (
             // fallback to manually created output that mimicks useShikiHighlighter
@@ -365,7 +369,7 @@ function LiveTimestampSpan({ ts, style }: { ts: number; style: string }) {
 
 function ProgressBarInline({ value, label }: { value: number; label: string }) {
   return (
-    <span className="progress-bar-inline" title={`${Math.round(value)}%`}>
+    <span className="progress-bar-inline" title={`${Math.round(value)}%`} data-md-verbatim={`[progress: ${label}]`}>
       <span className="progress-bar-track">
         <span className="progress-bar-fill" style={{ width: `${value}%` }} />
       </span>
@@ -396,19 +400,19 @@ function rin(
 
   switch (node.type) {
     case 'text': return <span key={k()}>{node.content}</span>;
-    case 'bold': return <b key={k()}>{ch(node.children)}</b>;
-    case 'italic': return <i key={k()}>{ch(node.children)}</i>;
-    case 'boldItalic': return <b key={k()}><i>{ch(node.children)}</i></b>;
-    case 'underline': return <u key={k()}>{ch(node.children)}</u>;
-    case 'strikethrough': return <s key={k()}>{ch(node.children)}</s>;
-    case 'superscript': return <sup key={k()}>{ch(node.children)}</sup>;
-    case 'subscript': return <sub key={k()}>{ch(node.children)}</sub>;
+    case 'bold': return <b key={k()} data-md-pre="**" data-md-post="**">{ch(node.children)}</b>;
+    case 'italic': return <i key={k()} data-md-pre="*" data-md-post="*">{ch(node.children)}</i>;
+    case 'boldItalic': return <b key={k()} data-md-pre="***" data-md-post="***"><i>{ch(node.children)}</i></b>;
+    case 'underline': return <u key={k()} data-md-pre="__" data-md-post="__">{ch(node.children)}</u>;
+    case 'strikethrough': return <s key={k()} data-md-pre="~~" data-md-post="~~">{ch(node.children)}</s>;
+    case 'superscript': return <sup key={k()} data-md-pre="^" data-md-post="^">{ch(node.children)}</sup>;
+    case 'subscript': return <sub key={k()} data-md-pre="~" data-md-post="~">{ch(node.children)}</sub>;
 
     case 'inlineSubheader':
-      return <span key={k()} className="subheader">{ch(node.children)}</span>;
+      return <span key={k()} className="subheader" data-md-pre="-# ">{ch(node.children)}</span>;
 
     case 'inlineHeader':
-      return <span key={k()} className={`h${node.level}`}>{ch(node.children)}</span>;
+      return <span key={k()} className={`h${node.level}`} data-md-pre={`${'#'.repeat(node.level)} `}>{ch(node.children)}</span>;
 
     case 'spoiler': {
       const id = sc.n++;
@@ -422,34 +426,46 @@ function rin(
     case 'inlineMath': {
       try {
         const html = katex.renderToString(node.content, { throwOnError: false, displayMode: false });
-        return <span key={k()} className="math-inline" dangerouslySetInnerHTML={{ __html: html }} />;
+        return <span key={k()} className="math-inline" data-md-verbatim={`$${node.content}$`} dangerouslySetInnerHTML={{ __html: html }} />;
       } catch {
         return <code key={k()}>${node.content}$</code>;
       }
     }
 
     case 'highlight':
-      return <span key={k()} className="highlight">{ch(node.children)}</span>;
+      return <span key={k()} className="highlight" data-md-pre="==" data-md-post="==">{ch(node.children)}</span>;
 
     case 'lowlight':
-      return <span key={k()} className="lowlight">{ch(node.children)}</span>;
+      return <span key={k()} className="lowlight" data-md-pre="===" data-md-post="===">{ch(node.children)}</span>;
 
     case 'hexColor':
       return <span key={k()} className="hex-color" style={{ '--color': node.content } as any}>{node.content}</span>;
 
     case 'code':
-      return <code key={k()}>{node.content}</code>;
+      return <code key={k()} data-md-pre="`" data-md-post="`">{node.content}</code>;
 
     case 'color':
       return (
-        <span key={k()} className="colored" style={{ '--color': node.hex } as any}>
+        <span key={k()} className={"colored" + (node.colors ? " gradient" : "")} style={{ '--color': node.hex, ...(node.colors && { '--gradient': `linear-gradient(90deg, ${node.colors.join(", ")})` }) } as any}>
           {ch(node.children)}
         </span>
       );
 
     case 'link': {
-      const inner = node.label ? ch(node.label) : [<span key={k()}>{node.url}</span>];
-      return <a key={k()} href={node.url} target="_blank" rel="noreferrer" onDoubleClick={e => e.stopPropagation()}>{inner}</a>;
+      if (node.label) {
+        return (
+          <a key={k()} href={node.url} target="_blank" rel="noreferrer"
+            data-md-pre="[" data-md-post={`](${node.url})`}
+            onDoubleClick={e => e.stopPropagation()}>
+            {ch(node.label)}
+          </a>
+        );
+      }
+      return (
+        <a key={k()} href={node.url} target="_blank" rel="noreferrer" onDoubleClick={e => e.stopPropagation()}>
+          <span>{node.url}</span>
+        </a>
+      );
     }
 
     case 'timestamp':
@@ -466,20 +482,24 @@ function rin(
       const ss = ctx.serverState;
       const u = us?.users.find((x: User) => x.id === node.id);
       const m = u && us ? us.getMember(u.id, ss?.currentServer?.id) : undefined;
-      const name = u ? '@' + getDisplayName(u, m) : `<@${node.id}>`;
-      const color = undefined;// u && ss ? getRoleColor(ss, u, m, ss.currentServer === null) : undefined;
+      const r = m && ss && getDisplayRole(ss, m, true);
+      const col = r?.colors?.[0] ?? r?.color;
       return (
         <span
           key={k()}
           className="mention int"
-          style={{
-            fontFamily: `${m?.nameFont}, ${u?.nameFont}, Inter, Avenir, Helvetica, Arial, sans-serif`,
-            '--special-mention-color': color,
-          } as any}
-          onClick={u && ctx.onMentionClick ? e => ctx.onMentionClick!(u, m, e) : undefined}
-          onDoubleClick={e => e.stopPropagation()}
+          style={{ "--special-mention-color": col && intToHex(col) } as any}
+          onClick={e => u && ctx.onMentionClick?.(u, m, e)}
         >
-          {name}
+          <Name
+            user={u ?? null}
+            member={m}
+            serverState={ss}
+            allowDmColors={!!!ss?.currentServer}
+            md={ctx}
+            spoilerState={sm ?? undefined}
+            prefix="@"
+          />
         </span>
       );
     }
@@ -487,17 +507,24 @@ function rin(
     case 'mentionRole': {
       const ss = ctx.serverState;
       const s = ss?.currentServer;
-      const r = s?.roles.find((x: any) => x.id === node.id);
-      const name = r?.name ? `@${r.name}` : `<@&${node.id}>`;
+      const r = s?.roles.find(x => x.id === node.id);
+      const col = r?.colors?.[0] ?? r?.color;
       return (
         <span
           key={k()}
           className="mention int"
-          style={{ '--special-mention-color': r?.color ? `#${r.color.toString(16).padStart(6, '0')}` : undefined } as any}
-          onClick={r && s && ctx.onRoleClick ? e => ctx.onRoleClick!(r, s, e) : undefined}
-          onDoubleClick={e => e.stopPropagation()}
+          style={{ "--special-mention-color": col && intToHex(col) } as any}
         >
-          {name}
+          <Name
+            user={null}
+            serverState={ss}
+            allowDmColors={!!!ss?.currentServer}
+            md={ctx}
+            spoilerState={sm ?? undefined}
+            overRole={r}
+            prefix={r ? "@" : `<@&`}
+            text={r?.name ?? `${node.id}>`}
+          />
         </span>
       );
     }
@@ -552,7 +579,7 @@ function renderBlocks(
   sm: React.MutableRefObject<Map<number, boolean>> | null,
   sc: { n: number },
   kc: { n: number },
-  bigEmoji: boolean
+  bigEmoji: boolean,
 ): JSX.Element[] {
   const out: JSX.Element[] = [];
   let i = 0;
@@ -607,7 +634,7 @@ function renderBlocks(
       out.push(
         <ul key={k()}>
           {items.map(it => (
-            <li key={k()}>
+            <li key={k()} data-md-pre={it.type === 'listItemQuote' ? '- > ' : '- '}>
               {it.type === 'listItemQuote'
                 ? <span className="quote">{ri((it as ListItemQuoteNode).children, ctx, sm, sc, kc)}</span>
                 : ri((it as ListItemNode).children, ctx, sm, sc, kc)
@@ -629,7 +656,10 @@ function renderBlocks(
       out.push(
         <ol key={k()}>
           {items.map(it => (
-            <li key={k()} value={(it as any).number}>
+            <li key={k()} value={it.number}
+                data-md-pre={it.type === 'numberedListItemQuote'
+                  ? `${it.number}. > `
+                  : `${it.number}. `}>
               {it.type === 'numberedListItemQuote'
                 ? <span className="quote">{ri((it as NumberedListItemQuoteNode).children, ctx, sm, sc, kc)}</span>
                 : ri((it as NumberedListItemNode).children, ctx, sm, sc, kc)
@@ -667,10 +697,10 @@ function renderBlocks(
         <span key={k()} className="quote">
           <span className="quote nested-quote">
             {items.map((it, idx) => (
-              <React.Fragment key={idx}>
+              <span key={idx} data-md-pre="> > ">
                 {idx > 0 && <br />}
                 {ri(it.children, ctx, sm, sc, kc)}
-              </React.Fragment>
+              </span>
             ))}
           </span>
         </span>
@@ -688,7 +718,7 @@ function renderBlocks(
       out.push(
         <div key={k()} className="quote">
           <ul className="quote-list">
-            {items.map(it => <li key={k()}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
+            {items.map(it => <li key={k()} data-md-pre="> - ">{ri(it.children, ctx, sm, sc, kc)}</li>)}
           </ul>
         </div>
       );
@@ -705,7 +735,7 @@ function renderBlocks(
       out.push(
         <div key={k()} className="quote">
           <ol className="quote-list">
-            {items.map(it => <li key={k()} value={it.number}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
+            {items.map(it => <li key={k()} value={it.number} data-md-pre={`> ${it.number}. `}>{ri(it.children, ctx, sm, sc, kc)}</li>)}
           </ol>
         </div>
       );
@@ -750,7 +780,7 @@ function renderBlock(
         return (
           <span key={k()} style={{ whiteSpace: 'pre-wrap' }}>
             {block.children.map(n => {
-              if (n.type === 'text') return <span key={k()}>{(n as TextNode).content}</span>;
+              if (n.type === 'text') return <span key={k()}>{n.content}</span>;
               if (n.type === 'emoji') return <span key={k()}>{renderEmoji(ctx.userSettings ?? null, n.native, 'emoji-big int', ctx.onEmojiClick ?? null)}</span>;
               return rin(n, ctx, sm, sc, kc);
             })}
@@ -761,15 +791,15 @@ function renderBlock(
     }
 
     case 'header':
-      return <span key={k()} className={`h${block.level}`}>{ch(block.children)}</span>;
+      return <span key={k()} className={`h${block.level}`} data-md-pre={`${'#'.repeat(block.level)} `}>{ch(block.children)}</span>;
 
     case 'subheader':
-      return <span key={k()} className="subheader">{ch(block.children)}</span>;
+      return <span key={k()} className="subheader" data-md-pre="-# ">{ch(block.children)}</span>;
 
     case 'mathBlock': {
       try {
         const html = katex.renderToString(block.content, { throwOnError: false, displayMode: true });
-        return <div key={k()} className="math-block" dangerouslySetInnerHTML={{ __html: html }} />;
+        return <div key={k()} className="math-block" data-md-verbatim={`$$\n${block.content}\n$$`} dangerouslySetInnerHTML={{ __html: html }} />;
       } catch {
         return <pre key={k()} className="math-block math-error">{'$$\n' + block.content + '\n$$'}</pre>;
       }
@@ -777,7 +807,7 @@ function renderBlock(
 
     case 'quote':
       return (
-        <span key={k()} className="quote">
+        <span key={k()} className="quote" data-md-pre="> ">
           {ch(block.children)}
         </span>
       );
@@ -791,11 +821,12 @@ interface MarkdownProps extends RenderContext {
   content: string;
   spoilerStateRef?: React.MutableRefObject<Map<number, boolean>>;
   allowBlocks?: boolean;
+  allowBig?: boolean;
 }
 
-export function RenderMarkdown({ content, spoilerStateRef, allowBlocks = true, ...ctx }: MarkdownProps) {
+export function RenderMarkdown({ content, spoilerStateRef, allowBlocks = true, allowBig = true, ...ctx }: MarkdownProps) {
   const sm = spoilerStateRef ?? null;
-  const ast = parseDocument(content, allowBlocks);
+  const ast = parseDocument(content, allowBlocks, !allowBig);
   const bigEmoji = !ctx.noBigEmoji && isBigEmoji(ast);
   const sc = { n: 0 };
   const kc = { n: 0 };

@@ -9,17 +9,20 @@ import {
   twoFactorLogin,
   twoFactorLoginRecovery,
   sendVerificationEmail,
-} from "../../lib/api/authApi";
-import { api } from "../../lib/api/http";
+} from "../../lib/api/AuthApi";
+import { api } from "../../lib/api/Http";
 import { useServerState } from "../../lib/state/Servers";
 import { useChannelState } from "../../lib/state/Channels";
-import { initializeClient } from "../../lib/client/init";
+import { initializeClient } from "../../lib/client/Init";
 import { useMessageState } from "../../lib/state/Messages";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { t, useLocale } from "../../lib/i18n/Index";
+import { TranslationKeys } from "../../lib/i18n/Schema";
 
 type View = "login" | "register" | "twoFactor" | "emailPending";
 
 export default function LoginScreen() {
+  useLocale();
   const authState = useAuthState();
   const { setUser, setToken, setUserSettings } = authState;
   const serverState = useServerState();
@@ -110,7 +113,7 @@ export default function LoginScreen() {
 
       await completeLogin(result.token);
     } catch (e: any) {
-      setError(e.message || "Login failed");
+      setError(e.message ?? "login.failed");
     } finally {
       setLoading(false);
     }
@@ -133,7 +136,7 @@ export default function LoginScreen() {
       if (result.token)
         await completeLogin(result.token);
     } catch (e: any) {
-      setError(e.message || "Registration failed");
+      setError(e.message ?? "login.register_failed");
     } finally {
       setLoading(false);
     }
@@ -150,7 +153,7 @@ export default function LoginScreen() {
         : await twoFactorLogin(twoFactorChallenge, twoFactorCode.trim());
       await completeLogin(result.token);
     } catch (e: any) {
-      setError(e.message || "Invalid code");
+      setError(e.message ?? "error.invalid_code");
     } finally {
       setLoading(false);
     }
@@ -163,7 +166,7 @@ export default function LoginScreen() {
       await sendVerificationEmail(pendingEmail);
       setResendCooldown(60);
     } catch (e: any) {
-      setError(e.message || "Failed to resend");
+      setError(e.message ?? "error.phone.resend");
     }
   }
 
@@ -176,11 +179,11 @@ export default function LoginScreen() {
       <div className="login-screen">
         <div className="login-modal">
           <div style={{ textAlign: "center" }}>
-            <h2 style={{ margin: "0 0 4px" }}>Two-Factor Authentication</h2>
+            <h2 style={{ margin: "0 0 4px" }}>{t("2fa")}</h2>
             <p style={{ margin: "0 0 20px", color: "var(--text-5)", fontSize: 13 }}>
               {useRecovery
-                ? "Enter one of your recovery codes."
-                : "Enter the 6-digit code from your authenticator app."}
+                ? t("login.2fa_recovery_hint")
+                : t("login.2fa_auth_hint")}
             </p>
           </div>
 
@@ -194,14 +197,14 @@ export default function LoginScreen() {
             style={{ textAlign: "center", letterSpacing: useRecovery ? 2 : 6, fontSize: 20 }}
           />
 
-          {error && <div className="error-msg">{error}</div>}
+          {error && <div className="error-msg">{t(error as TranslationKeys)}</div>}
 
           <button
             className="primary-btn"
             onClick={handleTwoFactor}
             disabled={loading || !twoFactorCode.trim()}
           >
-            {loading ? "Verifying..." : "Verify"}
+            {loading ? t("verifying") : t("verify")}
           </button>
 
           <button
@@ -212,7 +215,7 @@ export default function LoginScreen() {
               setError("");
             }}
           >
-            {useRecovery ? "Use authenticator code instead" : "Use a recovery code instead"}
+            {useRecovery ? t("2fa.use_auth") : t("2fa.use_recovery")}
           </button>
 
           <button
@@ -223,7 +226,7 @@ export default function LoginScreen() {
               setError("");
             }}
           >
-            ← Back to login
+            {t("login.back_arrow")}
           </button>
         </div>
       </div>
@@ -234,12 +237,12 @@ export default function LoginScreen() {
     return (
       <div className="login-screen">
         <div className="login-modal" style={{ textAlign: "center" }}>
-          <h2 style={{ margin: "0 0 8px" }}>Check your email</h2>
+          <h2 style={{ margin: "0 0 8px" }}>{t("login.check_email")}</h2>
           <p style={{ color: "var(--text-4)", fontSize: 14, margin: "0 0 16px" }}>
-            We sent a verification link to{" "}
+            {t("login.email_sent")}{" "}
             <strong style={{ color: "var(--text-2)" }}>{pendingEmail}</strong>.
             <br />
-            Click the link in that email to activate your account.
+            {t("login.email_activate")}
           </p>
 
           <div
@@ -254,17 +257,19 @@ export default function LoginScreen() {
               textAlign: "left",
             }}
           >
-            <strong>Didn't get it?</strong> Check your spam folder, or click below to resend.
+            <strong>{t("login.email_didnt_get")}</strong> {t("login.email_spam")}
           </div>
 
-          {error && <div className="error-msg">{error}</div>}
+          {error && <div className="error-msg">{t(error as TranslationKeys)}</div>}
 
           <button
             className="primary-btn"
             onClick={handleResend}
             disabled={resendCooldown > 0}
           >
-            {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend verification email"}
+            {resendCooldown > 0
+              ? t("resend_in", { seconds: resendCooldown })
+              : t("login.resend_verification")}
           </button>
 
           <button
@@ -278,7 +283,7 @@ export default function LoginScreen() {
               setError("");
             }}
           >
-            Back to login
+            {t("login.back_to_login")}
           </button>
         </div>
       </div>
@@ -311,10 +316,10 @@ export default function LoginScreen() {
       )}
       <div className="login-screen">
         <div className="login-modal">
-          <h2>{isRegister ? "Create an account" : "Login"}</h2>
+          <h2>{isRegister ? t("login.register_title") : t("login.title")}</h2>
           {isRegister && (
             <div className="form-group">
-              <label>Email</label>
+              <label>{t("email")}</label>
               <input
                 type="email"
                 autoComplete="off"
@@ -325,7 +330,7 @@ export default function LoginScreen() {
             </div>
           )}
           <div className="form-group">
-            <label>{isRegister ? "Username" : "Username / Email"}</label>
+            <label>{isRegister ? t("username") : t("login.username_or_email")}</label>
             <input
               type="text"
               autoComplete="off"
@@ -336,11 +341,11 @@ export default function LoginScreen() {
             {isRegister && username.length >= 2 && (
               <div style={{ marginTop: 4, fontSize: 12, minHeight: 18 }}>
                 {checkingUsername && (
-                  <span style={{ color: "var(--text-5)" }}>Checking availability...</span>
+                  <span style={{ color: "var(--text-5)" }}>{t("change_un.checking")}</span>
                 )}
                 {!checkingUsername && availability?.pomelo && (
                   <span style={{ color: "var(--green-2)" }}>
-                    ✓ <strong>@{username}</strong> is available as a unique handle.
+                    ✓ <strong>@{username}</strong> {t("change_un.available.prefix")}
                   </span>
                 )}
                 {!checkingUsername && availability && !availability.pomelo && (
@@ -355,12 +360,11 @@ export default function LoginScreen() {
                     }}
                   >
                     <span style={{ marginRight: 5 }}>⚠️</span>
-                    <strong>@{username}</strong> is already taken.{" "}
-                    You'll be registered as{" "}
+                    <strong>@{username}</strong> {t("change_un.taken.prefix")}{" "}
                     <strong>
                       @{username}{discPreview}
                     </strong>{" "}
-                    instead.
+                    {t("change_un.taken.suffix")}
                   </div>
                 )}
               </div>
@@ -368,7 +372,7 @@ export default function LoginScreen() {
           </div>
 
           <div className="form-group">
-            <label>Password</label>
+            <label>{t("password")}</label>
             <input
               type="password"
               autoComplete="off"
@@ -378,14 +382,16 @@ export default function LoginScreen() {
             />
           </div>
 
-          {error && <div className="error-msg">{error}</div>}
+          {error && <div className="error-msg">{t(error as TranslationKeys)}</div>}
 
           <button
             className="primary-btn"
             disabled={loading}
             onClick={() => (isRegister ? handleRegister() : handleLogin())}
           >
-            {loading ? (isRegister ? "Creating account..." : "Signing in...") : isRegister ? "Register" : "Login"}
+            {loading
+              ? (isRegister ? t("login.creating_account") : t("login.signing_in"))
+              : (isRegister ? t("create") : t("login.title"))}
           </button>
           <button
             className="secondary-btn"
@@ -396,7 +402,7 @@ export default function LoginScreen() {
               setError("");
             }}
           >
-            {isRegister ? "Already have an account?" : "Create an account"}
+            {isRegister ? t("login.already_have") : t("login.register_title")}
           </button>
         </div>
       </div>

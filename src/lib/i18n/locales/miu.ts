@@ -1,5 +1,5 @@
 // miulyn
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const miu: Record<TranslationKeys, string> = {
   

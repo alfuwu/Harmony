@@ -1,5 +1,5 @@
 // esperanto
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const eo: Record<TranslationKeys, string> = {
   

@@ -1,5 +1,5 @@
 // wia
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const wia: Record<TranslationKeys, string> = {
   

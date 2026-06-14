@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageState } from "../../../lib/state/Messages";
 import { RenderContext, RenderMarkdown } from "../../../lib/utils/MarkdownRenderer";
-import { Member, Review, User } from "../../../lib/utils/types";
-import { UserSettings } from "../../../lib/utils/userSettings";
+import { Member, Review, User } from "../../../lib/utils/Types";
+import { UserSettings } from "../../../lib/utils/UserSettings";
 import MessageInput, { MessageInputHandle } from "../../messages/MessageInput";
-import { deleteReview, getReviews, submitReview, updateReview } from "../../../lib/api/userApi";
+import { deleteReview, getReviews, submitReview, updateReview } from "../../../lib/api/UserApi";
 import { getAvatar } from "../../../lib/utils/UserUtils";
 import { Name, SectionLabel } from "../Generic";
 import { AuthState } from "../../../lib/state/Auth";
-import { formatDate } from "../../../lib/utils/funcs";
-import { t } from "../../../lib/i18n";
-import { TranslationKeys } from "../../../lib/i18n/schema";
+import { formatDate } from "../../../lib/utils/Funcs";
+import { t } from "../../../lib/i18n/Index";
+import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 export const reviewsCache = new Map<number, Review[]>();
 

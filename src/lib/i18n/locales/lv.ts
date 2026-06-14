@@ -1,5 +1,5 @@
 // latvian
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const lv: Record<TranslationKeys, string> = {
   

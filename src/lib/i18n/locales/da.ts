@@ -1,5 +1,5 @@
 // danish
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const da: Record<TranslationKeys, string> = {
   

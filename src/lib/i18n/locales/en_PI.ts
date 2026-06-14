@@ -1,5 +1,5 @@
 // pirate speak
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const en_PI: Record<TranslationKeys, string> = {
   

@@ -1,5 +1,5 @@
 import { hostUrl } from "../../App";
-import { Emoji, Server } from "./types";
+import { Emoji, Server } from "./Types";
 
 const DEFAULT_ICON = "https://cdn.discordapp.com/emojis/1327190606535069726.png";
 

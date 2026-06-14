@@ -1,5 +1,5 @@
 // afrikaans
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const af: Record<TranslationKeys, string> = {
   

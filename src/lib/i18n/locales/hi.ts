@@ -1,5 +1,5 @@
 // hindi
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const hi: Record<TranslationKeys, string> = {
   

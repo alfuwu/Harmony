@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { checkUsernameAvailability, UsernameAvailability } from "../../../lib/api/authApi";
-import { updateMe } from "../../../lib/api/userApi";
-import { t } from "../../../lib/i18n";
-import { TranslationKeys } from "../../../lib/i18n/schema";
+import { checkUsernameAvailability, UsernameAvailability } from "../../../lib/api/AuthApi";
+import { updateMe } from "../../../lib/api/UserApi";
+import { t } from "../../../lib/i18n/Index";
+import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 interface Props {
   open: boolean;

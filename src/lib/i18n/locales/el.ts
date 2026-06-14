@@ -1,5 +1,5 @@
 // greek
-import { TranslationKeys } from "../schema";
+import { TranslationKeys } from "../Schema";
 
 const el: Record<TranslationKeys, string> = {
   

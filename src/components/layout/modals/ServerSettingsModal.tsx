@@ -8,23 +8,19 @@ import React, {
 import { useAuthState } from "../../../lib/state/Auth";
 import { useServerState } from "../../../lib/state/Servers";
 import { useUserState } from "../../../lib/state/Users";
-import { api, binapi } from "../../../lib/api/http";
+import { api, binapi } from "../../../lib/api/Http";
 import {
   Role,
   RoleDisplayType,
-  Member,
-  User,
   Emoji,
-} from "../../../lib/utils/types";
+} from "../../../lib/utils/Types";
 import Search from "../../svgs/settings/Search";
-import { intToHex } from "../../../lib/utils/funcs";
+import { intToHex } from "../../../lib/utils/Funcs";
 import {
   isOwner,
   canManageRoles,
   canBanMembers,
   canManageServer,
-  canManageChannels,
-  Permission,
 } from "../../../lib/utils/PermissionUtils";
 import { getAvatar, getDisplayName } from "../../../lib/utils/UserUtils";
 import CroppingModal from "./CroppingModal";
@@ -34,7 +30,9 @@ import {
   deleteRole as apiDeleteRole,
   getBans,
   unbanMember,
-} from "../../../lib/api/serverApi";
+} from "../../../lib/api/ServerApi";
+import { t, useLocale } from "../../../lib/i18n/Index";
+import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 // ═══════════════════════════════════════════════════════════
 // Permission definitions
@@ -42,189 +40,189 @@ import {
 
 const PERMS: Record<
   string,
-  { bit: bigint; label: string; desc: string; danger?: boolean }
+  { bit: bigint; label: TranslationKeys; desc: TranslationKeys; danger?: boolean }
 > = {
   Administrator: {
     bit: 1n << 11n,
-    label: "Administrator",
-    desc: "Grants every permission and bypasses all channel permission overrides.",
+    label: "perm.administrator",
+    desc: "perm.administrator.desc",
     danger: true,
   },
   ManageServer: {
     bit: 1n << 10n,
-    label: "Manage Server",
-    desc: "Rename the server, update description, icon, and core settings.",
+    label: "perm.manage_server",
+    desc: "perm.manage_server.desc",
   },
   ManageRoles: {
     bit: 1n << 4n,
-    label: "Manage Roles",
-    desc: "Create, edit, and delete roles below this one in the hierarchy.",
+    label: "perm.manage_roles",
+    desc: "perm.manage_roles.desc",
   },
   ManageChannels: {
     bit: 1n << 3n,
-    label: "Manage Channels",
-    desc: "Create, rename, reorder, and delete channels.",
+    label: "perm.manage_channels",
+    desc: "perm.manage_channels.desc",
   },
   ManageEmojis: {
     bit: 1n << 42n,
-    label: "Manage Emojis",
-    desc: "Upload and remove custom emoji for this server.",
+    label: "perm.manage_emojis",
+    desc: "perm.manage_emojis.desc",
   },
   ViewAuditLog: {
     bit: 1n << 35n,
-    label: "View Audit Log",
-    desc: "See the server's history of moderation and administrative actions.",
+    label: "perm.view_audit_log",
+    desc: "perm.view_audit_log.desc",
   },
   CreateInvites: {
     bit: 1n << 19n,
-    label: "Create Invites",
-    desc: "Generate invite links for this server.",
+    label: "perm.create_invites",
+    desc: "perm.create_invites.desc",
   },
   ManageNicknames: {
     bit: 1n << 29n,
-    label: "Manage Nicknames",
-    desc: "Change other members' server nicknames.",
+    label: "perm.manage_nicknames",
+    desc: "perm.manage_nicknames.desc",
   },
   ChangeNickname: {
     bit: 1n << 30n,
-    label: "Change Own Nickname",
-    desc: "Change your own server nickname.",
+    label: "perm.change_nickname",
+    desc: "perm.change_nickname.desc",
   },
   KickMembers: {
     bit: 1n << 5n,
-    label: "Kick Members",
-    desc: "Remove members from the server. They can rejoin with a new invite.",
+    label: "perm.kick_members",
+    desc: "perm.kick_members.desc",
   },
   BanMembers: {
     bit: 1n << 6n,
-    label: "Ban Members",
-    desc: "Permanently ban members from the server.",
+    label: "perm.ban_members",
+    desc: "perm.ban_members.desc",
   },
   MuteMembers: {
     bit: 1n << 7n,
-    label: "Mute Members",
-    desc: "Silence members in voice channels.",
+    label: "perm.mute_members",
+    desc: "perm.mute_members.desc",
   },
   DeafenMembers: {
     bit: 1n << 8n,
-    label: "Deafen Members",
-    desc: "Deafen members in voice channels.",
+    label: "perm.deafen_members",
+    desc: "perm.deafen_members.desc",
   },
   MoveMembers: {
     bit: 1n << 9n,
-    label: "Move Members",
-    desc: "Move members between voice channels.",
+    label: "perm.move_members",
+    desc: "perm.move_members.desc",
   },
   ManageQuests: {
     bit: 1n << 45n,
-    label: "Manage Quests",
-    desc: "Create, edit, and delete server quests and rewards.",
+    label: "perm.manage_quests",
+    desc: "perm.manage_quests.desc",
   },
   ReviewAppeals: {
     bit: 1n << 46n,
-    label: "Review Appeals",
-    desc: "Review ban and kick appeals submitted by members.",
+    label: "perm.review_appeals",
+    desc: "perm.review_appeals.desc",
   },
   ViewChannels: {
     bit: 1n << 0n,
-    label: "View Channels",
-    desc: "See channels and read their contents by default.",
+    label: "perm.view_channels",
+    desc: "perm.view_channels.desc",
   },
   ViewMessageHistory: {
     bit: 1n << 23n,
-    label: "Read Message History",
-    desc: "Read messages sent before joining the channel.",
+    label: "perm.view_message_history",
+    desc: "perm.view_message_history.desc",
   },
   SendMessages: {
     bit: 1n << 1n,
-    label: "Send Messages",
-    desc: "Post messages in text channels.",
+    label: "perm.send_messages",
+    desc: "perm.send_messages.desc",
   },
   ManageMessages: {
     bit: 1n << 2n,
-    label: "Manage Messages",
-    desc: "Delete or pin messages posted by any member.",
+    label: "perm.manage_messages",
+    desc: "perm.manage_messages.desc",
   },
   EditOtherMessages: {
     bit: 1n << 22n,
-    label: "Edit Others' Messages",
-    desc: "Edit messages posted by other members.",
+    label: "perm.edit_other_messages",
+    desc: "perm.edit_other_messages.desc",
   },
   AttachFiles: {
     bit: 1n << 12n,
-    label: "Attach Files",
-    desc: "Upload files and images to messages.",
+    label: "perm.attach_files",
+    desc: "perm.attach_files.desc",
   },
   EmbedLinks: {
     bit: 1n << 13n,
-    label: "Embed Links",
-    desc: "Show rich link previews in messages.",
+    label: "perm.embed_links",
+    desc: "perm.embed_links.desc",
   },
   AddReactions: {
     bit: 1n << 14n,
-    label: "Add Reactions",
-    desc: "React to messages with emoji.",
+    label: "perm.add_reactions",
+    desc: "perm.add_reactions.desc",
   },
   UseExternalEmojis: {
     bit: 1n << 15n,
-    label: "Use External Emojis",
-    desc: "Use custom emoji from other servers.",
+    label: "perm.use_external_emojis",
+    desc: "perm.use_external_emojis.desc",
   },
   MentionEveryone: {
     bit: 1n << 16n,
-    label: "Mention @everyone",
-    desc: "Ping @everyone, @here, and all roles regardless of their settings.",
+    label: "perm.mention_everyone",
+    desc: "perm.mention_everyone.desc",
   },
   PinMessages: {
     bit: 1n << 24n,
-    label: "Pin Messages",
-    desc: "Pin and unpin messages in channels.",
+    label: "perm.pin_messages",
+    desc: "perm.pin_messages.desc",
   },
   ManageThreads: {
     bit: 1n << 17n,
-    label: "Manage Threads",
-    desc: "Rename, archive, lock, and delete threads.",
+    label: "perm.manage_threads",
+    desc: "perm.manage_threads.desc",
   },
   CreateThreads: {
     bit: 1n << 25n,
-    label: "Create Threads",
-    desc: "Create new threads in supported channels.",
+    label: "perm.create_threads",
+    desc: "perm.create_threads.desc",
   },
   Draw: {
     bit: 1n << 21n,
-    label: "Draw",
-    desc: "Draw and annotate on canvas channels.",
+    label: "perm.draw",
+    desc: "perm.draw.desc",
   },
   Connect: {
     bit: 1n << 38n,
-    label: "Connect",
-    desc: "Join voice and lounge channels.",
+    label: "perm.connect",
+    desc: "perm.connect.desc",
   },
   Speak: {
     bit: 1n << 39n,
-    label: "Speak",
-    desc: "Transmit audio in voice channels.",
+    label: "perm.speak",
+    desc: "perm.speak.desc",
   },
   UseVAD: {
     bit: 1n << 40n,
-    label: "Voice Activity",
-    desc: "Use voice activity detection instead of push-to-talk.",
+    label: "perm.use_vad",
+    desc: "perm.use_vad.desc",
   },
   Stream: {
     bit: 1n << 37n,
-    label: "Video & Stream",
-    desc: "Share screen or webcam video in voice channels.",
+    label: "perm.stream",
+    desc: "perm.stream.desc",
   },
   PrioritySpeaker: {
     bit: 1n << 36n,
-    label: "Priority Speaker",
-    desc: "Reduces the volume of others while this member is speaking.",
+    label: "perm.priority_speaker",
+    desc: "perm.priority_speaker.desc",
   },
 };
 
-const PERM_GROUPS = [
+const PERM_GROUPS: { label: TranslationKeys; keys: string[] }[] = [
   {
-    label: "General Permissions",
+    label: "perm.group.general",
     keys: [
       "Administrator",
       "ManageServer",
@@ -238,7 +236,7 @@ const PERM_GROUPS = [
     ],
   },
   {
-    label: "Member Permissions",
+    label: "perm.group.member",
     keys: [
       "KickMembers",
       "BanMembers",
@@ -250,7 +248,7 @@ const PERM_GROUPS = [
     ],
   },
   {
-    label: "Text Channel Permissions",
+    label: "perm.group.text",
     keys: [
       "ViewChannels",
       "ViewMessageHistory",
@@ -269,7 +267,7 @@ const PERM_GROUPS = [
     ],
   },
   {
-    label: "Voice Channel Permissions",
+    label: "perm.group.voice",
     keys: ["Connect", "Speak", "UseVAD", "Stream", "PrioritySpeaker"],
   },
 ];
@@ -437,7 +435,7 @@ function ColorSwatch({
         position: "relative",
         overflow: "hidden",
       }}
-      title="Pick color"
+      title={t("server.pick_color")}
     >
       <input
         ref={inputRef}
@@ -532,9 +530,10 @@ export default function ServerSettingsModal({
   open: boolean;
   onClose: () => void;
 }) {
+  useLocale();
   const { token, user } = useAuthState();
   const { currentServer, addServer, removeServer } = useServerState();
-  const { members, users } = useUserState();
+  const { members, users, get } = useUserState();
 
   const opts = useMemo(
     () => ({ headers: { Authorization: `Bearer ${token}` } }),
@@ -545,7 +544,7 @@ export default function ServerSettingsModal({
   const me = useMemo(
     () =>
       members.find(
-        (m) => m.serverId === currentServer?.id && m.user.id === user?.id
+        (m) => m.serverId === currentServer?.id && m.userId === user?.id
       ),
     [members, currentServer?.id, user?.id]
   );
@@ -704,14 +703,14 @@ export default function ServerSettingsModal({
   if (!tabGroups["access"]) tabGroups["access"] = ["members"];
   if (amOwner) tabGroups["danger"] = ["delete"];
 
-  const TAB_LABELS: Record<string, string> = {
-    overview: "Overview",
-    invites: "Invites",
-    emojis: "Emojis",
-    roles: "Roles",
-    members: "Members",
-    bans: "Bans",
-    delete: "Delete Server",
+  const TAB_LABELS: Record<string, TranslationKeys> = {
+    overview: "server.tab.overview",
+    invites: "server.tab.invites",
+    emojis: "server.tab.emojis",
+    roles: "server.tab.roles",
+    members: "server.tab.members",
+    bans: "server.tab.bans",
+    delete: "server.tab.delete",
   };
 
   const TAB_ICONS: Record<string, string> = {
@@ -737,7 +736,7 @@ export default function ServerSettingsModal({
     setSaveError("");
     try {
       // Update basic server info
-      const updated = await api(`/servers/${currentServer.id}`, {
+      await api(`/servers/${currentServer.id}`, {
         ...opts,
         method: "PATCH",
         body: JSON.stringify({
@@ -779,10 +778,10 @@ export default function ServerSettingsModal({
       setBannerFile(null);
       setBannerPreview(null);
       setHasUnsaved(false);
-      setSaveSuccess("Changes saved!");
+      setSaveSuccess(t("server.saved"));
       setTimeout(() => setSaveSuccess(""), 3000);
     } catch (e: any) {
-      setSaveError(e.message ?? "Failed to save changes");
+      setSaveError(e.message ?? t("error.failed_save"));
     }
   }
 
@@ -854,10 +853,10 @@ export default function ServerSettingsModal({
       setLocalRoles(newRoles);
       addServer({ ...currentServer, roles: newRoles });
       setRoleEditorDirty(false);
-      setSaveSuccess("Role saved!");
+      setSaveSuccess(t("server.role_saved"));
       setTimeout(() => setSaveSuccess(""), 2500);
     } catch (e: any) {
-      setSaveError(e.message ?? "Failed to save role");
+      setSaveError(e.message ?? t("error.role_save"));
     } finally {
       setRoleSaving(false);
     }
@@ -869,7 +868,7 @@ export default function ServerSettingsModal({
     try {
       const role = await apiCreateRole(
         currentServer.id,
-        "New Role",
+        t("server.role_default_name"),
         undefined,
         undefined,
         undefined,
@@ -883,7 +882,7 @@ export default function ServerSettingsModal({
       addServer({ ...currentServer, roles: newRoles });
       selectRole(role);
     } catch (e: any) {
-      setSaveError(e.message ?? "Failed to create role");
+      setSaveError(e.message ?? t("error.role_create"));
     } finally {
       setRoleCreating(false);
     }
@@ -902,7 +901,7 @@ export default function ServerSettingsModal({
       }
       setDeleteConfirmId(null);
     } catch (e: any) {
-      setSaveError(e.message ?? "Failed to delete role");
+      setSaveError(e.message ?? t("error.role_delete"));
     }
   }
 
@@ -941,7 +940,7 @@ export default function ServerSettingsModal({
       await unbanMember(currentServer.id, { id: userId } as any, opts);
       setBans((prev) => prev.filter((b) => b.userId !== userId));
     } catch (e: any) {
-      setSaveError(e.message ?? "Failed to unban");
+      setSaveError(e.message ?? t("error.unban"));
     } finally {
       setUnbanningId(null);
     }
@@ -956,7 +955,7 @@ export default function ServerSettingsModal({
       removeServer(currentServer.id);
       onClose();
     } catch (e: any) {
-      setSaveError(e.message ?? "Failed to delete server");
+      setSaveError(e.message ?? t("error.server_delete"));
       setDeleting(false);
     }
   }
@@ -976,12 +975,13 @@ export default function ServerSettingsModal({
   );
 
   const filteredMembers = useMemo(() => {
-    if (!memberSearch.trim()) return serverMembers;
+    if (!memberSearch.trim())
+      return serverMembers;
     const q = memberSearch.toLowerCase();
     return serverMembers.filter(
       (m) =>
-        m.user.username.toLowerCase().includes(q) ||
-        (m.user.displayName?.toLowerCase().includes(q) ?? false) ||
+        get(m.userId)?.username.toLowerCase().includes(q) ||
+        (get(m.userId)?.displayName?.toLowerCase().includes(q) ?? false) ||
         (m.nickname?.toLowerCase().includes(q) ?? false)
     );
   }, [serverMembers, memberSearch]);
@@ -1040,7 +1040,7 @@ export default function ServerSettingsModal({
                 boxShadow: "none",
               }}
             >
-              {bannerSrc ? "Change Banner" : "Add Banner"}
+              {bannerSrc ? t("server.change_banner") : t("server.add_banner")}
             </button>
             <input
               id="banner-upload"
@@ -1065,7 +1065,7 @@ export default function ServerSettingsModal({
                 cursor: "pointer",
               }}
               onClick={() => document.getElementById("icon-upload")?.click()}
-              title="Change server icon"
+              title={t("server.change_icon")}
             >
               {iconSrc ? (
                 <img
@@ -1125,7 +1125,7 @@ export default function ServerSettingsModal({
             <div
               style={{ fontSize: 17, fontWeight: 700, color: "var(--text-2)" }}
             >
-              {srvName || "Server Name"}
+              {srvName || t("server.name")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-5)", marginTop: 2 }}>
               {serverMembers.length} member
@@ -1151,7 +1151,7 @@ export default function ServerSettingsModal({
             value={srvName}
             onChange={(e) => setSrvName(e.target.value)}
             maxLength={100}
-            placeholder="Your server's name"
+            placeholder={t("server.name_placeholder")}
             style={{ width: "calc(100% - 22px)" }}
           />
           <div
@@ -1178,7 +1178,7 @@ export default function ServerSettingsModal({
             value={srvDescription}
             onChange={(e) => setSrvDescription(e.target.value)}
             maxLength={1000}
-            placeholder="What's this server about?"
+            placeholder={t("server.desc_placeholder")}
             rows={3}
             style={{
               resize: "vertical",
@@ -1250,7 +1250,7 @@ export default function ServerSettingsModal({
                   setTagInput("");
                 }
               }}
-              placeholder={srvTags.length === 0 ? "Add tags... (press Enter)" : ""}
+              placeholder={srvTags.length === 0 ? t("server.tags_placeholder") : ""}
               style={{
                 border: "none",
                 background: "transparent",
@@ -1340,7 +1340,7 @@ export default function ServerSettingsModal({
                       flexShrink: 0,
                     }}
                   >
-                    {copiedUrl === url ? "✓ Copied" : "Copy"}
+                    {copiedUrl === url ? t("copied") : t("copy")}
                   </button>
                   <button
                     onClick={() =>
@@ -1482,7 +1482,7 @@ export default function ServerSettingsModal({
                   color: emojiFile ? "var(--text-2)" : "var(--text-5)",
                 }}
               >
-                {emojiFile ? emojiFile.name : "Choose file…"}
+                {emojiFile ? emojiFile.name : t("server.choose_file")}
               </button>
               <input
                 id="emoji-upload"
@@ -1510,7 +1510,7 @@ export default function ServerSettingsModal({
                   setEmojiFile(null);
                   setEmojiName("");
                 } catch (e: any) {
-                  setSaveError(e.message ?? "Failed to upload emoji");
+                  setSaveError(e.message ?? t("server.emoji_upload_failed"));
                 } finally {
                   setEmojiUploading(false);
                 }
@@ -1532,7 +1532,7 @@ export default function ServerSettingsModal({
                     : "not-allowed",
               }}
             >
-              {emojiUploading ? "Uploading…" : "Upload"}
+              {emojiUploading ? t("server.uploading") : t("server.upload")}
             </button>
           </div>
           <div style={{ fontSize: 12, color: "var(--text-5)" }}>
@@ -1633,7 +1633,7 @@ export default function ServerSettingsModal({
                         setEmojis(newEmojis);
                         addServer({ ...currentServer, emojis: newEmojis });
                       } catch (e: any) {
-                        setSaveError(e.message ?? "Failed to delete emoji");
+                        setSaveError(e.message ?? t("server.emoji_delete_failed"));
                       }
                     }}
                     style={{
@@ -1646,7 +1646,7 @@ export default function ServerSettingsModal({
                       padding: "2px",
                       flexShrink: 0,
                     }}
-                    title="Delete emoji"
+                    title={t("server.delete_emoji")}
                   >
                     🗑
                   </button>
@@ -1696,7 +1696,7 @@ export default function ServerSettingsModal({
             }}
           >
             <span style={{ fontSize: 16 }}>+</span>
-            {roleCreating ? "Creating…" : "New Role"}
+            {roleCreating ? t("server.creating") : t("server.new_role")}
           </button>
 
           <div
@@ -1780,7 +1780,7 @@ export default function ServerSettingsModal({
                         opacity: idx === 0 ? 0.2 : 0.5,
                         lineHeight: 1,
                       }}
-                      title="Move up"
+                      title={t("server.move_up")}
                     >
                       ▲
                     </button>
@@ -1802,7 +1802,7 @@ export default function ServerSettingsModal({
                         opacity: idx === localRoles.length - 1 ? 0.2 : 0.5,
                         lineHeight: 1,
                       }}
-                      title="Move down"
+                      title={t("server.move_down")}
                     >
                       ▼
                     </button>
@@ -1886,7 +1886,7 @@ export default function ServerSettingsModal({
                         cursor: roleSaving ? "wait" : "pointer",
                       }}
                     >
-                      {roleSaving ? "Saving…" : "Save Role"}
+                      {roleSaving ? t("saving") : t("server.save_role")}
                     </button>
                   </>
                 )}
@@ -1902,20 +1902,20 @@ export default function ServerSettingsModal({
                 gap: 0,
               }}
             >
-              {(["display", "permissions"] as const).map((t) => (
+              {(["display", "permissions"] as const).map((tabId) => (
                 <button
-                  key={t}
-                  onClick={() => setRoleTab(t)}
+                  key={tabId}
+                  onClick={() => setRoleTab(tabId)}
                   style={{
                     padding: "8px 16px",
                     background: "none",
                     border: "none",
                     boxShadow: "none",
-                    borderBottom: `2px solid ${roleTab === t ? "var(--accent-1)" : "transparent"}`,
+                    borderBottom: `2px solid ${roleTab === tabId ? "var(--accent-1)" : "transparent"}`,
                     color:
-                      roleTab === t ? "var(--text-2)" : "var(--text-4)",
+                      roleTab === tabId ? "var(--text-2)" : "var(--text-4)",
                     fontSize: 13,
-                    fontWeight: roleTab === t ? 600 : 400,
+                    fontWeight: roleTab === tabId ? 600 : 400,
                     cursor: "pointer",
                     textTransform: "capitalize",
                     transition: "color 150ms, border-color 150ms",
@@ -1923,7 +1923,7 @@ export default function ServerSettingsModal({
                     marginBottom: -1,
                   }}
                 >
-                  {t === "display" ? "Display" : "Permissions"}
+                  {tabId === "display" ? t("server.role_display") : t("server.role_permissions")}
                 </button>
               ))}
             </div>
@@ -1975,10 +1975,10 @@ export default function ServerSettingsModal({
                   <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                     {(
                       [
-                        [RoleDisplayType.Normal, "Solid"],
-                        [RoleDisplayType.Gradient, "Gradient"],
-                        [RoleDisplayType.Glow, "Glow"],
-                        [RoleDisplayType.GradientGlow, "Gradient Glow"],
+                        [RoleDisplayType.Normal, t("server.role_solid")],
+                        [RoleDisplayType.Gradient, t("server.role_gradient")],
+                        [RoleDisplayType.Glow, t("server.role_holographic")],
+                        [RoleDisplayType.GradientGlow, t("server.role_gradient_glow")],
                       ] as [RoleDisplayType, string][]
                     ).map(([type, label]) => (
                       <button
@@ -2143,7 +2143,7 @@ export default function ServerSettingsModal({
                             padding: 0,
                             boxShadow: "none",
                           }}
-                          title="Add color stop"
+                          title={t("server.add_color_stop")}
                         >
                           +
                         </button>
@@ -2247,7 +2247,7 @@ export default function ServerSettingsModal({
                     Permanently removes this role. Members who only have this role will
                     revert to the default permissions.
                   </div>
-                  {deleteConfirmId === selectedRoleId ? (
+                  {deleteConfirmId === selectedRoleId && selectedRoleId ? (
                     <div style={{ display: "flex", gap: 8 }}>
                       <button
                         onClick={() => setDeleteConfirmId(null)}
@@ -2318,7 +2318,7 @@ export default function ServerSettingsModal({
 
                 {PERM_GROUPS.map((group) => (
                   <div key={group.label}>
-                    <SectionDivider label={group.label} />
+                    <SectionDivider label={t(group.label)} />
                     {group.keys.map((key) => {
                       const perm = PERMS[key];
                       if (!perm) return null;
@@ -2329,8 +2329,8 @@ export default function ServerSettingsModal({
                       return (
                         <PermToggle
                           key={key}
-                          label={perm.label}
-                          desc={perm.desc}
+                          label={t(perm.label)}
+                          desc={t(perm.desc)}
                           checked={checked || isAdmin}
                           danger={perm.danger}
                           disabled={isAdmin}
@@ -2390,7 +2390,7 @@ export default function ServerSettingsModal({
           <input
             value={memberSearch}
             onChange={(e) => setMemberSearch(e.target.value)}
-            placeholder="Search members…"
+            placeholder={t("server.search_members")}
             style={{ width: "calc(100% - 22px)", paddingLeft: 32 }}
           />
           <span
@@ -2422,14 +2422,15 @@ export default function ServerSettingsModal({
 
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           {filteredMembers.map((member) => {
-            const isExpanded = expandedMemberId === member.user.id;
+            const u = get(member.userId)!;
+            const isExpanded = expandedMemberId === member.userId;
             const memberRoles = localRoles.filter((r) =>
               member.roles.includes(r.id)
             );
 
             return (
               <div
-                key={member.user.id}
+                key={member.userId}
                 style={{
                   background: isExpanded ? "var(--bg-1)" : "none",
                   borderRadius: 8,
@@ -2440,7 +2441,7 @@ export default function ServerSettingsModal({
               >
                 <div
                   onClick={() =>
-                    setExpandedMemberId(isExpanded ? null : member.user.id)
+                    setExpandedMemberId(isExpanded ? null : member.userId)
                   }
                   style={{
                     display: "flex",
@@ -2461,7 +2462,7 @@ export default function ServerSettingsModal({
                   }}
                 >
                   <img
-                    src={getAvatar(member.user, member)}
+                    src={getAvatar(u!, member)}
                     alt=""
                     style={{
                       width: 32,
@@ -2493,7 +2494,7 @@ export default function ServerSettingsModal({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      @{member.user.username}
+                      @{u.username}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 180 }}>
@@ -2585,7 +2586,7 @@ export default function ServerSettingsModal({
                                     {
                                       ...opts,
                                       method: "POST",
-                                      body: JSON.stringify({ userId: member.user.id, roleId: role.id }),
+                                      body: JSON.stringify({ userId: u.id, roleId: role.id }),
                                     }
                                   );
                                 } else {
@@ -2594,12 +2595,12 @@ export default function ServerSettingsModal({
                                     {
                                       ...opts,
                                       method: "POST",
-                                      body: JSON.stringify({ userId: member.user.id, roleId: role.id }),
+                                      body: JSON.stringify({ userId: u.id, roleId: role.id }),
                                     }
                                   );
                                 }
                               } catch (e: any) {
-                                setSaveError(e.message ?? "Failed to update role");
+                                setSaveError(e.message ?? t("server.failed_update_role"));
                               }
                             }}
                             style={{
@@ -2755,7 +2756,7 @@ export default function ServerSettingsModal({
                       opacity: unbanningId === ban.userId ? 0.6 : 1,
                     }}
                   >
-                    {unbanningId === ban.userId ? "Unbanning…" : "Unban"}
+                    {unbanningId === ban.userId ? t("server.unbanning") : t("server.unban")}
                   </button>
                 </div>
               );
@@ -2815,7 +2816,7 @@ export default function ServerSettingsModal({
           <input
             value={deleteConfirm}
             onChange={(e) => setDeleteConfirm(e.target.value)}
-            placeholder={currentServer?.name ?? "Server name"}
+            placeholder={currentServer?.name ?? t("server.name")}
             style={{ borderColor: deleteConfirm === currentServer?.name ? "var(--red-2)" : undefined }}
           />
         </div>
@@ -2849,7 +2850,7 @@ export default function ServerSettingsModal({
             alignSelf: "flex-start",
           }}
         >
-          {deleting ? "Deleting…" : `Delete "${currentServer?.name ?? "server"}"`}
+          {deleting ? t("server.deleting") : t("server.delete_confirm", { name: currentServer?.name ?? t("alt.server") })}
         </button>
       </div>
     );
@@ -2942,14 +2943,14 @@ export default function ServerSettingsModal({
                   {currentServer.name}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-5)" }}>
-                  Server Settings
+                  {t("server.settings.title")}
                 </div>
               </div>
             </div>
 
             <div className="input-wrapper" style={{ width: "100%", marginBottom: 8 }}>
               <Search className="input-icon" />
-              <input placeholder="Search settings" />
+              <input placeholder={t("server.settings.search")} />
             </div>
 
             <hr />
@@ -2961,10 +2962,10 @@ export default function ServerSettingsModal({
                   style={{ textTransform: "uppercase" }}
                 >
                   {section === "server"
-                    ? "Server"
+                    ? t("server.group.server")
                     : section === "access"
-                    ? "Access & Moderation"
-                    : "Danger Zone"}
+                    ? t("server.group.access")
+                    : t("server.group.danger")}
                 </div>
                 {items.map((item) => (
                   <div
@@ -2979,7 +2980,7 @@ export default function ServerSettingsModal({
                     onClick={() => selectTab(item)}
                     title={
                       (hasUnsaved || roleEditorDirty) && currentTab !== item
-                        ? "Save or revert changes before switching tabs"
+                        ? t("server.settings.unsaved_tab")
                         : undefined
                     }
                     style={{
@@ -2992,7 +2993,7 @@ export default function ServerSettingsModal({
                     <span style={{ marginRight: 8, fontSize: 14 }}>
                       {TAB_ICONS[item]}
                     </span>
-                    {TAB_LABELS[item]}
+                    {t(TAB_LABELS[item])}
                   </div>
                 ))}
                 <hr />
@@ -3017,7 +3018,7 @@ export default function ServerSettingsModal({
               <span style={{ marginRight: 10, fontSize: 20 }}>
                 {TAB_ICONS[currentTab]}
               </span>
-              {TAB_LABELS[currentTab]}
+              {t(TAB_LABELS[currentTab])}
             </div>
 
             {/* Tab content */}
@@ -3069,7 +3070,7 @@ export default function ServerSettingsModal({
             You have unsaved changes
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleRevert}>Revert</button>
+            <button onClick={handleRevert}>{t("revert")}</button>
             <button className="save-btn" onClick={handleSave}>
               Save Changes
             </button>
@@ -3083,7 +3084,7 @@ export default function ServerSettingsModal({
           src={cropSrc}
           onCancel={() => { setShowCrop(false); setCropSrc(null); }}
           onComplete={onCropDone}
-          headerText={cropMode === "icon" ? "Adjust Server Icon" : "Adjust Server Banner"}
+          headerText={cropMode === "icon" ? t("server.crop_icon") : t("server.crop_banner")}
           shape={cropMode === "icon" ? "circle" : "rect"}
           rectAspect={cropMode === "banner" ? 4 : undefined}
         />

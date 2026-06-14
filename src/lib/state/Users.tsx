@@ -1,5 +1,5 @@
 import React, { useContext, useState, createContext } from "react";
-import { Member, User } from "../utils/types";
+import { Member, User } from "../utils/Types";
 import { getNameFont } from "../utils/UserUtils";
 
 export interface UserState {
@@ -39,7 +39,7 @@ function registerMemberFont(member: Member) {
   const [url, isCustom] = getNameFont(member.user, member);
   if (!isCustom)
     return;
-  registerFont(makeKey(member.user.id, member.serverId), member.nameFont, url!);
+  registerFont(makeKey(member.userId, member.serverId), member.nameFont, url!);
 }
 
 export function registerFont(id: string, fontName: string, url: string) {
@@ -60,70 +60,65 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const u = get(user.id);
     if (!u) {
       addUser(user);
-      return user;
+      return user.id;
     }
-    return u;
+    return u.id;
   }
 
   const get = (id: number) =>
     users.find(c => c.id === id);
 
   const getMember = (id: number | undefined, serverId: number | undefined): Member | undefined =>
-    id !== undefined && serverId !== undefined ? members.find(m => m.user.id === id && m.serverId === serverId) : undefined;
+    id !== undefined && serverId !== undefined ? members.find(m => m.userId === id && m.serverId === serverId) : undefined;
 
   const getMembersFor = (id: number | undefined) =>
-    id !== undefined ? members.filter(m => m.user.id === id) : undefined;
+    id !== undefined ? members.filter(m => m.userId === id) : undefined;
 
   const addMember = (member: Member) => {
     registerMemberFont(member);
     setMembers(prev => {
-      const key = makeKey(member.user.id, member.serverId);
-      const filtered = prev.filter(m => makeKey(m.user.id, m.serverId) !== key);
-      return [...filtered, {
-        ...member,
-        user: getUserRef(member.user)
-      }];
+      if (member.user) {
+        member.userId = getUserRef(member.user);
+        member.user = undefined;
+      }
+      const key = makeKey(member.userId, member.serverId);
+      const filtered = prev.filter(m => makeKey(m.userId, m.serverId) !== key);
+      return [...filtered, member];
     });
   };
 
   const addMembers = (newMembers: Member[]) => {
     setMembers(prev => {
-      const keys = new Set(newMembers.map(m => makeKey(m.user.id, m.serverId)));
-      const filtered = prev.filter(m => !keys.has(makeKey(m.user.id, m.serverId)));
+      const keys = new Set(newMembers.map(m => {
+        if (m.user) {
+          m.userId = getUserRef(m.user);
+          m.user = undefined;
+        }
+        return makeKey(m.userId, m.serverId);
+      }));
+      const filtered = prev.filter(m => !keys.has(makeKey(m.userId, m.serverId)));
       for (const m of newMembers)
         registerMemberFont(m);
-      return [...filtered, ...newMembers.map(m => ({
-        ...m,
-        user: getUserRef(m.user)
-      }))];
+      return [...filtered, ...newMembers];
     });
   };
 
   const removeMember = (id: number, serverId: number) =>
-    setMembers(prev => prev.filter(m => makeKey(m.user.id, m.serverId) !== makeKey(id, serverId)));
+    setMembers(prev => prev.filter(m => makeKey(m.userId, m.serverId) !== makeKey(id, serverId)));
 
   const removeMembers = (toRemove: { id: number; serverId: number }[]) =>
-    setMembers(prev => prev.filter(m => !toRemove.some(r => makeKey(r.id, r.serverId) === makeKey(m.user.id, m.serverId))));
-
-  const updateMembers = (user: User) => {
-    const mems = getMembersFor(user.id) ?? [];
-    mems.forEach(m => m.user = user);
-    addMembers(mems);
-  }
+    setMembers(prev => prev.filter(m => !toRemove.some(r => makeKey(r.id, r.serverId) === makeKey(m.userId, m.serverId))));
 
   const addUser = (user: User) => {
     registerUserFont(user);
     setUsers(prev => [prev.filter(c => c.id !== user.id), user].flat());
-    updateMembers(user);
   }
 
   const addUsers = (newUsers: User[]) => {
     setUsers(prev => {
       const newIds = new Set(newUsers.map(c => c.id));
-      for (const u of newUsers) {
+      for (const u of newUsers)
         registerUserFont(u);
-        updateMembers(u);
-      }
       return [...prev.filter(c => !newIds.has(c.id)), ...newUsers];
     });
   };
