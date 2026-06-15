@@ -1,4 +1,5 @@
 import { hostUrl } from "../../App";
+import { useAuthState } from "../state/Auth";
 import { Emoji, Message } from "../utils/Types";
 import { api, binapi, raw } from "./Http";
 
@@ -79,8 +80,8 @@ export async function getAttachment(fileName: string, options: RequestInit = {})
 
 export async function uploadAttachment(
   file: File,
-  options: RequestInit = {},
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  options: RequestInit = {}
 ): Promise<{ id: number; fileName: string }> {
   if (!onProgress) {
     const formData = new FormData();
@@ -96,6 +97,7 @@ export async function uploadAttachment(
     xhr.open("POST", `${hostUrl}/api/attachments`);
 
     new Headers(options.headers).forEach((value, key) => xhr.setRequestHeader(key, value));
+    xhr.setRequestHeader("Authorization", `Bearer ${useAuthState.getState().token}`);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable)

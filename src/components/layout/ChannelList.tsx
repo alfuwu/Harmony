@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useChannelState } from "../../lib/state/Channels";
-import { useServerState } from "../../lib/state/Servers";
-import { useAuthState } from "../../lib/state/Auth";
-import { useUserState } from "../../lib/state/Users";
-import { useMessageState } from "../../lib/state/Messages";
+import { getCs } from "../../lib/state/Channels";
+import { getSs } from "../../lib/state/Servers";
+import { getAs } from "../../lib/state/Auth";
+import { getUs } from "../../lib/state/Users";
+import { getMs } from "../../lib/state/Messages";
 import { useLoadingState } from "../../lib/state/Loading";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { ChannelType, AbstractChannel } from "../../lib/utils/Types";
@@ -21,11 +21,12 @@ import { BellIcon, BellOffIcon, EyeIcon, EyeOffIcon, HashIcon, InviteIcon, PlusI
 
 export default function ChannelList() {
   useLocale();
-  const { channels, currentChannel, setCurrentChannel } = useChannelState();
-  const { currentServer } = useServerState();
-  const { user, token, userSettings, setUserSettings } = useAuthState();
-  const { getMember } = useUserState();
-  const { addMessages } = useMessageState();
+
+  const { channels, currentChannel, setCurrentChannel } = getCs();
+  const { currentServer } = getSs();
+  const { user, userSettings, setUserSettings } = getAs();
+  const { getMember } = getUs();
+  const { addMessages } = getMs();
   const { channelsLoading, setMessagesLoading } = useLoadingState();
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<number>>(new Set());
@@ -80,9 +81,7 @@ export default function ChannelList() {
     const key = CacheKey.messages(c.id);
     try {
       if (cache.isStale(key)) {
-        const msgs = await getMessages(c.id, undefined, undefined, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const msgs = await getMessages(c.id);
         addMessages(msgs);
         cache.markFresh(key);
       }
@@ -97,9 +96,7 @@ export default function ChannelList() {
     if (!currentServer)
       return;
     try {
-      await deleteChannel(currentServer.id, c.id, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await deleteChannel(currentServer.id, c.id);
       if (currentChannel?.id === c.id)
         setCurrentChannel(null);
     } catch (e) {
@@ -119,7 +116,7 @@ export default function ChannelList() {
     };
     setUserSettings(next);
     try {
-      await updateSettings(next, { headers: { Authorization: `Bearer ${token}` } });
+      await updateSettings(next);
     } catch (e) {
       console.error(e);
     }
@@ -137,7 +134,7 @@ export default function ChannelList() {
     };
     setUserSettings(next);
     try {
-      await updateSettings(next, { headers: { Authorization: `Bearer ${token}` } });
+      await updateSettings(next);
     } catch (e) {
       console.error(e);
     }

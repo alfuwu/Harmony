@@ -1,10 +1,8 @@
-import { ChannelState } from "../state/Channels";
-import { UserState } from "../state/Users";
-import { MessageState } from "../state/Messages";
 import { Channel, Member, Role, RoleDisplayType, Server, User } from "../utils/Types";
 import { api } from "./Http";
-import { getMessages } from "./MessageApi";
 import { useCacheState, CacheKey } from "../state/Cache";
+import { useUserState } from "../state/Users";
+import { useChannelState } from "../state/Channels";
 
 export async function createServer(name: string, description: string | undefined = undefined, tags: string[] | undefined = undefined, inviteUrls: string[] | undefined = undefined, options: RequestInit = {}) {
   return api(`/servers`, {
@@ -35,7 +33,7 @@ export async function getServerMembers(serverId: number, options: RequestInit = 
   });
 }
 
-export async function loadServer(server: Server, channelState: ChannelState, userState: UserState, messageState: MessageState, token: string): Promise<void> {
+export async function loadServer(server: Server): Promise<void> {
   const { isStale, markFresh } = useCacheState.getState();
 
   const channelKey = CacheKey.channels(server.id);
@@ -47,19 +45,16 @@ export async function loadServer(server: Server, channelState: ChannelState, use
   server.loaded = true;
 
   if (isStale(channelKey)) {
-    const channels = await getServerChannels(server.id, { headers: { Authorization: `Bearer ${token}` } });
-    channelState.addChannels(channels);
+    const channels = await getServerChannels(server.id);
+    useChannelState.getState().addChannels(channels);
     markFresh(channelKey);
   }
 
   if (isStale(memberKey)) {
-    const members = await getServerMembers(server.id, { headers: { Authorization: `Bearer ${token}` } });
-    userState.addMembers(members);
+    const members = await getServerMembers(server.id);
+    useUserState.getState().addMembers(members);
     markFresh(memberKey);
   }
-
-  const messages = await getMessages(server.id, undefined, undefined, { headers: { Authorization: `Bearer ${token}` } });
-  messageState.addMessages(messages);
 }
 
 export async function deleteServer(serverId: number, options: RequestInit = {}) {

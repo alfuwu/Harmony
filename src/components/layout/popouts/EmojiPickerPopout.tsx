@@ -4,24 +4,14 @@ import {
 import data from "@emoji-mart/data";
 import { SearchIndex, init } from "emoji-mart";
 import { renderEmoji } from "../../../lib/utils/MarkdownRenderer";
-import type { UserSettings } from "../../../lib/utils/UserSettings";
 import type { Server } from "../../../lib/utils/Types";
 import { t, useLocale } from "../../../lib/i18n/Index";
 import type { TranslationKeys } from "../../../lib/i18n/Schema";
+import { normalizeEmojiId } from "../../../lib/utils/Funcs";
+import { getEmojiUrl } from "../../../lib/utils/ServerUtils";
+import { getSs } from "../../../lib/state/Servers";
 
 init({ data });
-
-function isFlag(native: string): boolean {
-  const pts = [...(native ?? "")].map(c => c.codePointAt(0) ?? 0);
-  return pts.length === 2 && pts.every(p => p >= 0x1f1e6 && p <= 0x1f1ff);
-}
-
-export function normalizeEmojiId(id: string, native?: string): string {
-  let n = (id ?? "").replace(/-/g, "_");
-  if (native && isFlag(native) && !n.startsWith("flag_") && !n.startsWith("regional_"))
-    n = `flag_${n}`;
-  return n;
-}
 
 const FREQ_KEY = "emojiPicker:frequent";
 const FAV_KEY  = "emojiPicker:favorites";
@@ -57,16 +47,14 @@ const KAOMOJI: { labelKey: TranslationKeys; items: string[] }[] = [
   { labelKey: "emoji_picker.kao.other",     items: ["(づ￣ ³￣)づ", "(´・ω・`)", "(°ロ°)", "(¬‿¬)", "(ó﹏ò｡)", "ب_ب", "(｡•́‿•̀｡)"] },
 ];
 
-interface CustomEmoji { id: string; name: string; url: string; }
-interface GifResult   { id: string; url: string; preview: string; title: string; }
+interface Emoji { id: number; name: string; url: string; }
+interface GifResult { id: string; url: string; preview: string; title: string; }
 
 interface Props {
   position: { top: number; left?: number; right?: number };
   onSelect: (emoji: string, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
-  onSelectCustomEmoji?: (name: string, id: string, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
+  onSelectCustomEmoji?: (name: string, id: number, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
   onSelectGif?: (url: string, preview: string, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
-  userSettings: UserSettings | null;
-  servers?: Server[];
 }
 
 const PICKER_W = 360;
@@ -75,11 +63,13 @@ const PICKER_H = 460;
 const TENOR_KEY: string = (import.meta as any).env?.VITE_TENOR_API_KEY ?? "";
 
 export default function EmojiPickerPopout({
-  position, onSelect, onSelectCustomEmoji, onSelectGif, userSettings, servers = []
+  position, onSelect, onSelectCustomEmoji, onSelectGif
 }: Props) {
   useLocale();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
+
+  const servers = getSs().servers;
 
   useLayoutEffect(() => {
     if (ref.current) {
@@ -126,9 +116,9 @@ export default function EmojiPickerPopout({
     []
   );
 
-  const serverGroups = useMemo<{ server: Server; emojis: CustomEmoji[] }[]>(() => {
+  const serverGroups = useMemo<{ server: Server; emojis: Emoji[] }[]>(() => {
     return servers
-      .map(s => ({ server: s, emojis: ((s as any).emojis ?? []) as CustomEmoji[] }))
+      .map(s => ({ server: s, emojis: (s.emojis ?? []).map(e => ({ name: e.name, id: e.id, url: getEmojiUrl(e) })) as Emoji[] }))
       .filter(g => g.emojis.length > 0);
   }, [servers]);
 
@@ -261,8 +251,8 @@ export default function EmojiPickerPopout({
     transition: "background 80ms, border-color 80ms"
   };
 
-  function renderEmojiCell(emojiId: string, native: string) {
-    const normId = normalizeEmojiId(emojiId, native);
+  function renderEmojiCell(native: string, emojiId: string) {
+    const normId = normalizeEmojiId(native, emojiId);
     return (
       <button
         key={emojiId}
@@ -280,12 +270,12 @@ export default function EmojiPickerPopout({
         onMouseDown={e => { e.preventDefault(); selectEmoji(native, emojiId, e); }}
         title={`:${normId}:`}
       >
-        {renderEmoji(userSettings, native)}
+        {renderEmoji({ name: native })}
       </button>
     );
   }
 
-  function renderCustomCell(e: CustomEmoji) {
+  function renderCustomCell(e: Emoji) {
     return (
       <button
         key={e.id}
@@ -312,7 +302,7 @@ export default function EmojiPickerPopout({
     catId: string,
     label: string,
     emojiIds?: string[],
-    customEmojis?: CustomEmoji[]
+    customEmojis?: Emoji[]
   ) {
     const hasContent = (emojiIds?.length ?? 0) > 0 || (customEmojis?.length ?? 0) > 0;
     if (!hasContent) return null;
@@ -328,8 +318,9 @@ export default function EmojiPickerPopout({
         }}>
           {emojiIds?.map(eid => {
             const e = (data as any).emojis[eid];
-            if (!e) return null;
-            return renderEmojiCell(eid, e.skins[0].native);
+            if (!e)
+              return null;
+            return renderEmojiCell(e.skins[0].native, eid);
           })}
           {customEmojis?.map(e => renderCustomCell(e))}
         </div>
@@ -502,8 +493,8 @@ export default function EmojiPickerPopout({
                   : <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 36px)", gap: "2px", padding: "0 12px 8px" }}>
                       {searchResults.map(e =>
                         e._src === "custom"
-                          ? renderCustomCell(e as CustomEmoji)
-                          : renderEmojiCell(e.id as string, e.skins?.[0]?.native ?? ""),
+                          ? renderCustomCell(e as Emoji)
+                          : renderEmojiCell(e.skins?.[0]?.native ?? "", e.id as string),
                       )}
                     </div>
                 }
@@ -531,7 +522,7 @@ export default function EmojiPickerPopout({
           }}>
             <span style={{ fontSize: "18px", lineHeight: 1, flexShrink: 0 }}>
               {hoveredNative
-                ? renderEmoji(userSettings, hoveredNative)
+                ? renderEmoji({ name: hoveredNative })
                 : <span style={{ opacity: 0.3 }}>😀</span>
               }
             </span>

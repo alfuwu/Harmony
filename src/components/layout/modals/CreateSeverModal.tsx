@@ -1,19 +1,11 @@
 import { useState } from "react";
-import { useAuthState } from "../../../lib/state/Auth";
-import { useServerState } from "../../../lib/state/Servers";
+import { getSs } from "../../../lib/state/Servers";
 import { createServer, loadServer } from "../../../lib/api/ServerApi";
-import { useChannelState } from "../../../lib/state/Channels";
-import { useMessageState } from "../../../lib/state/Messages";
-import { useUserState } from "../../../lib/state/Users";
 import { t, useLocale } from "../../../lib/i18n/Index";
 
 export default function CreateServerModal({ open, onClose }: any) {
   useLocale();
-  const { token } = useAuthState();
-  const { setCurrentServer, addServer } = useServerState();
-  const channelState = useChannelState();
-  const userState = useUserState();
-  const messageState = useMessageState();
+  const { setCurrentServer, addServer } = getSs();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -25,11 +17,10 @@ export default function CreateServerModal({ open, onClose }: any) {
       name,
       description || undefined,
       tags ? tags.split(",").map(t => t.trim()) : undefined,
-      invites ? invites.split(",").map(i => i.trim()) : undefined,
-      { headers: { Authorization: `Bearer ${token}` } }
+      invites ? invites.split(",").map(i => i.trim()) : undefined
     );
 
-    await loadServer(s, channelState, userState, messageState, token!);
+    await loadServer(s);
     addServer(s);
     setCurrentServer(s);
     onClose();

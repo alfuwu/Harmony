@@ -1,5 +1,7 @@
+import { userSettings } from '../state/Auth';
 import { COLORS } from './MarkdownAST';
 import type { InlineNode, BlockNode, DocumentAST, DecoToken, TextNode, TableRowNode, TableCellNode } from './MarkdownAST';
+import { Language } from './UserSettings';
 
 const MARKDOWN_SYMBOLS = "[*_@|`~<\\^\-:#>&=#]!";
 
@@ -122,10 +124,10 @@ class InlineParser {
           const lvl = hM[1].length;
           this.deco('mds', 0, lvl);
           this.deco('header', 0, this.src.length, { size: lvl });
-          this.pos = 2;
+          this.pos = lvl + 1;
           const children = this.inner(this.pos, this.src.length);
           this.pos = this.src.length;
-          return { type: 'inlineHeader', level: lvl as 1|2|3|4|5|6, children } as InlineNode;
+          return { type: 'inlineHeader', level: lvl, children } as InlineNode;
         }
       }
     }
@@ -289,9 +291,9 @@ class InlineParser {
       if (tsM) {
         const current = new Date();
         const year = Number(tsM[1] || tsM[6] || current.getFullYear());
-        // todo: check if american english and if so swap tsM[5] and tsM[4] around
-        const month = Number(tsM[2] || tsM[5] || current.getMonth() + 1);
-        const day = Number(tsM[3] || tsM[4] || current.getDate());
+        const isAmericanDate = userSettings()?.language === Language.AmericanEnglish; // typeof navigator !== 'undefined' && /^en-US$/i.test(navigator.language ?? '');
+        const month = Number(tsM[2] || (isAmericanDate ? tsM[4] : tsM[5]) || current.getMonth() + 1);
+        const day = Number(tsM[3] || (isAmericanDate ? tsM[5] : tsM[4]) || current.getDate());
         const hour = Number(tsM[7] || tsM[11] || 0);
         const minute = Number(tsM[8] || tsM[12] || 0);
         const second = Number(tsM[9] || tsM[13] || 0);
@@ -348,7 +350,7 @@ class InlineParser {
     const emojiM = /^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\p{Extended_Pictographic}\uFE0F?)/u.exec(this.rest());
     if (emojiM) {
       this.eat(emojiM[0].length);
-      return { type: 'emoji', native: emojiM[0] };
+      return { type: 'emoji', name: emojiM[0] };
     }
 
     return null;
@@ -419,6 +421,13 @@ class InlineParser {
       return { type: 'mentionChannel', id: Number(chanM[1]) };
     }
 
+    // Custom emoji: <[a]:name:id>
+    const ceM = /^<(a)?:([\p{L}\p{Nd}_\-\.~]{2,}):(\d+)/u.exec(rest);
+    if (ceM) {
+      this.eat(ceM[0].length);
+      return { type: 'emoji', id: Number(ceM[3]), name: ceM[2], animated: !!ceM[1] };
+    }
+
     // Bracketed URL: <url>
     const bktM = /^<(https?:\/\/[^\s>]+)>/.exec(rest);
     if (bktM) {
@@ -431,7 +440,7 @@ class InlineParser {
     }
 
     if (this.at("<<")) {
-      const e = this.findClose('>>', p + 2);
+      const e = this.findClose('>>', p + 2, true);
       if (e !== -1) {
         this.deco('mds', p, p + 2);
         this.deco('marquee', p + 2, e);
@@ -501,7 +510,7 @@ export function parseInline(text: string, noFullHeaders = false): InlineNode[] {
 
 export function tokenizeInline(text: string): DecoToken[] {
   const tokens: DecoToken[] = [];
-  new InlineParser(text, tokens).parse();
+  new InlineParser(text, tokens, 0).parse();
   return tokens;
 }
 
@@ -572,8 +581,19 @@ export function parseDocument(text: string, allowBlocks = true, noHeaders = fals
         const title = line.slice(3).trim();
         const bodyLines: string[] = [];
         let j = i + 1;
-        while (j < lines.length && lines[j].trim() !== '>-')
-          bodyLines.push(lines[j++]);
+        let nested = 0;
+        while (j < lines.length) {
+          const line = lines[j++];
+          if (line.trim() === '>-') {
+            nested--;
+            if (nested < 0)
+              break;
+          } else if (line.startsWith('>+ ')) {
+            nested++;
+          }
+
+          bodyLines.push(line);
+        }
         blocks.push({ type: 'collapsible', title: parseInline(title, noHeaders), children: parseDocument(bodyLines.join('\n')) });
         i = j < lines.length ? j + 1 : lines.length;
         continue;

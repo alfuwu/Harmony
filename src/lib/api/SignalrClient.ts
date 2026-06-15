@@ -1,33 +1,20 @@
 import * as signalR from "@microsoft/signalr";
-import { AuthState } from "../state/Auth";
 import { hostUrl } from "../../App";
-import { MessageState } from "../state/Messages";
-import { ChannelState } from "../state/Channels";
-import { ServerState } from "../state/Servers";
-import { UserState } from "../state/Users";
+import { getAs } from "../state/Auth";
+import { getMs } from "../state/Messages";
+import { getCs } from "../state/Channels";
+import { getSs } from "../state/Servers";
+import { getUs } from "../state/Users";
 import { AbstractChannel, Presence, Server, VoiceState } from "../utils/Types";
 import { useCacheState, CacheKey } from "../state/Cache";
+import { isMentioned, sendDesktopNotification } from "../utils/Funcs";
+import { getServerId } from "../utils/ChannelUtils";
+import { useUnread } from "../state/Unread";
 
 export let connection: signalR.HubConnection | null = null;
 
-let _messageState: MessageState;
-let _channelState: ChannelState;
-let _serverState: ServerState;
-let _userState: UserState;
 let _heartbeatHandle: ReturnType<typeof setInterval> | null = null;
 const _typingTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
-
-export function updateSignalRRefs(params: {
-  messageState: MessageState;
-  channelState: ChannelState;
-  serverState: ServerState;
-  userState: UserState;
-}) {
-  _messageState = params.messageState;
-  _channelState = params.channelState;
-  _serverState = params.serverState;
-  _userState = params.userState;
-}
 
 function startHeartbeat() {
   stopHeartbeat();
@@ -44,27 +31,12 @@ function stopHeartbeat() {
 }
 
 export function initSignalR({
-  authState,
-  serverState,
-  channelState,
-  messageState,
-  userState,
   initialChannels = [],
-  initialServers = [],
+  initialServers = []
 }: {
-  authState: AuthState;
-  serverState: ServerState;
-  channelState: ChannelState;
-  messageState: MessageState;
-  userState: UserState;
   initialChannels?: AbstractChannel[];
   initialServers?: Server[];
 }) {
-  _messageState = messageState;
-  _channelState = channelState;
-  _serverState = serverState;
-  _userState = userState;
-
   if (connection) {
     stopHeartbeat();
     connection.stop();
@@ -73,62 +45,76 @@ export function initSignalR({
 
   connection = new signalR.HubConnectionBuilder()
     .withUrl(`${hostUrl}/gateway`, {
-      accessTokenFactory: () => authState.token || ""
+      accessTokenFactory: () => getAs().token || ""
     })
     .withAutomaticReconnect()
     .configureLogging(signalR.LogLevel.Warning)
     .build();
 
   connection.on("RecvMsg", (msg) => {
-    _messageState.addMessage({ ...msg, sending: false });
+    getMs().addMessage({ ...msg, sending: false });
+
+    const cs = getCs();
+    const uid = getAs().user?.id;
+    const currentChannelId = cs.currentChannel?.id;
+    if (msg.channelId !== currentChannelId && uid != null) {
+      const mention = isMentioned(msg, uid, getServerId(msg.channelId));
+      useUnread.getState().receive(msg.channelId, msg.id, mention);
+
+      const author = getUs().get(msg.authorId);
+      const authorName = author?.displayName ?? author?.username ?? 'Someone';
+      sendDesktopNotification(authorName, msg.content ?? '', msg.channelId, mention);
+    }
   });
 
   connection.on("UpdMsg", (msg) => {
-    _messageState.updateMessage(msg);
+    getMs().updateMessage(msg);
   });
 
   connection.on("DelMsg", (dto: { id: number; channelId: number }) => {
-    _messageState.removeMessage(dto.id);
+    getMs().removeMessage(dto.id);
   });
 
+  // TODO: make payload only a message id + channel id, also make unpinning function
   connection.on("PinMsg", (msg) => {
-    _messageState.updateMessage(msg);
+    getMs().updateMessage(msg);
   });
 
   connection.on("AddReact", (payload: { messageId: number; channelId: number; userId: number; emoji: any }) => {
-    _messageState.addReaction({ messageId: payload.messageId, userId: payload.userId, emoji: payload.emoji });
+    getMs().addReaction({ messageId: payload.messageId, userId: payload.userId, emoji: payload.emoji });
   });
 
   connection.on("RemReact", (payload: { messageId: number; channelId: number; userId: number; emoji: any }) => {
-    _messageState.removeReaction({ messageId: payload.messageId, userId: payload.userId, emoji: payload.emoji });
+    getMs().removeReaction({ messageId: payload.messageId, userId: payload.userId, emoji: payload.emoji });
   });
 
   connection.on("UpdUsr", (u) => {
-    _userState.addUser(u);
+    getUs().addUser(u);
   });
 
   connection.on("UpdMem", (m) => {
-    _userState.addMember(m);
+    getUs().addMember(m);
   });
 
   connection.on("MbrJoin", (member) => {
-    _userState.addMember(member);
+    getUs().addMember(member);
     if (member.serverId)
       useCacheState.getState().invalidate(CacheKey.members(member.serverId));
   });
 
   connection.on("MbrLeave", (dto: { id: number }) => {
-    const serverId = _serverState.currentServer?.id;
+    const serverId = getSs().currentServer?.id;
     if (serverId) {
-      _userState.removeMember(dto.id, serverId);
+      getUs().removeMember(dto.id, serverId);
       useCacheState.getState().invalidate(CacheKey.members(serverId));
     }
   });
 
   connection.on("UpdStatus", (p: Presence) => {
-    const user = _userState.get(p.userId);
+    const us = getUs();
+    const user = us.get(p.userId);
     if (user) {
-      _userState.addUser({
+      us.addUser({
         ...user,
         onlineStatus: p.onlineStatus,
         showStatusWhileOffline: p.showStatusWhileOffline ?? user.showStatusWhileOffline,
@@ -144,73 +130,80 @@ export function initSignalR({
     if (existing !== undefined)
       clearTimeout(existing);
 
-    _channelState.startTyping(event);
+    const cs = getCs();
+    cs.startTyping(event);
 
     const handle = setTimeout(() => {
-      _channelState.stopTyping(event);
+      cs.stopTyping(event);
       _typingTimeouts.delete(key);
     }, 8000);
 
     _typingTimeouts.set(key, handle);
   });
 
-  connection.on("StopTyping", (event) => _channelState.stopTyping(event));
+  connection.on("StopTyping", (event) => getCs().stopTyping(event));
 
   connection.on("NewChan", (channel) => {
-    _channelState.addChannel(channel);
+    getCs().addChannel(channel);
     if (channel.serverId)
       useCacheState.getState().invalidate(CacheKey.channels(channel.serverId));
   });
 
   connection.on("UpdChan", (channel) => {
-    _channelState.addChannel(channel);
+    getCs().addChannel(channel);
     if (channel.serverId)
       useCacheState.getState().invalidate(CacheKey.channels(channel.serverId));
   });
 
   connection.on("DelChan", (dto: { id: number }) => {
-    const ch = _channelState.get(dto.id);
+    const cs = getCs();
+    const ch = cs.get(dto.id);
     if (ch?.serverId)
       useCacheState.getState().invalidate(CacheKey.channels(ch.serverId));
-    _channelState.removeChannel(dto.id);
-    if (_channelState.currentChannel?.id === dto.id)
-      _channelState.setCurrentChannel(null);
+    cs.removeChannel(dto.id);
+    if (cs.currentChannel?.id === dto.id)
+      cs.setCurrentChannel(null);
   });
 
   connection.on("UpdServ", (server) => {
-    _serverState.addServer(server);
+    getSs().addServer(server);
     useCacheState.getState().invalidate(CacheKey.servers);
   });
 
   connection.on("DelSrv", (dto: { id: number }) => {
-    _serverState.removeServer(dto.id);
+    const ss = getSs();
+    ss.removeServer(dto.id);
     useCacheState.getState().invalidate(CacheKey.servers);
-    if (_serverState.currentServer?.id === dto.id) {
-      _serverState.setCurrentServer(null);
-      _channelState.setCurrentChannel(null);
+    if (ss.currentServer?.id === dto.id) {
+      ss.setCurrentServer(null);
+      getCs().setCurrentChannel(null);
     }
   });
 
   connection.on("NewRole", (role) => {
-    const server = _serverState.get(role.serverId);
+    const ss = getSs();
+    const server = ss.get(role.serverId);
     if (server)
-      _serverState.addServer({ ...server, roles: [...server.roles.filter(r => r.id !== role.id), role] });
+      ss.addServer({ ...server, roles: [...server.roles.filter(r => r.id !== role.id), role] });
   });
 
   connection.on("UpdRole", (role) => {
-    const server = _serverState.get(role.serverId);
+    const ss = getSs();
+    const server = ss.get(role.serverId);
     if (server)
-      _serverState.addServer({ ...server, roles: server.roles.map(r => r.id === role.id ? role : r) });
+      ss.addServer({ ...server, roles: server.roles.map(r => r.id === role.id ? role : r) });
   });
 
   connection.on("DelRole", (dto: { id: number }) => {
-    _serverState.servers.forEach(server => {
+    const ss = getSs();
+    ss.servers.forEach(server => {
       if (server.roles.some(r => r.id === dto.id))
-        _serverState.addServer({ ...server, roles: server.roles.filter(r => r.id !== dto.id) });
+        ss.addServer({ ...server, roles: server.roles.filter(r => r.id !== dto.id) });
     });
   });
 
   connection.on("LevelUp", (payload: { scope: string; level: number; serverId?: number }) => {
+    // TODO: turn into a custom message type
     console.info(`🎉 Level up! ${payload.scope} level ${payload.level}`);
   });
 
@@ -244,8 +237,8 @@ export function initSignalR({
     console.info("SignalR reconnected. Rejoining groups.");
     startHeartbeat();
     useCacheState.getState().invalidatePrefix("");
-    const channels = _channelState.channels;
-    const servers = _serverState.servers;
+    const channels = getCs().channels;
+    const servers = getSs().servers;
     await Promise.all([
       ...channels.map(c => connection!.invoke("JoinChannel", c.id).catch(() => {})),
       ...servers.map(s => connection!.invoke("JoinServer", s.id).catch(() => {})),

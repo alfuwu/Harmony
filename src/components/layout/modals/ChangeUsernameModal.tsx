@@ -7,16 +7,13 @@ import { TranslationKeys } from "../../../lib/i18n/Schema";
 interface Props {
   open: boolean;
   currentUsername: string;
-  token: string;
   onClose: () => void;
   onSaved: (newUsername: string, newDiscriminator: number) => void;
 }
 
 export default function ChangeUsernameModal({
-  open, currentUsername, token, onClose, onSaved,
+  open, currentUsername, onClose, onSaved,
 }: Props) {
-  const opts = { headers: { Authorization: `Bearer ${token}` } };
-
   const [username, setUsername] = useState(currentUsername);
   const [availability, setAvailability] = useState<UsernameAvailability | null>(null);
   const [checking, setChecking] = useState(false);
@@ -67,7 +64,7 @@ export default function ChangeUsernameModal({
     setLoading(true);
     setError("");
     try {
-      await updateMe({ username: trimmed }, opts);
+      await updateMe({ username: trimmed });
       const disc = availability && !availability.pomelo ? availability.discriminator : 0;
       onSaved(trimmed, disc);
       onClose();

@@ -1,41 +1,5 @@
 import React from "react";
 
-(function injectSkeletonStyles() {
-  if (typeof document === "undefined") return;
-  if (document.getElementById("skeleton-styles")) return;
-  const el = document.createElement("style");
-  el.id = "skeleton-styles";
-  el.textContent = `
-    .skeleton-bone {
-      background: var(--bg-2);
-      border-radius: 6px;
-      position: relative;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-    .skeleton-bone::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(
-        90deg,
-        transparent 0%,
-        var(--bg-4, color-mix(in hsl, var(--bg-3), white 6%)) 50%,
-        transparent 100%
-      );
-      transform: translateX(-100%);
-      animation: skeleton-sweep 1.6s ease-in-out infinite;
-    }
-    @keyframes skeleton-sweep {
-      from { transform: translateX(-100%); }
-      to   { transform: translateX( 200%); }
-    }
-  `;
-  document.head.appendChild(el);
-})();
-
-// ─── Primitive bone ──────────────────────────────────────────────────────────
-
 interface BoneProps {
   w?: string | number;
   h?: string | number;
@@ -53,12 +17,9 @@ function Bone({ w = "100%", h = 14, r = 6, style, className = "" }: BoneProps) {
   );
 }
 
-// ─── Deterministic width tables (avoids Math.random on re-render) ─────────────
-
 const CHANNEL_WIDTHS  = [72, 85, 60, 90, 68, 78, 55, 83, 65, 50];
-const MEMBER_WIDTHS   = [75, 60, 88, 65, 80, 52, 70, 85, 58, 72];
+const MEMBER_WIDTHS = [75, 60, 88, 65, 80, 52, 70, 85, 58, 72];
 
-// Each entry = content line widths for one skeleton message group
 const MESSAGE_LINE_PATTERNS: number[][] = [
   [75],
   [85, 60],
@@ -67,10 +28,8 @@ const MESSAGE_LINE_PATTERNS: number[][] = [
   [65],
   [80],
   [55, 88],
-  [70, 48],
+  [70, 48]
 ];
-
-// ─── Server ──────────────────────────────────────────────────────────────────
 
 export function SkeletonServer() {
   return (
@@ -93,8 +52,6 @@ export function SkeletonServerList({ count = 4 }: { count?: number }) {
   );
 }
 
-// ─── Channel ─────────────────────────────────────────────────────────────────
-
 export function SkeletonChannel({ index = 0 }: { index?: number }) {
   const w = CHANNEL_WIDTHS[index % CHANNEL_WIDTHS.length];
   return (
@@ -111,7 +68,6 @@ export function SkeletonChannel({ index = 0 }: { index?: number }) {
 export function SkeletonChannelList() {
   return (
     <>
-      {/* Category A */}
       <div style={{ padding: "12px 8px 4px", display: "flex", alignItems: "center", gap: 6 }}>
         <Bone w={8} h={8} r={2} />
         <Bone w={80} h={10} r={4} />
@@ -120,7 +76,6 @@ export function SkeletonChannelList() {
         <SkeletonChannel key={i} index={i} />
       ))}
 
-      {/* Category B */}
       <div style={{ padding: "12px 8px 4px", display: "flex", alignItems: "center", gap: 6 }}>
         <Bone w={8} h={8} r={2} />
         <Bone w={90} h={10} r={4} />
@@ -132,8 +87,6 @@ export function SkeletonChannelList() {
   );
 }
 
-// ─── Member ──────────────────────────────────────────────────────────────────
-
 export function SkeletonMember({ index = 0 }: { index?: number }) {
   const w = MEMBER_WIDTHS[index % MEMBER_WIDTHS.length];
   return (
@@ -144,7 +97,7 @@ export function SkeletonMember({ index = 0 }: { index?: number }) {
         alignItems: "center",
         padding: "4px 12px",
         gap: 10,
-        pointerEvents: "none",
+        pointerEvents: "none"
       }}
     >
       <Bone w={32} h={32} r="50%" />
@@ -163,11 +116,9 @@ export function SkeletonMemberList({ count = 8 }: { count?: number }) {
   );
 }
 
-// ─── Message ─────────────────────────────────────────────────────────────────
-
 export function SkeletonMessage({
   index = 0,
-  compact = false,
+  compact = false
 }: {
   index?: number;
   compact?: boolean;
@@ -184,7 +135,7 @@ export function SkeletonMessage({
           <Bone w={50} h={12} r={4} />
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
             {lines.map((lw, li) => (
-              <Bone key={li} w={`${lw}%`} h={13} />
+              <Bone key={li} w={`${lw}em`} h={13} />
             ))}
           </div>
         </div>

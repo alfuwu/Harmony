@@ -6,14 +6,15 @@ import React, {
   useMemo,
   ReactNode,
 } from "react";
-import { useAuthState } from "../../../lib/state/Auth";
-import { useServerState } from "../../../lib/state/Servers";
-import { useUserState } from "../../../lib/state/Users";
+import { getAs } from "../../../lib/state/Auth";
+import { getSs } from "../../../lib/state/Servers";
+import { getUs } from "../../../lib/state/Users";
 import { api, binapi } from "../../../lib/api/Http";
 import {
   Role,
   RoleDisplayType,
   Emoji,
+  User,
 } from "../../../lib/utils/Types";
 import Search from "../../svgs/settings/Search";
 import { intToHex } from "../../../lib/utils/Funcs";
@@ -533,14 +534,10 @@ export default function ServerSettingsModal({
   onClose: () => void;
 }) {
   useLocale();
-  const { token, user } = useAuthState();
-  const { currentServer, addServer, removeServer } = useServerState();
-  const { members, users, get } = useUserState();
 
-  const opts = useMemo(
-    () => ({ headers: { Authorization: `Bearer ${token}` } }),
-    [token]
-  );
+  const { user } = getAs();
+  const { currentServer, addServer, removeServer } = getSs();
+  const { members, users, get } = getUs();
 
   // ── Permission checks ──────────────────────────────────
   const me = useMemo(
@@ -609,6 +606,8 @@ export default function ServerSettingsModal({
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
 
+  const [serverSearch, setServerSearch] = useState("");
+
   // ── Init ───────────────────────────────────────────────
   useEffect(() => {
     if (!open || !currentServer) return;
@@ -655,7 +654,7 @@ export default function ServerSettingsModal({
   useEffect(() => {
     if (currentTab !== "bans" || !currentServer || !canBans) return;
     setBansLoading(true);
-    getBans(currentServer.id, opts)
+    getBans(currentServer.id)
       .then((data: any) => setBans(data ?? []))
       .catch(() => setBans([]))
       .finally(() => setBansLoading(false));
@@ -739,7 +738,6 @@ export default function ServerSettingsModal({
     try {
       // Update basic server info
       await api(`/servers/${currentServer.id}`, {
-        ...opts,
         method: "PATCH",
         body: JSON.stringify({
           name: srvName,
@@ -753,7 +751,6 @@ export default function ServerSettingsModal({
         const fd = new FormData();
         fd.append("file", iconFile);
         await binapi(`/servers/${currentServer.id}/icon`, {
-          ...opts,
           method: "POST",
           body: fd,
         });
@@ -762,7 +759,6 @@ export default function ServerSettingsModal({
         const fd = new FormData();
         fd.append("file", bannerFile);
         await binapi(`/servers/${currentServer.id}/banner`, {
-          ...opts,
           method: "POST",
           body: fd,
         });
@@ -845,8 +841,7 @@ export default function ServerSettingsModal({
           ...(roleEditor.permissionPriority !== undefined && {
             permissionPriority: roleEditor.permissionPriority,
           }),
-        } as any,
-        opts
+        } as any
       );
       const updatedRole = { ...target, ...roleEditor, color: roleEditor.color || null };
       const newRoles = localRoles
@@ -876,8 +871,7 @@ export default function ServerSettingsModal({
         undefined,
         undefined,
         RoleDisplayType.Normal,
-        undefined,
-        opts
+        undefined
       );
       const newRoles = [...localRoles, role].sort((a, b) => b.position - a.position);
       setLocalRoles(newRoles);
@@ -893,7 +887,7 @@ export default function ServerSettingsModal({
   async function deleteRole(roleId: number) {
     if (!currentServer) return;
     try {
-      await apiDeleteRole(currentServer.id, roleId, opts);
+      await apiDeleteRole(currentServer.id, roleId);
       const newRoles = localRoles.filter((r) => r.id !== roleId);
       setLocalRoles(newRoles);
       addServer({ ...currentServer, roles: newRoles });
@@ -924,8 +918,8 @@ export default function ServerSettingsModal({
 
     try {
       await Promise.all([
-        apiUpdateRole(currentServer.id, { ...newRoles.find((r) => r.id === roleId)! } as any, opts),
-        apiUpdateRole(currentServer.id, { ...newRoles.find((r) => r.id === localRoles[swapIdx].id)! } as any, opts),
+        apiUpdateRole(currentServer.id, { ...newRoles.find((r) => r.id === roleId)! }),
+        apiUpdateRole(currentServer.id, { ...newRoles.find((r) => r.id === localRoles[swapIdx].id)! }),
       ]);
       addServer({ ...currentServer, roles: newRoles });
     } catch (e) {
@@ -939,7 +933,7 @@ export default function ServerSettingsModal({
     if (!currentServer) return;
     setUnbanningId(userId);
     try {
-      await unbanMember(currentServer.id, { id: userId } as any, opts);
+      await unbanMember(currentServer.id, { id: userId } as User);
       setBans((prev) => prev.filter((b) => b.userId !== userId));
     } catch (e: any) {
       setSaveError(e.message ?? t("error.unban"));
@@ -953,7 +947,7 @@ export default function ServerSettingsModal({
     if (!currentServer || deleteConfirm !== currentServer.name) return;
     setDeleting(true);
     try {
-      await api(`/servers/${currentServer.id}`, { ...opts, method: "DELETE" });
+      await api(`/servers/${currentServer.id}`, { method: "DELETE" });
       removeServer(currentServer.id);
       onClose();
     } catch (e: any) {
@@ -1504,7 +1498,7 @@ export default function ServerSettingsModal({
                   fd.append("name", emojiName.trim());
                   const newEmoji = await binapi(
                     `/servers/${currentServer.id}/emojis`,
-                    { ...opts, method: "POST", body: fd }
+                    { method: "POST", body: fd }
                   );
                   setEmojis((prev) => [...prev, newEmoji]);
                   addServer({ ...currentServer, emojis: [...emojis, newEmoji] });
@@ -1627,7 +1621,7 @@ export default function ServerSettingsModal({
                       try {
                         await api(
                           `/servers/${currentServer.id}/emojis/${emoji.id}`,
-                          { ...opts, method: "DELETE" }
+                          { method: "DELETE" }
                         );
                         const newEmojis = emojis.filter(
                           (e) => e.id !== emoji.id
@@ -2579,7 +2573,6 @@ export default function ServerSettingsModal({
                                   await api(
                                     `/servers/${currentServer.id}/roles/revoke`,
                                     {
-                                      ...opts,
                                       method: "POST",
                                       body: JSON.stringify({ userId: u.id, roleId: role.id }),
                                     }
@@ -2588,7 +2581,6 @@ export default function ServerSettingsModal({
                                   await api(
                                     `/servers/${currentServer.id}/roles/assign`,
                                     {
-                                      ...opts,
                                       method: "POST",
                                       body: JSON.stringify({ userId: u.id, roleId: role.id }),
                                     }
@@ -2946,55 +2938,68 @@ export default function ServerSettingsModal({
 
             <div className="input-wrapper" style={{ width: "100%", marginBottom: 8 }}>
               <Search className="input-icon" />
-              <input placeholder={t("server.settings.search")} />
+              <input
+                placeholder={t("server.settings.search")}
+                value={serverSearch}
+                onChange={e => setServerSearch(e.target.value)}
+              />
             </div>
 
             <hr />
 
-            {Object.entries(tabGroups).map(([section, items]) => (
-              <div key={section} className="nav-section">
-                <div
-                  className="section-header uno ellipsis"
-                  style={{ textTransform: "uppercase" }}
-                >
-                  {section === "server"
-                    ? t("server.group.server")
-                    : section === "access"
-                    ? t("server.group.access")
-                    : t("server.group.danger")}
-                </div>
-                {items.map((item) => (
+            {Object.entries(tabGroups).map(([section, items]) => {
+              const visibleItems = serverSearch.trim()
+                ? items.filter(item =>
+                    t(TAB_LABELS[item]).toLowerCase().includes(serverSearch.toLowerCase())
+                  )
+                : items;
+              if (visibleItems.length === 0)
+                return null;
+              return (
+                <div key={section} className="nav-section">
                   <div
-                    key={item}
-                    className={
-                      "channel uno" +
-                      (currentTab === item ? " selected" : " int") +
-                      ((hasUnsaved || roleEditorDirty) && currentTab !== item
-                        ? " semitrans"
-                        : "")
-                    }
-                    onClick={() => selectTab(item)}
-                    title={
-                      (hasUnsaved || roleEditorDirty) && currentTab !== item
-                        ? t("server.settings.unsaved_tab")
-                        : undefined
-                    }
-                    style={{
-                      ...(hasUnsaved || roleEditorDirty) && currentTab !== item
-                        ? { opacity: 0.5, cursor: "not-allowed" }
-                        : {},
-                      ...(item === "delete" ? { color: "var(--red-2)" } : {}),
-                    }}
+                    className="section-header uno ellipsis"
+                    style={{ textTransform: "uppercase" }}
                   >
-                    <span style={{ marginRight: 8, marginTop: 5 }}>
-                      {TAB_ICONS[item]}
-                    </span>
-                    {t(TAB_LABELS[item])}
+                    {section === "server"
+                      ? t("server.group.server")
+                      : section === "access"
+                      ? t("server.group.access")
+                      : t("server.group.danger")}
                   </div>
-                ))}
-                <hr />
-              </div>
-            ))}
+                  {visibleItems.map((item) => (
+                    <div
+                      key={item}
+                      className={
+                        "channel uno" +
+                        (currentTab === item ? " selected" : " int") +
+                        ((hasUnsaved || roleEditorDirty) && currentTab !== item
+                          ? " semitrans"
+                          : "")
+                      }
+                      onClick={() => selectTab(item)}
+                      title={
+                        (hasUnsaved || roleEditorDirty) && currentTab !== item
+                          ? t("server.settings.unsaved_tab")
+                          : undefined
+                      }
+                      style={{
+                        ...(hasUnsaved || roleEditorDirty) && currentTab !== item
+                          ? { opacity: 0.5, cursor: "not-allowed" }
+                          : {},
+                        ...(item === "delete" ? { color: "var(--red-2)" } : {}),
+                      }}
+                    >
+                      <span style={{ marginRight: 8, marginTop: 5 }}>
+                        {TAB_ICONS[item]}
+                      </span>
+                      {t(TAB_LABELS[item])}
+                    </div>
+                  ))}
+                  <hr />
+                </div>
+              );
+            })}
           </div>
 
           {/* ── Content area ── */}

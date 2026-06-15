@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useAuthState } from "../../../lib/state/Auth";
-import { useChannelState } from "../../../lib/state/Channels";
+import { getCs } from "../../../lib/state/Channels";
 import { createChannel } from "../../../lib/api/ChannelApi";
 import { ChannelType } from "../../../lib/utils/Types";
 import { connection, joinChannel } from "../../../lib/api/SignalrClient";
@@ -27,8 +26,8 @@ const CHANNEL_TYPES: { value: ChannelType; labelKey?: TranslationKeys; label?: s
 
 export default function CreateChannelModal({ open, serverId, onClose }: CreateChannelModalProps) {
   useLocale();
-  const { token } = useAuthState();
-  const { addChannel, setCurrentChannel } = useChannelState();
+
+  const { addChannel, setCurrentChannel } = getCs();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<ChannelType>(ChannelType.Text);
@@ -45,9 +44,7 @@ export default function CreateChannelModal({ open, serverId, onClose }: CreateCh
     try {
       const channel = await createChannel(
         serverId, name.trim(), type,
-        description.trim() || undefined,
-        undefined,
-        { headers: { Authorization: `Bearer ${token}` } }
+        description.trim() || undefined
       );
       addChannel(channel);
       joinChannel(channel.id);

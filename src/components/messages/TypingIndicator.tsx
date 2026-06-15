@@ -1,10 +1,8 @@
 import { ReactNode } from "react";
 import { t, useLocale } from "../../lib/i18n/Index";
-import { useAuthState } from "../../lib/state/Auth";
 import { useChannelState } from "../../lib/state/Channels";
 import { useServerState } from "../../lib/state/Servers";
 import { useUserState } from "../../lib/state/Users";
-import { RenderContext } from "../../lib/utils/MarkdownRenderer";
 import { Name } from "../layout/Generic";
 
 interface TypingIndicatorProps {
@@ -14,38 +12,30 @@ interface TypingIndicatorProps {
 
 export default function TypingIndicator({ channelId, currentUserId }: TypingIndicatorProps) {
   useLocale();
-  const { userSettings } = useAuthState();
-  const serverState = useServerState();
-  const channelState = useChannelState();
-  const userState = useUserState();
 
-  const markdownData: RenderContext = {
-    serverState,
-    channelState,
-    userState,
-    userSettings
-  };
+  const { currentServer } = useServerState();
+  const { getTyping } = useChannelState();
+  const { get, getMember } = useUserState();
 
   if (channelId === undefined)
     return null;
   
-  const typingIds = (channelState.getTyping(channelId) ?? []).filter(id => id !== currentUserId);
+  const typingIds = (getTyping(channelId) ?? []).filter(id => id !== currentUserId);
   if (typingIds.length === 0)
     return null;
 
   const names = typingIds
     .slice(0, 3)
     .map(id => {
-      const u = userState.get(id);
-      const m = userState.getMember(id, serverState.currentServer?.id);
+      const u = get(id);
+      const m = getMember(id, currentServer?.id);
       return (
         <b>
           <Name
             user={u!}
             member={m}
-            serverState={serverState}
-            md={markdownData}
-            allowDmColors={!!!serverState.currentServer}
+            md={{}}
+            allowDmColors={!!!currentServer}
           />
         </b>
       );

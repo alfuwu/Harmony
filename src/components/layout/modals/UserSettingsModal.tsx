@@ -18,10 +18,11 @@ import TwoFactorModal from "./TwoFactorModal";
 import ChangeUsernameModal from "./ChangeUsernameModal";
 import ChangePhoneModal from "./ChangePhoneModal";
 
-import type { UserSettings } from "../../../lib/utils/UserSettings";
+import type { Language, UserSettings } from "../../../lib/utils/UserSettings";
 import { User } from "../../../lib/utils/Types";
 import { t, useLocale } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
+import { getDateLocale } from "../../../lib/utils/Funcs";
 
 function intToHex(n: number): string {
   return "#" + Math.max(0, n >>> 0).toString(16).padStart(6, "0");
@@ -664,7 +665,7 @@ function privacyFromUser(user: User | null): PrivacyState {
   };
 }
 
-function ProfilePreviewCard({ user, displayName, pronouns, bio, bannerColorHex, previewAvatar, previewBanner, fontFamily }: {
+function ProfilePreviewCard({ user, displayName, pronouns, bio, bannerColorHex, previewAvatar, previewBanner, fontFamily, language }: {
   user: User | null | undefined;
   displayName: string | null | undefined;
   pronouns: string | null | undefined;
@@ -673,6 +674,7 @@ function ProfilePreviewCard({ user, displayName, pronouns, bio, bannerColorHex, 
   previewAvatar: string;
   previewBanner: string | undefined;
   fontFamily: string;
+  language?: Language;
 }) {
   const name = displayName || user?.username || "Username";
   const handle = user?.username || "username";
@@ -770,9 +772,7 @@ function ProfilePreviewCard({ user, displayName, pronouns, bio, bannerColorHex, 
               {t("joined")}
             </div>
             <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
-              {/* todo: use language locale for date string? */}
-              {/* todo: default to language locale for date strings, but allow users to change it if they want */}
-              {new Date(user.joinedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+              {new Date(user.joinedAt).toLocaleDateString(getDateLocale(language), { year: "numeric", month: "short", day: "numeric" })}
             </div>
           </>
         )}
@@ -783,7 +783,8 @@ function ProfilePreviewCard({ user, displayName, pronouns, bio, bannerColorHex, 
 
 export default function UserSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   useLocale();
-  const { token, user, setUser, userSettings, setUserSettings } = useAuthState();
+
+  const { user, setUser, userSettings, setUserSettings } = useAuthState();
   const { addUser, setMembers } = useUserState();
   const { setMessages } = useMessageState();
   const { setServers } = useServerState();
@@ -822,8 +823,11 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
   const [emailResendCooldown, setEmailResendCooldown] = useState(0);
   const [emailResendMsg, setEmailResendMsg] = useState("");
 
+  const [settingsSearch, setSettingsSearch] = useState("");
+
   useEffect(() => {
-    if (emailResendCooldown <= 0) return;
+    if (emailResendCooldown <= 0)
+      return;
     const id = setTimeout(() => setEmailResendCooldown(c => c - 1), 1000);
     return () => clearTimeout(id);
   }, [emailResendCooldown]);
@@ -922,11 +926,9 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
     setBannerFile(null);
   }
 
-  const opts = { headers: { Authorization: `Bearer ${token}` } };
-
   async function rmAvatar() {
     try {
-      const res = await deleteAvatar(opts);
+      const res = await deleteAvatar();
       const u = { ...user!, avatar: res.avatar };
       setUser(u);
       addUser(u);
@@ -935,7 +937,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
   }
   async function rmBanner() {
     try {
-      const res = await deleteBanner(opts);
+      const res = await deleteBanner();
       const u = { ...user!, banner: res.banner };
       setUser(u);
       addUser(u);
@@ -944,7 +946,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
   }
   async function rmFont() {
     try {
-      const res = await deleteFont(opts);
+      const res = await deleteFont();
       const u = { ...user!, nameFont: res.nameFont };
       setUser(u);
       addUser(u);
@@ -978,23 +980,23 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
           pronouns: pronouns ?? null,
           bio: bio ?? null,
           bannerColor: hexToInt(bannerColorHex),
-        }, undefined, opts);
+        });
         u = { ...u, displayName: displayName ?? null, pronouns: pronouns ?? null,
           bio: bio ?? null, bannerColor: hexToInt(bannerColorHex) };
       }
 
       if (fAviFile) {
-        const res = await changeAvatar(fAviFile, opts);
+        const res = await changeAvatar(fAviFile);
         u.avatar = res.avatar;
         setFAviFile(null);
       }
       if (fBaniFile) {
-        const res = await changeBanner(fBaniFile, opts);
+        const res = await changeBanner(fBaniFile);
         u.banner = res.banner;
         setFBaniFile(null);
       }
       if (fontFile instanceof File) {
-        const res = await changeFont(fontFile, opts);
+        const res = await changeFont(fontFile);
         u.nameFont = res.nameFont;
         setFontFile(null);
       }
@@ -1007,11 +1009,11 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
             patch[k] = privacy[k];
         });
         if (Object.keys(patch).length > 0)
-          await updatePrivacy(patch, opts);
+          await updatePrivacy(patch);
         u = { ...u, ...privacy };
       }
       if (dc.settingsDirty && userSettings)
-        await updateSettings(userSettings, opts);
+        await updateSettings(userSettings);
 
       if (JSON.stringify(u) !== JSON.stringify(user)) {
         setUser(u);
@@ -1138,7 +1140,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
                         if (emailResendCooldown > 0)
                           return;
                         try {
-                          await sendVerificationEmail(null, opts);
+                          await sendVerificationEmail(null);
                           setEmailResendCooldown(60);
                           setEmailResendMsg(t("settings.email_sent"));
                           setTimeout(() => setEmailResendMsg(""), 4000);
@@ -1345,6 +1347,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
               previewAvatar={previewAvatar}
               previewBanner={previewBanner}
               fontFamily={fontFamily}
+              language={userSettings?.language}
             />
           </div>
         </div>
@@ -1782,28 +1785,40 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
           <div className="navigation ovy-auto ovx-hidden">
             <div className="input-wrapper" style={{ width: "100%" }}>
               <Search className="input-icon" />
-              {/* todo: implement */}
-              <input placeholder={t("settings.search")} />
+              <input
+                placeholder={t("settings.search")}
+                value={settingsSearch}
+                onChange={e => setSettingsSearch(e.target.value)}
+              />
             </div>
             <hr />
-            {Object.entries(tabs).map(([section, items]) => (
-              <div key={section} className="nav-section">
-                <div className="section-header uno ellipsis">{t(`settings.${section}` as TranslationKeys)}</div>
-                {items.map(item => (
-                  <div
-                    key={item}
-                    className={"channel uno" + (currentTab === item ? " selected" : " int") + (hasUnsaved && currentTab !== item ? " semitrans" : "")}
-                    onClick={() => selectTab(item)}
-                    title={hasUnsaved && currentTab !== item ? "Save or revert changes before switching tabs" : undefined}
-                    style={hasUnsaved && currentTab !== item ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
-                  >
-                    <div className="nav-icon" style={{ "--mask-url": `url(./settings/${iconUrl(item)}.png)` } as any} />
-                    {t(`tab.${item}` as TranslationKeys)}
-                  </div>
-                ))}
-                <hr />
-              </div>
-            ))}
+            {Object.entries(tabs).map(([section, items]) => {
+              const visibleItems = settingsSearch.trim()
+                ? items.filter(item =>
+                    t(`tab.${item}` as TranslationKeys).toLowerCase().includes(settingsSearch.toLowerCase())
+                  )
+                : items;
+              if (visibleItems.length === 0)
+                return null;
+              return (
+                <div key={section} className="nav-section">
+                  <div className="section-header uno ellipsis">{t(`settings.${section}` as TranslationKeys)}</div>
+                  {visibleItems.map(item => (
+                    <div
+                      key={item}
+                      className={"channel uno" + (currentTab === item ? " selected" : " int") + (hasUnsaved && currentTab !== item ? " semitrans" : "")}
+                      onClick={() => selectTab(item)}
+                      title={hasUnsaved && currentTab !== item ? "Save or revert changes before switching tabs" : undefined}
+                      style={hasUnsaved && currentTab !== item ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
+                    >
+                      <div className="nav-icon" style={{ "--mask-url": `url(./settings/${iconUrl(item)}.png)` } as any} />
+                      {t(`tab.${item}` as TranslationKeys)}
+                    </div>
+                  ))}
+                  <hr />
+                </div>
+              );
+            })}
             <div className="channel uno int dangerous" onClick={logout}>
               <div className="nav-icon" style={{ "--mask-url": "url(./settings/logout.png)" } as any} />
               {t("settings.logout")}
@@ -1857,7 +1872,6 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
       <TwoFactorModal
         mode={twoFactorModalMode}
         open={twoFactorModalOpen}
-        token={token ?? ""}
         onClose={() => setTwoFactorModalOpen(false)}
         onSuccess={() => {
           const enabled = twoFactorModalMode === "setup";
@@ -1870,7 +1884,6 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
       <ChangeUsernameModal
         open={changeUsernameOpen}
         currentUsername={user?.username ?? ""}
-        token={token ?? ""}
         onClose={() => setChangeUsernameOpen(false)}
         onSaved={(newUsername, newDisc) => {
           const u = { ...user!, username: newUsername, discriminator: newDisc };
@@ -1882,7 +1895,6 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
       <ChangePhoneModal
         open={changePhoneOpen}
         currentPhone={user?.phoneNumber}
-        token={token ?? ""}
         onClose={() => setChangePhoneOpen(false)}
         onSaved={(newPhone) => {
           const u = { ...user!, phoneNumber: newPhone, phoneNumberVerified: true };

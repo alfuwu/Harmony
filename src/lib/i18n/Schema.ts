@@ -415,6 +415,7 @@ export const defaultTranslations = {
     "messages.yesterday": "Yesterday at {time}",
     "messages.unknown_channel": "the channel",
     "message.unknown": "*Unknown message*",
+    "message.deleted": "Original message was deleted",
     "user.unknown": "Unknown User",
     "replies.replying_to": "↩ Replying to {count} message(s)",
     "replies.clear_all": "Clear all replies",
@@ -492,7 +493,16 @@ export const defaultTranslations = {
 
     // json / code
     "json.raw_title": "Raw Data",
+    "json.raw_user": "Raw User",
+    "json.raw_member": "Raw Member",
+    "json.raw_message": "Raw Message",
+    "json.raw_channel": "Raw Channel",
+    "json.raw_server": "Raw Server",
     "code.copy_title": "Copy code",
+
+    // translation
+    "translate.dismiss": "Show original",
+    "translate.error": "[Translation failed]",
 
     // settings options
     "opt.default": "Default",

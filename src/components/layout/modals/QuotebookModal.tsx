@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { useAuthState } from "../../../lib/state/Auth";
 import { getQuotebook, removeFromQuotebook } from "../../../lib/api/SocialApi";
-import { useMessageState } from "../../../lib/state/Messages";
-import { useUserState } from "../../../lib/state/Users";
+import { getMs } from "../../../lib/state/Messages";
+import { getUs } from "../../../lib/state/Users";
 import { getDisplayName, getAvatar } from "../../../lib/utils/UserUtils";
 import { QuotebookEntry } from "../../../lib/utils/Types";
 import { t, useLocale } from "../../../lib/i18n/Index";
@@ -14,16 +13,16 @@ interface QuotebookModalProps {
 
 export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
   useLocale();
-  const { token } = useAuthState();
-  const { messages } = useMessageState();
-  const { get } = useUserState();
+
+  const { messages } = getMs();
+  const { get } = getUs();
   const [entries, setEntries] = useState<QuotebookEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    getQuotebook(0, { headers: { Authorization: `Bearer ${token}` } })
+    getQuotebook(0)
       .then(setEntries)
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -31,7 +30,7 @@ export default function QuotebookModal({ open, onClose }: QuotebookModalProps) {
 
   async function handleRemove(entry: QuotebookEntry) {
     try {
-      await removeFromQuotebook(entry.id, { headers: { Authorization: `Bearer ${token}` } });
+      await removeFromQuotebook(entry.id);
       setEntries(prev => prev.filter(e => e.id !== entry.id));
     } catch (e) {
       console.error(e);

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuthState } from "../../lib/state/Auth";
 import { useServerState } from "../../lib/state/Servers";
 import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
+import { usePopoutState } from "../../lib/state/Popouts";
 import { useLoadingState } from "../../lib/state/Loading";
 import { RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
 import {
@@ -11,8 +13,6 @@ import {
   mentionedIn
 } from "../../lib/utils/UserUtils";
 import { Member, Message, User } from "../../lib/utils/Types";
-import { usePopoutState } from "../../lib/state/Popouts";
-import { useAuthState } from "../../lib/state/Auth";
 import {
   deleteMessage,
   editMessage,
@@ -99,12 +99,15 @@ function AnimatedCount({ count }: { count: number }) {
 
 export default function MessageList() {
   useLocale();
+
   const { token, user, userSettings } = useAuthState();
-  const serverState = useServerState();
-  const channelState = useChannelState();
-  const userState = useUserState();
-  const messageState = useMessageState();
+  const { currentServer } = useServerState();
+  const { currentChannel, getPendingReplies, removePendingReply, addPendingReply, getTyping } = useChannelState();
+  const { get, getMember } = useUserState();
+  const ms = useMessageState();
+  const { messages, getMessage, addMessages, removeMessage, updateMessage } = ms;
   const { messagesLoading } = useLoadingState();
+  const { open, close } = usePopoutState();
 
   const container = useRef<HTMLDivElement>(null);
 
@@ -123,8 +126,6 @@ export default function MessageList() {
   const prevScrollHeightRef = useRef(0);
   const restoringScrollRef = useRef(false);
 
-  const { open, close } = usePopoutState();
-
   const [messageHover, setMessageHover] = useState<string | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{
     x: number;
@@ -137,28 +138,28 @@ export default function MessageList() {
   const inputRef = useRef<MessageInputHandle>(null);
   const spoilerState = useRef<Map<number, boolean>>(new Map());
 
-  const reMember = userState.getMember(user!.id, serverState.currentServer?.id);
-  const me = serverState.currentServer
-    ? userState.getMember(user?.id, serverState.currentServer.id)
+  const reMember = getMember(user!.id, currentServer?.id);
+  const me = currentServer
+    ? getMember(user?.id, currentServer.id)
     : undefined;
 
-  const currentChan = channelState.currentChannel;
-  const canDeleteOthers = canManageMessages(me, serverState.currentServer);
-  const canPin = canPinMessages(me, serverState.currentServer);
-  const canEditOther = canEditOthers(me, serverState.currentServer);
+  const currentChan = currentChannel;
+  const canDeleteOthers = canManageMessages(me, currentServer);
+  const canPin = canPinMessages(me, currentServer);
+  const canEditOther = canEditOthers(me, currentServer);
 
   const channelMessages = useMemo(() => {
-    if (!currentChan)
+    if (!!!currentChan)
       return [];
-    return messageState.messages
+    return messages
       .filter((m) => m.channelId === currentChan.id)
       .sort((a, b) =>
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
-  }, [currentChan, messageState.messages]);
+  }, [currentChan, messages]);
 
   const pendingReplyIds = new Set(
-    (currentChan ? channelState.getPendingReplies(currentChan.id) : []).map(r => r.id)
+    (currentChan ? getPendingReplies(currentChan.id) : []).map(r => r.id)
   );
 
   useEffect(() => {
@@ -189,9 +190,7 @@ export default function MessageList() {
     restoringScrollRef.current = true;
 
     try {
-      const msgs = await getMessages(currentChan.id, oldestMsg, amount, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const msgs = await getMessages(currentChan.id, oldestMsg, amount);
 
       if (msgs.length === 0 || msgs.length < PAGE_SIZE) {
         setHasMoreMessages(false);
@@ -199,7 +198,7 @@ export default function MessageList() {
       }
 
       if (msgs.length > 0) {
-        messageState.addMessages(msgs);
+        addMessages(msgs);
       } else {
         restoringScrollRef.current = false;
         prevScrollHeightRef.current = 0;
@@ -212,7 +211,7 @@ export default function MessageList() {
       isLoadingMoreRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [currentChan, channelMessages, token, messageState]);
+  }, [currentChan, channelMessages, token, ms]);
 
   const handleScroll = useCallback(() => {
     if (!container.current)
@@ -259,7 +258,8 @@ export default function MessageList() {
       return;
     const el = container.current;
     const obs = new ResizeObserver(() => {
-      if (wasAtBottomRef.current) el.scrollTop = el.scrollHeight;
+      if (wasAtBottomRef.current)
+        el.scrollTop = el.scrollHeight;
     });
     obs.observe(el);
     return () => obs.disconnect();
@@ -288,9 +288,9 @@ export default function MessageList() {
     if (!currentChan || msg.sending)
       return;
     if (pendingReplyIds.has(msg.id))
-      channelState.removePendingReply(currentChan.id, msg.id);
+      removePendingReply(currentChan.id, msg.id);
     else
-      channelState.addPendingReply(currentChan.id, msg);
+      addPendingReply(currentChan.id, msg);
   }
 
   function formatTimestamp(iso: string): string {
@@ -319,16 +319,7 @@ export default function MessageList() {
         <UserPopout
           user={u}
           member={m}
-          serverState={serverState}
-          channelState={channelState}
-          messageState={messageState}
-          userState={userState}
-          userSettings={userSettings}
-          currentUser={user}
-          open={open}
-          close={close}
           onClose={() => close(id)}
-          token={token}
           position={{
             top: rect.bottom + window.scrollY,
             left: rect.right + window.scrollX
@@ -340,11 +331,11 @@ export default function MessageList() {
   }
 
   async function jumpToMessage(messageId: number) {
-    let msg = messageState.get(messageId);
+    let msg = get(messageId);
 
     if (!msg) {
       await loadMoreMessages(messageId);
-      msg = messageState.get(messageId);
+      msg = get(messageId);
     }
 
     const element = messageRefs.current.get(messageId);
@@ -382,10 +373,8 @@ export default function MessageList() {
 
   async function handleDelete(msg: Message) {
     try {
-      await deleteMessage(msg.channelId, msg.id, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      messageState.removeMessage(msg.id);
+      await deleteMessage(msg.channelId, msg.id);
+      removeMessage(msg.id);
     } catch (e) {
       console.error(e);
     }
@@ -393,10 +382,8 @@ export default function MessageList() {
 
   async function handlePin(msg: Message) {
     try {
-      await pinMessage(msg.channelId, msg.id, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      messageState.updateMessage({ id: msg.id, isPinned: !msg.isPinned });
+      await pinMessage(msg.channelId, msg.id);
+      updateMessage({ id: msg.id, isPinned: !msg.isPinned });
     } catch (e) {
       console.error(e);
     }
@@ -406,10 +393,8 @@ export default function MessageList() {
     if (!editContent!.trim())
       return;
     try {
-      await editMessage(msg.channelId, msg.id, editContent!.trim(), {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      messageState.updateMessage({
+      await editMessage(msg.channelId, msg.id, editContent!.trim());
+      updateMessage({
         id: msg.id,
         content: editContent!.trim(),
         editedTimestamp: new Date().toISOString(),
@@ -427,9 +412,7 @@ export default function MessageList() {
 
   async function handleAddToQuotebook(msg: Message) {
     try {
-      await addToQuotebook(msg.id, msg.channelId, undefined, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await addToQuotebook(msg.id, msg.channelId, undefined);
     } catch (e) {
       console.error(e);
     }
@@ -439,8 +422,7 @@ export default function MessageList() {
     try {
       await react(
         msg.channelId, msg.id,
-        { id: null, name: emoji },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { id: null, name: emoji }
       );
     } catch (e) {
       console.error(e);
@@ -451,8 +433,7 @@ export default function MessageList() {
     try {
       await unreact(
         msg.channelId, msg.id,
-        { id: null, name: emojiName },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { id: null, name: emojiName }
       );
     } catch (e) {
       console.error(e);
@@ -462,7 +443,7 @@ export default function MessageList() {
   function buildCtxItems(msg: Message): ContextMenuItem[] {
     const isMine = msg.authorId === user?.id;
     const isAlreadyReplying = currentChan
-      ? channelState.getPendingReplies(currentChan.id).some(r => r.id === msg.id)
+      ? getPendingReplies(currentChan.id).some(r => r.id === msg.id)
       : false;
     const items: ContextMenuItem[] = [];
 
@@ -475,7 +456,6 @@ export default function MessageList() {
           id,
           element: (
             <EmojiPickerPopout
-              userSettings={userSettings}
               position={{ top: ctxMenu?.y ?? 0, left: ctxMenu?.x ?? 0 }}
               onSelect={(emoji, e) => { handleReact(msg, emoji); if (!e.shiftKey) close(id); }}
             />
@@ -541,7 +521,6 @@ export default function MessageList() {
   }
 
   const markdownData = makeMarkdownContext(
-    serverState, channelState, userState, messageState, userSettings, token,
     open, openUserPopout,
     () => {
       if (!container.current)
@@ -555,7 +534,7 @@ export default function MessageList() {
   );
 
   const typingIds = (
-    (currentChan && channelState.getTyping(currentChan.id)) ?? []
+    (currentChan && getTyping(currentChan.id)) ?? []
   ).filter(id => id !== user?.id);
 
   const compact = !!userSettings?.compactMode;
@@ -591,14 +570,14 @@ export default function MessageList() {
         )}
 
         {channelMessages.map((msg, i) => {
-          const author = userState.get(msg.authorId) ?? ({
+          const author = get(msg.authorId) ?? ({
             id: msg.authorId,
             displayName: null,
             username: t("user.unknown"),
             avatar: null,
             nameFont: null
           } as User);
-          const member = userState.getMember(author.id, serverState.currentServer?.id);
+          const member = getMember(author.id, currentServer?.id);
           const avatar = getAvatar(author, member);
           const pronouns = getPronouns(author, member);
           const isMentioned = mentionedIn(msg, user!, reMember);
@@ -643,18 +622,18 @@ export default function MessageList() {
                 handleReply(msg);
               }}
             >
-              {msg.references && (
+              {!!msg.references?.length && (
                 <div className="replies">
                   {msg.references.map((r, i) => {
-                    const reply = messageState.get(r);
-                    const repAuthor = userState.get(reply?.authorId!) ?? ({
+                    const reply = getMessage(r);
+                    const repAuthor = (reply && get(reply.authorId)) ?? ({
                       id: reply?.authorId,
                       displayName: null,
                       username: t("user.unknown"),
                       avatar: null,
                       nameFont: null
                     } as User);
-                    const repMember = userState.getMember(repAuthor.id, serverState.currentServer?.id);
+                    const repMember = getMember(repAuthor.id, currentServer?.id);
                     const repAvatar = getAvatar(repAuthor, repMember);
 
                     return (
@@ -670,7 +649,6 @@ export default function MessageList() {
                         <Name
                           user={repAuthor}
                           member={repMember}
-                          serverState={serverState}
                           md={markdownData}
                           spoilerState={spoilerState}
                           className="author int"
@@ -682,15 +660,12 @@ export default function MessageList() {
                           onClick={() => jumpToMessage(r)}
                         >
                           {RenderMarkdown({
-                            content: reply?.content ?? t("message.unknown"),
+                            // TODO: figure out way to determine if message is genuinely deleted or just not in message cache
+                            content: reply ? reply.content ?? t("message.unknown") : t("message.deleted"),
                             spoilerStateRef: spoilerState,
                             noBigEmoji: true,
                             forceInline: true,
-                            maxLength: 64,
-                            userState,
-                            serverState,
-                            channelState,
-                            userSettings
+                            maxLength: 64
                           })}
                         </div>
                       </div>
@@ -711,7 +686,6 @@ export default function MessageList() {
                     <Name
                       user={author}
                       member={member}
-                      serverState={serverState}
                       md={markdownData}
                       spoilerState={spoilerState}
                       className="author int"
@@ -746,7 +720,6 @@ export default function MessageList() {
                   <Name
                     user={author}
                     member={member}
-                    serverState={serverState}
                     md={markdownData}
                     spoilerState={spoilerState}
                     className="author int"
@@ -843,8 +816,7 @@ export default function MessageList() {
                             else
                               react(
                                 msg.channelId, msg.id,
-                                reaction.emoji!,
-                                { headers: { Authorization: `Bearer ${token}` } }
+                                reaction.emoji!
                               );
                           }}
                           style={{
@@ -905,7 +877,6 @@ export default function MessageList() {
                           id,
                           element: (
                             <EmojiPickerPopout
-                              userSettings={userSettings}
                               position={{ top: rect.bottom, left: rect.left + 32 }}
                               onSelect={emoji => { handleReact(msg, emoji); if (!e.shiftKey) close(id); }}
                             />
@@ -944,7 +915,6 @@ export default function MessageList() {
                         id,
                         element: (
                           <EmojiPickerPopout
-                            userSettings={userSettings}
                             position={{ top: rect.bottom, left: rect.left + 32 }}
                             onSelect={emoji => { handleReact(msg, emoji); if (!e.shiftKey) close(id); }}
                           />

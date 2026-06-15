@@ -28,14 +28,14 @@ function clearToStart(editor: Editor, path: number[]) {
 }
 
 const REVERTIBLE_TYPES = [
-  'quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block',
-  'nested-quote', 'quote-list-item', 'quote-numbered-list-item',
-  'list-item-quote', 'numbered-list-item-quote', 'collapsible'
+  'quote', 'listItem', 'numberedListItem', 'codeBlock', 'mathBlock',
+  'nestedQuote', 'quoteListItem', 'quoteNumberedListItem',
+  'listItemQuote', 'numberedListItemQuote', 'collapsible'
 ] as const;
 
 const REVERSIONS: Record<string, string> = {
-  'nested-quote': 'quote', 'quote-list-item': 'quote', 'quote-numbered-list-item': 'quote',
-  'list-item-quote': 'list-item', 'numbered-list-item-quote': 'numbered-list-item'
+  'nestedQuote': 'quote', 'quoteListItem': 'quote', 'quoteNumberedListItem': 'quote',
+  'listItemQuote': 'listItem', 'numberedListItemQuote': 'numberedListItem'
 } as const;
 
 export function withMarkdownBlocks(editor: Editor): Editor {
@@ -65,25 +65,25 @@ export function withMarkdownBlocks(editor: Editor): Editor {
             Transforms.setNodes(editor, { type: 'quote' } as any, { at: path });
             return;
           }
-          // - or * to list-item
+          // - or * to list item
           if (before === '-' || before === '*') {
             clearToStart(editor, path);
-            Transforms.setNodes(editor, { type: 'list-item' } as any, { at: path });
+            Transforms.setNodes(editor, { type: 'listItem' } as any, { at: path });
             return;
           }
-          // N. to numbered-list-item
+          // N. to numbered list item
           const nlM = /^(\d+)\.$/.exec(before);
           if (nlM) {
             const num = parseInt(nlM[1]);
             clearToStart(editor, path);
-            Transforms.setNodes(editor, { type: 'numbered-list-item', number: num } as any, { at: path });
+            Transforms.setNodes(editor, { type: 'numberedListItem', number: num } as any, { at: path });
             return;
           }
-          // ``` to code-block
+          // ``` to code block
           if (before === '```' || /^```\s*$/.test(before)) {
             const lang = before.slice(3).trim();
             clearToStart(editor, path);
-            Transforms.setNodes(editor, { type: 'code-block', ...(lang && { language: lang }) } as any, { at: path });
+            Transforms.setNodes(editor, { type: 'codeBlock', ...(lang && { language: lang }) } as any, { at: path });
             return;
           }
         }
@@ -94,39 +94,39 @@ export function withMarkdownBlocks(editor: Editor): Editor {
 
           if (before === '>') {
             clearToStart(editor, path);
-            Transforms.setNodes(editor, { type: 'nested-quote' } as any, { at: path });
+            Transforms.setNodes(editor, { type: 'nestedQuote' } as any, { at: path });
             return;
           }
           if (before === '-' || before === '*') {
             clearToStart(editor, path);
-            Transforms.setNodes(editor, { type: 'quote-list-item' } as any, { at: path });
+            Transforms.setNodes(editor, { type: 'quoteListItem' } as any, { at: path });
             return;
           }
           const qnlM = /^(\d+)\.$/.exec(before);
           if (qnlM) {
             clearToStart(editor, path);
-            Transforms.setNodes(editor, { type: 'quote-numbered-list-item', number: parseInt(qnlM[1]) } as any, { at: path });
+            Transforms.setNodes(editor, { type: 'quoteNumberedListItem', number: parseInt(qnlM[1]) } as any, { at: path });
             return;
           }
         }
 
-        else if (nodeType === 'list-item') {
+        else if (nodeType === 'listItem') {
           const start = Editor.start(editor, path);
           const before = Editor.string(editor, { anchor: start, focus: selection.anchor });
           if (before === '>') {
             clearToStart(editor, path);
-            Transforms.setNodes(editor, { type: 'list-item-quote' } as any, { at: path });
+            Transforms.setNodes(editor, { type: 'listItemQuote' } as any, { at: path });
             return;
           }
         }
 
-        else if (nodeType === 'numbered-list-item') {
+        else if (nodeType === 'numberedListItem') {
           const start = Editor.start(editor, path);
           const before = Editor.string(editor, { anchor: start, focus: selection.anchor });
           if (before === '>') {
             clearToStart(editor, path);
             Transforms.setNodes(editor, {
-              type: 'numbered-list-item-quote',
+              type: 'numberedListItemQuote',
               number: (node as any).number ?? 1,
             } as any, { at: path });
             return;
@@ -143,7 +143,7 @@ export function withMarkdownBlocks(editor: Editor): Editor {
       const [node, path] = block as [any, number[]];
       const blockText = Node.string(node);
 
-      // ``` paragraph + Enter to code-block conversion
+      // ``` paragraph + Enter to code block conversion
       if (node.type === 'paragraph' && /^```(.*)$/.test(blockText)) {
         const lang = blockText.slice(3).trim();
         Editor.withoutNormalizing(editor, () => {
@@ -151,7 +151,7 @@ export function withMarkdownBlocks(editor: Editor): Editor {
           const end = Editor.end(editor, path);
           Transforms.select(editor, { anchor: start, focus: end });
           Transforms.delete(editor);
-          Transforms.setNodes(editor, { type: 'code-block', ...(lang && { language: lang }) } as any, { at: path });
+          Transforms.setNodes(editor, { type: 'codeBlock', ...(lang && { language: lang }) } as any, { at: path });
         });
         return;
       }
@@ -160,7 +160,7 @@ export function withMarkdownBlocks(editor: Editor): Editor {
         Editor.withoutNormalizing(editor, () => {
           Transforms.select(editor, { anchor: Editor.start(editor, path), focus: Editor.end(editor, path) });
           Transforms.delete(editor);
-          Transforms.setNodes(editor, { type: 'math-block' } as any, { at: path });
+          Transforms.setNodes(editor, { type: 'mathBlock' } as any, { at: path });
         });
         return;
       }
@@ -173,42 +173,42 @@ export function withMarkdownBlocks(editor: Editor): Editor {
 
       switch (node.type) {
         case 'quote':
-        case 'list-item':
+        case 'listItem':
           Transforms.insertNodes(editor, { type: node.type, children: [{ text: '' }] } as any);
           return;
 
-        case 'numbered-list-item': {
+        case 'numberedListItem': {
           const nextNum = (node.number ?? 1) + 1;
-          Transforms.insertNodes(editor, { type: 'numbered-list-item', number: nextNum, children: [{ text: '' }] } as any);
+          Transforms.insertNodes(editor, { type: 'numberedListItem', number: nextNum, children: [{ text: '' }] } as any);
           return;
         }
 
-        case 'nested-quote':
-          Transforms.insertNodes(editor, { type: 'nested-quote', children: [{ text: '' }] } as any);
+        case 'nestedQuote':
+          Transforms.insertNodes(editor, { type: 'nestedQuote', children: [{ text: '' }] } as any);
           return;
 
-        case 'quote-list-item':
-          Transforms.insertNodes(editor, { type: 'quote-list-item', children: [{ text: '' }] } as any);
+        case 'quoteListItem':
+          Transforms.insertNodes(editor, { type: 'quoteListItem', children: [{ text: '' }] } as any);
           return;
 
-        case 'quote-numbered-list-item': {
+        case 'quoteNumberedListItem': {
           const nextNum = (node.number ?? 1) + 1;
-          Transforms.insertNodes(editor, { type: 'quote-numbered-list-item', number: nextNum, children: [{ text: '' }] } as any);
+          Transforms.insertNodes(editor, { type: 'quoteNumberedListItem', number: nextNum, children: [{ text: '' }] } as any);
           return;
         }
 
-        case 'list-item-quote':
-          Transforms.insertNodes(editor, { type: 'list-item-quote', children: [{ text: '' }] } as any);
+        case 'listItemQuote':
+          Transforms.insertNodes(editor, { type: 'listItemQuote', children: [{ text: '' }] } as any);
           return;
 
-        case 'numbered-list-item-quote': {
+        case 'numberedListItemQuote': {
           const nextNum = (node.number ?? 1) + 1;
-          Transforms.insertNodes(editor, { type: 'numbered-list-item-quote', number: nextNum, children: [{ text: '' }] } as any);
+          Transforms.insertNodes(editor, { type: 'numberedListItemQuote', number: nextNum, children: [{ text: '' }] } as any);
           return;
         }
 
-        case 'code-block':
-        case 'math-block':
+        case 'codeBlock':
+        case 'mathBlock':
         case 'collapsible':
           editor.insertText('\n');
           return;
@@ -241,15 +241,15 @@ function serializeBlock(block: any): string {
   const text = Node.string(block);
   switch (block.type) {
     case 'quote': return `> ${text}`;
-    case 'list-item': return `- ${text}`;
-    case 'numbered-list-item': return `${block.number ?? 1}. ${text}`;
-    case 'code-block': return `\`\`\`${block.language ?? ''}\n${text}\n\`\`\``;
-    case 'math-block': return `$$\n${text}\n$$`;
-    case 'nested-quote': return `> > ${text}`;
-    case 'quote-list-item': return `> - ${text}`;
-    case 'quote-numbered-list-item': return `> ${block.number ?? 1}. ${text}`;
-    case 'list-item-quote': return `- > ${text}`;
-    case 'numbered-list-item-quote': return `${block.number ?? 1}. > ${text}`;
+    case 'listItem': return `- ${text}`;
+    case 'numberedListItem': return `${block.number ?? 1}. ${text}`;
+    case 'codeBlock': return `\`\`\`${block.language ?? ''}\n${text}\n\`\`\``;
+    case 'mathBlock': return `$$\n${text}\n$$`;
+    case 'nestedQuote': return `> > ${text}`;
+    case 'quoteListItem': return `> - ${text}`;
+    case 'quoteNumberedListItem': return `> ${block.number ?? 1}. ${text}`;
+    case 'listItemQuote': return `- > ${text}`;
+    case 'numberedListItemQuote': return `${block.number ?? 1}. > ${text}`;
     case 'collapsible': {
       const nl = text.indexOf('\n');
       const title = nl >= 0 ? text.slice(0, nl) : text;
@@ -275,14 +275,14 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
       let j = i + 1;
       while (j < lines.length && lines[j].trim() !== '$$')
         body.push(lines[j++]);
-      result.push({ type: 'math-block', children: [{ text: body.join('\n') }] });
+      result.push({ type: 'mathBlock', children: [{ text: body.join('\n') }] });
       i = j < lines.length ? j + 1 : lines.length;
       continue;
     }
 
     const slMathM = /^\$\$(.+)\$\$$/.exec(line.trim());
     if (slMathM) {
-      result.push({ type: 'math-block', children: [{ text: slMathM[1] }] });
+      result.push({ type: 'mathBlock', children: [{ text: slMathM[1] }] });
       i++;
       continue;
     }
@@ -319,20 +319,20 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
     }*/
 
     if (line.startsWith('> > ')) {
-      result.push({ type: 'nested-quote', children: [{ text: line.slice(4) }] });
+      result.push({ type: 'nestedQuote', children: [{ text: line.slice(4) }] });
       i++;
       continue;
     }
 
     if (line.startsWith('> - ') || line.startsWith('> * ')) {
-      result.push({ type: 'quote-list-item', children: [{ text: line.slice(4) }] });
+      result.push({ type: 'quoteListItem', children: [{ text: line.slice(4) }] });
       i++;
       continue;
     }
 
     const qnlM = /^> (\d+)\. (.*)/.exec(line);
     if (qnlM) {
-      result.push({ type: 'quote-numbered-list-item', number: parseInt(qnlM[1]), children: [{ text: qnlM[2] }] });
+      result.push({ type: 'quoteNumberedListItem', number: parseInt(qnlM[1]), children: [{ text: qnlM[2] }] });
       i++;
       continue;
     }
@@ -345,27 +345,27 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
     }
 
     if ((line.startsWith('- > ') || line.startsWith('* > '))) {
-      result.push({ type: 'list-item-quote', children: [{ text: line.slice(4) }] });
+      result.push({ type: 'listItemQuote', children: [{ text: line.slice(4) }] });
       i++;
       continue;
     }
 
     if ((line[0] === '-' || line[0] === '*') && line[1] === ' ') {
-      result.push({ type: 'list-item', children: [{ text: line.slice(2) }] });
+      result.push({ type: 'listItem', children: [{ text: line.slice(2) }] });
       i++;
       continue;
     }
 
     const nlqM = /^(\d+)\. > (.*)/.exec(line);
     if (nlqM) {
-      result.push({ type: 'numbered-list-item-quote', number: parseInt(nlqM[1]), children: [{ text: nlqM[2] }] });
+      result.push({ type: 'numberedListItemQuote', number: parseInt(nlqM[1]), children: [{ text: nlqM[2] }] });
       i++;
       continue;
     }
 
     const nlM = /^(\d+)\. (.*)/.exec(line);
     if (nlM) {
-      result.push({ type: 'numbered-list-item', number: parseInt(nlM[1]), children: [{ text: nlM[2] }] });
+      result.push({ type: 'numberedListItem', number: parseInt(nlM[1]), children: [{ text: nlM[2] }] });
       i++;
       continue;
     }
@@ -513,6 +513,7 @@ export function withAutoFormatMentions(
       }
 
       // :emoji_name: pattern (synchronous lookup)
+      // TODO: implement server searching, too. resolve duplicate names by user's server order, with top keeping :emoji_name: and all below getting :emoji_name~1:, :emoji_name~2:, etc
       const emojiM = /:([a-z0-9_+\-]+):/i.exec(text);
       if (emojiM) {
         const native = getEmojiNative(emojiM[1]);
@@ -520,7 +521,7 @@ export function withAutoFormatMentions(
           best = {
             index: emojiM.index,
             end: emojiM.index + emojiM[0].length,
-            voidNode: { type: 'emoji', emoji: native, children: [{ text: native }] },
+            voidNode: { type: 'emoji', emoji: { name: native }, children: [{ text: native }] },
           };
       }
 
@@ -530,7 +531,7 @@ export function withAutoFormatMentions(
           best = {
             index: emojiM2.index,
             end: emojiM2.index + emojiM2[1].length,
-            voidNode: { type: 'emoji', emoji: emojiM2[1], children: [{ text: emojiM2[1] }] },
+            voidNode: { type: 'emoji', emoji: { name: emojiM2[1] }, children: [{ text: emojiM2[1] }] },
           };
       }
 

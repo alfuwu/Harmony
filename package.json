@@ -18,9 +18,11 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@types/prismjs": "^1.26.6",
+    "@types/three": "^0.184.1",
     "@vscode/vscode-languagedetection": "^1.0.23",
     "blurhash": "^2.0.5",
     "emoji-mart": "^5.6.0",
+    "fzstd": "^0.1.1",
     "graphemer": "^1.4.0",
     "katex": "^0.17.0",
     "prismjs": "^1.30.0",
@@ -32,6 +34,7 @@
     "slate": "^0.118.1",
     "slate-history": "^0.113.1",
     "slate-react": "^0.119.0",
+    "three": "^0.184.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

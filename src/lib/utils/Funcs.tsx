@@ -1,17 +1,98 @@
 import { getEmojiDataFromNative } from "emoji-mart";
 import EmojiPopout from "../../components/layout/popouts/EmojiPopout";
 import { loadServer } from "../api/ServerApi";
-import { ChannelState } from "../state/Channels";
-import { ServerState } from "../state/Servers";
-import { UserState } from "../state/Users";
-import { AbstractChannel, Member, Role, RoleDisplayType, Server, User } from "./Types";
-import { AnimateContext, UserSettings } from "./UserSettings";
+import { getCs } from "../state/Channels";
+import { getSs } from "../state/Servers";
+import { getUs } from "../state/Users";
+import { AbstractChannel, Emoji, Member, Role, RoleDisplayType, Server, User } from "./Types";
+import { AnimateContext } from "./UserSettings";
 import { RenderContext } from "./MarkdownRenderer";
-import { MessageState } from "../state/Messages";
 import { Popout } from "../state/Popouts";
+import { localeFromLanguage } from "../i18n/LocaleMap";
+import { userSettings } from "../state/Auth";
+import { ReactNode, useCallback, useState } from "react";
+import { NotificationLevel, useNotifications } from "../state/Notifications";
+import { getServerId } from "./ChannelUtils";
 
-export function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
+const NON_STANDARD_LOCALES = new Set([
+  'miu','anl','jei','sjn','vk','wia',
+  'en_PI','en_1337','en_PL','tlh','en_LOL','en_emodeng','en_YD','en_UWU'
+]);
+
+export function isFlag(native: string): boolean {
+  const pts = [...(native ?? "")].map(c => c.codePointAt(0) ?? 0);
+  return pts.length === 2 && pts.every(p => p >= 0x1f1e6 && p <= 0x1f1ff);
+}
+
+export function normalizeEmojiId(native: string, id?: string): string {
+  let n = (id ?? "").replace(/-/g, "_");
+  if (native && isFlag(native) && !n.startsWith("flag_") && !n.startsWith("regional_"))
+    n = `flag_${n}`;
+  return n;
+}
+
+export function getDateLocale(language?: number | null): string | undefined {
+  if (language == null)
+    return undefined;
+  const locale = localeFromLanguage(language);
+  if (NON_STANDARD_LOCALES.has(locale))
+    return 'en-GB';
+  return locale.replace('_', '-');
+}
+
+export function isMentioned(msg: {
+  mentions?: number[] | null;
+  mentionRoles?: number[] | null;
+  mentionsEveryone?: boolean | null;
+}, userId: number, serverId: number | undefined): boolean {
+  if (msg.mentionsEveryone)
+    return true;
+  if (msg.mentions?.includes(userId))
+    return true;
+  if (serverId && msg.mentionRoles) {
+    const member = getUs().getMember(userId, serverId);
+    if (member?.roles.some(r => msg.mentionRoles!.includes(r)))
+      return true;
+  }
+  return false;
+}
+
+export function sendDesktopNotification(
+  authorName: string,
+  content: string,
+  channelId: number,
+  mention: boolean
+) {
+  if (Notification.permission !== 'granted')
+    return;
+
+  const settings = userSettings();
+  if (settings?.muteAllNotifications)
+    return;
+  if (!settings?.enableDesktopNotifications)
+    return;
+
+  const serverId = getServerId(channelId);
+  const level = useNotifications.getState().effective(serverId, channelId);
+
+  if (level === NotificationLevel.None)
+    return;
+  if (level === NotificationLevel.MentionsAndEveryone && !mention)
+    return;
+  if (level === NotificationLevel.DirectMentions && !mention)
+    return;
+
+  const body = settings?.showNotificationPreview
+    ? (content.length > 100 ? content.slice(0, 100) + '...' : content)
+    : 'New message';
+
+  try {
+    new Notification(authorName, { body, silent: !settings?.enableSoundNotifications });
+  } catch {}
+}
+
+export function formatDate(iso: string, locale?: string) {
+  return new Date(iso).toLocaleDateString(locale, {
     year: "numeric", month: "short", day: "numeric"
   });
 }
@@ -43,10 +124,10 @@ export function isGradientRole(role: Role): boolean {
   return role.displayType === RoleDisplayType.Gradient || role.displayType === RoleDisplayType.GradientGlow;
 }
 
-export function getRoleGlowClass(role: Role, userSettings?: UserSettings | null): string {
+export function getRoleGlowClass(role: Role): string {
   if (role.displayType !== RoleDisplayType.Glow && role.displayType !== RoleDisplayType.GradientGlow)
     return "";
-  switch (userSettings?.glowRoleAnimate ?? AnimateContext.Always) {
+  switch (userSettings()?.glowRoleAnimate ?? AnimateContext.Always) {
     case AnimateContext.OnHover:
       return "role-glow-hover";
     case AnimateContext.OnClick:
@@ -59,7 +140,6 @@ export function getRoleGlowClass(role: Role, userSettings?: UserSettings | null)
 export function roleToStyle(
   role: Role,
   textClip: boolean = true,
-  userSettings?: UserSettings | null,
   enableAnimation: boolean = false
 ): React.CSSProperties {
   const extra = textClip ? {
@@ -95,7 +175,7 @@ export function roleToStyle(
         return {};
 
       const hex = intToHex(role.color);
-      const ctx = userSettings?.glowRoleAnimate ?? AnimateContext.Always;
+      const ctx = userSettings()?.glowRoleAnimate ?? AnimateContext.Always;
       const alwaysOn = enableAnimation && (ctx === AnimateContext.Always || ctx === AnimateContext.WhenFocused);
 
       return {
@@ -113,7 +193,7 @@ export function roleToStyle(
       const firstHex = intToHex(role.colors[0]);
       const colors = role.colors.map(intToHex);
       const gradient = `linear-gradient(90deg, ${colors.concat(colors.slice(undefined, colors.length - 1).reverse()).join(", ")})`;
-      const ctx = userSettings?.glowRoleAnimate ?? AnimateContext.Always;
+      const ctx = userSettings()?.glowRoleAnimate ?? AnimateContext.Always;
       const alwaysOn = enableAnimation && (ctx === AnimateContext.Always || ctx === AnimateContext.WhenFocused);
 
       return {
@@ -135,7 +215,6 @@ export function roleToStyle(
 
 export function roleToMention(
   role: Role,
-  userSettings?: UserSettings | null,
   enableAnimation: boolean = false
 ): React.CSSProperties {
   switch (role.displayType) {
@@ -163,7 +242,7 @@ export function roleToMention(
         return {};
 
       const hex = intToHex(role.color);
-      const ctx = userSettings?.glowRoleAnimate ?? AnimateContext.Always;
+      const ctx = userSettings()?.glowRoleAnimate ?? AnimateContext.Always;
       const alwaysOn = enableAnimation && (ctx === AnimateContext.Always || ctx === AnimateContext.WhenFocused);
 
       return {
@@ -182,7 +261,7 @@ export function roleToMention(
       const colors2 = role.colors.map(c => intToHex(c) + "6d");
       const gradient = `linear-gradient(90deg, ${colors1.concat(colors1.slice(undefined, colors1.length - 1).reverse()).join(", ")})`;
       const gradientHover = `linear-gradient(90deg, ${colors2.concat(colors2.slice(undefined, colors2.length - 1).reverse()).join(", ")})`;
-      const ctx = userSettings?.glowRoleAnimate ?? AnimateContext.Always;
+      const ctx = userSettings()?.glowRoleAnimate ?? AnimateContext.Always;
       const alwaysOn = enableAnimation && (ctx === AnimateContext.Always || ctx === AnimateContext.WhenFocused);
 
       return {
@@ -202,21 +281,11 @@ export function roleToMention(
 }
 
 export function makeMarkdownContext(
-  serverState: ServerState,
-  channelState: ChannelState,
-  userState: UserState,
-  messageState: MessageState,
-  userSettings: UserSettings | null,
-  token: string | null,
   openPopout?: (popout: Popout) => void,
   openUserPopout?: (target: Element, u: User, m: Member | undefined) => void,
   onToggleDetails?: () => void
 ): RenderContext {
   return {
-    serverState,
-    channelState,
-    userState,
-    userSettings,
     onMentionClick: (u: User, m: Member, event: React.MouseEvent) => {
       if (!openUserPopout)
         return;
@@ -227,42 +296,44 @@ export function makeMarkdownContext(
     },
     onChannelClick: (channel: AbstractChannel, event: React.MouseEvent) => {
       event.stopPropagation();
-      if (channelState.currentChannel?.id !== channel.id) {
+      const cs = getCs();
+      if (cs.currentChannel?.id !== channel.id) {
         event.preventDefault();
-        if (serverState.currentServer?.id !== channel.serverId) {
-          const s = serverState.get(channel.serverId);
+        const ss = getSs();
+        if (ss.currentServer?.id !== channel.serverId) {
+          const s = ss.get(channel.serverId);
           if (s) {
-            loadServer(s, channelState, userState, messageState, token!);
-            serverState.setCurrentServer(s);
+            loadServer(s);
+            ss.setCurrentServer(s);
           } else return;
         }
-        channelState.setCurrentChannel(channel);
+        cs.setCurrentChannel(channel);
       }
     },
     onServerClick: (server: Server, event: React.MouseEvent) => {
       event.stopPropagation();
       event.preventDefault();
-      if (serverState.currentServer?.id !== server.id) {
-        loadServer(server, channelState, userState, messageState, token!);
-        serverState.setCurrentServer(server);
-        channelState.setCurrentChannel(null);
+      const ss = getSs();
+      if (ss.currentServer?.id !== server.id) {
+        loadServer(server);
+        ss.setCurrentServer(server);
+        getCs().setCurrentChannel(null);
       }
     },
-    onEmojiClick: async (emoji: string, event: React.MouseEvent) => {
+    onEmojiClick: async (emoji: Emoji, event: React.MouseEvent) => {
       if (!openPopout)
         return;
 
       event.stopPropagation();
       event.preventDefault();
       const rect = event.currentTarget.getBoundingClientRect();
-      const name = await getEmojiDataFromNative(emoji);
+      const name = !!!emoji.id && await getEmojiDataFromNative(emoji.name);
       openPopout({
         id: "emoji",
         element: (
           <EmojiPopout
             emoji={emoji}
-            emojiName={name?.id ?? emoji}
-            userSettings={userSettings}
+            emojiId={name?.id}
             position={{
               top: rect.bottom + window.scrollY,
               left: rect.right + window.scrollX
@@ -274,4 +345,15 @@ export function makeMarkdownContext(
     },
     onToggleDetails
   }
+}
+
+export function useModal(): [
+  ReactNode,
+  (node: ReactNode) => void,
+  () => void
+] {
+  const [modal, setModal] = useState<ReactNode>(null);
+  const openModal  = useCallback((node: ReactNode) => setModal(node), []);
+  const closeModal = useCallback(() => setModal(null), []);
+  return [modal, openModal, closeModal];
 }

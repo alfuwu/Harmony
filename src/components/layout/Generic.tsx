@@ -1,4 +1,4 @@
-import { ServerState } from "../../lib/state/Servers";
+import { useNicknames } from "../../lib/state/Nicknames";
 import { getRoleGlowClass, isGradientRole, roleToStyle } from "../../lib/utils/Funcs";
 import { RenderContext, RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
 import { Member, Role, User } from "../../lib/utils/Types";
@@ -28,7 +28,6 @@ export function Divider() {
 type Props = React.HTMLAttributes<HTMLSpanElement | HTMLDivElement> & {
   user: User | null;
   member?: Member;
-  serverState?: ServerState;
   allowDmColors?: boolean;
   md?: RenderContext;
   spoilerState?: React.MutableRefObject<Map<number, boolean>>;
@@ -38,19 +37,20 @@ type Props = React.HTMLAttributes<HTMLSpanElement | HTMLDivElement> & {
   as?: "span" | "div";
 };
 
-export function Name({ user, member, serverState, allowDmColors = false, md, spoilerState, as = "span", overRole, prefix, text, ...opts }: Props) {
+export function Name({ user, member, allowDmColors = false, md, spoilerState, as = "span", overRole, prefix, text, ...opts }: Props) {
   const Component = as ?? "span";
+  const { get: getNickname } = useNicknames();
  
-  const role = overRole ?? (serverState && member && getDisplayRole(serverState, member, true));
-  const userSettings = md?.userSettings ?? null;
-  const textStyle = role ? roleToStyle(role, true, userSettings, true) : {};
-  const name = text ?? getDisplayName(user, member);
+  const role = overRole ?? (member && getDisplayRole(member, true));
+  const textStyle = role ? roleToStyle(role, true, true) : {};
+  const personalNickname = user ? getNickname(user.id) : undefined;
+  const name = text ?? personalNickname ?? getDisplayName(user, member);
  
   const extraClasses: string[] = [];
   if (role && isGradientRole(role))
     extraClasses.push("has-gradient-role");
   if (role) {
-    const glowClass = getRoleGlowClass(role, userSettings);
+    const glowClass = getRoleGlowClass(role);
     if (glowClass)
       extraClasses.push(glowClass);
   }

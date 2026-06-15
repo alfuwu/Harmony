@@ -2,48 +2,37 @@ import { api } from "../api/Http";
 import { getMessages } from "../api/MessageApi";
 import { getServerChannels, getServerMembers, getServers } from "../api/ServerApi";
 import { getDmChannels } from "../api/DmApi";
-import { initSignalR, updateSignalRRefs } from "../api/SignalrClient";
-import { AuthState } from "../state/Auth";
-import { ChannelState } from "../state/Channels";
-import { MessageState } from "../state/Messages";
-import { ServerState } from "../state/Servers";
-import { UserState } from "../state/Users";
-import { UserSettings } from "../utils/UserSettings";
+import { initSignalR } from "../api/SignalrClient";
+import { useAuthState } from "../state/Auth";
+import { useChannelState } from "../state/Channels";
+import { useMessageState } from "../state/Messages";
+import { useServerState } from "../state/Servers";
+import { useUserState } from "../state/Users";
 import { useLoadingState } from "../state/Loading";
 import { useCacheState, CacheKey } from "../state/Cache";
+import { getAllNicknames } from "../api/SocialApi";
+import { useNicknames } from "../state/Nicknames";
 
-export async function initializeClient({
-  authState,
-  serverState,
-  channelState,
-  messageState,
-  userState,
-  setUserSettings,
-}: {
-  authState: AuthState;
-  serverState: ServerState;
-  channelState: ChannelState;
-  messageState: MessageState;
-  userState: UserState;
-  setUserSettings: (settings: UserSettings) => void;
-}) {
-  if (!authState.token)
-    return;
+export async function initializeClient() {
+  const { setUserSettings } = useAuthState.getState();
 
-  const token = authState.token;
-  const headers = { Authorization: `Bearer ${token}` };
+  const ss = useServerState.getState();
+  const cs = useChannelState.getState();
+  const us = useUserState.getState();
+  const ms = useMessageState.getState();
+
   const loading = useLoadingState.getState();
   const cache = useCacheState.getState();
 
   loading.setServersLoading(true);
-  const servers = await getServers({ headers });
-  serverState.addServers(servers);
+  const servers = await getServers();
+  ss.addServers(servers);
   cache.markFresh(CacheKey.servers);
   loading.setServersLoading(false);
 
   try {
-    const dms = await getDmChannels({ headers });
-    channelState.addChannels(dms as any[]);
+    const dms = await getDmChannels();
+    cs.addChannels(dms as any[]);
     cache.markFresh(CacheKey.dms);
   } catch (e) {
     console.warn("Could not fetch DM channels", e);
@@ -57,25 +46,25 @@ export async function initializeClient({
     );
     const targetServer =
       servers.find((s) => s.id === lastServerId) ?? servers[0];
-    serverState.setCurrentServer(targetServer);
+    ss.setCurrentServer(targetServer);
 
     loading.setChannelsLoading(true);
     for (const server of servers) {
       try {
-        const channels = await getServerChannels(server.id, { headers });
+        const channels = await getServerChannels(server.id);
         allChannels.push(...channels);
         cache.markFresh(CacheKey.channels(server.id));
       } catch (e) {
         console.warn(`Could not load channels for server ${server.id}`, e);
       }
     }
-    channelState.addChannels(allChannels);
+    cs.addChannels(allChannels);
     loading.setChannelsLoading(false);
 
     loading.setMembersLoading(true);
     try {
-      const members = await getServerMembers(targetServer.id, { headers });
-      userState.addMembers(members);
+      const members = await getServerMembers(targetServer.id);
+      us.addMembers(members);
       cache.markFresh(CacheKey.members(targetServer.id));
     } catch (e) {
       console.warn("Could not load members", e);
@@ -91,11 +80,11 @@ export async function initializeClient({
       serverChannels.find((c) => c.type === 1);
 
     if (currentChannel) {
-      channelState.setCurrentChannel(currentChannel);
+      cs.setCurrentChannel(currentChannel);
       loading.setMessagesLoading(true);
       try {
-        const msgs = await getMessages(currentChannel.id, undefined, undefined, { headers });
-        messageState.addMessages(msgs);
+        const msgs = await getMessages(currentChannel.id);
+        ms.addMessages(msgs);
         cache.markFresh(CacheKey.messages(currentChannel.id));
       } catch (e) {
         console.warn("Could not load messages", e);
@@ -111,28 +100,23 @@ export async function initializeClient({
   }
 
   try {
-    const settings = await api("/users/@me/settings", { headers });
+    const settings = await api("/users/@me/settings");
     setUserSettings(settings);
   } catch (e) {
     console.warn("Could not load user settings", e);
   }
 
-  initSignalR({
-    authState,
-    serverState,
-    channelState,
-    messageState,
-    userState,
-    initialChannels: allChannels,
-    initialServers: servers,
-  });
-}
+  try {
+    const nicknames = await getAllNicknames();
+    useNicknames.getState().init(
+      nicknames.map(n => ({ subjectId: n.subjectId, nickname: n.nickname }))
+    );
+  } catch (e) {
+    console.warn("Could not load nicknames", e);
+  }
 
-export function syncSignalRRefs(
-  messageState: MessageState,
-  channelState: ChannelState,
-  serverState: ServerState,
-  userState: UserState
-) {
-  updateSignalRRefs({ messageState, channelState, serverState, userState });
+  initSignalR({
+    initialChannels: allChannels,
+    initialServers: servers
+  });
 }

@@ -1,5 +1,5 @@
 import { hostUrl } from "../../App";
-import { ServerState } from "../state/Servers";
+import { getSs } from "../state/Servers";
 import { Member, Message, Role, User } from "./Types";
 
 const DEFAULT_AVATAR = "https://cdn.discordapp.com/avatars/1038466644353232967/2cf70b3cc2b0314758dd9f8155228c89.png?size=1024";
@@ -51,8 +51,8 @@ export function getBio(user: User, member: Member | undefined = undefined): stri
     return member?.bio || user.bio || undefined;
 }
 
-export function getDisplayRole(serverState: ServerState, member: Member, requireColor: boolean = false): Role | undefined {
-    const s = serverState.get(member.serverId);
+export function getDisplayRole(member: Member, requireColor: boolean = false): Role | undefined {
+    const s = getSs().get(member.serverId);
     if (s) {
         const memberRoles = s.roles.filter(r => member.roles.includes(r.id) && (!requireColor || r.color !== 0));
         return memberRoles.sort((a, b) => b.position - a.position)[0];

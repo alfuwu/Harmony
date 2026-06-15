@@ -1,12 +1,11 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { UserState, useUserState } from "../../lib/state/Users";
-import { usePopoutState } from "../../lib/state/Popouts";
+import { useAuthState } from "../../lib/state/Auth";
 import { useServerState } from "../../lib/state/Servers";
+import { useChannelState } from "../../lib/state/Channels";
+import { UserState, useUserState } from "../../lib/state/Users";
+import { getPs } from "../../lib/state/Popouts";
 import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
 import UserPopout from "./popouts/UserPopout";
-import { useAuthState } from "../../lib/state/Auth";
-import { useMessageState } from "../../lib/state/Messages";
-import { useChannelState } from "../../lib/state/Channels";
 import { useLoadingState } from "../../lib/state/Loading";
 import { useRef, useState } from "react";
 import { canBanMembers, canKickMembers, isOwner } from "../../lib/utils/PermissionUtils";
@@ -17,7 +16,6 @@ import { banMember, kickMember } from "../../lib/api/ServerApi";
 import NicknameModal from "./modals/NicknameModal";
 import { SkeletonMemberList } from "./Skeleton";
 import { Name } from "./Generic";
-import { RenderContext } from "../../lib/utils/MarkdownRenderer";
 import { roleToStyle } from "../../lib/utils/Funcs";
 import { t, useLocale } from "../../lib/i18n/Index";
 import { BanIcon, EditIcon, HashIcon, MessageIcon, UserMinusIcon } from "../svgs/other/Icons";
@@ -37,7 +35,7 @@ interface RoleSection {
   online: Member[];
 }
 
-function buildSections(members: Member[], roles: Role[], userState: UserState): { sections: RoleSection[]; offline: Member[] } {
+function buildSections(members: Member[], roles: Role[], us: UserState): { sections: RoleSection[]; offline: Member[] } {
   const sorted = [...roles].sort((a, b) => b.position - a.position);
 
   const byRole = new Map<number | null, { online: Member[]; offline: Member[] }>();
@@ -49,7 +47,7 @@ function buildSections(members: Member[], roles: Role[], userState: UserState): 
     const highest = sorted.find(r => m.roles.includes(r.id) && r.displaysSeparately);
     const key = highest?.id ?? null;
     const bucket = byRole.get(key)!;
-    const user = userState.get(m.userId);
+    const user = us.get(m.userId);
     if (user && user.onlineStatus !== OnlineStatus.Offline)
       bucket.online.push(m);
     else
@@ -78,13 +76,14 @@ function buildSections(members: Member[], roles: Role[], userState: UserState): 
  
 export default function MemberList() {
   useLocale();
-  const { token, user, userSettings } = useAuthState();
-  const serverState = useServerState();
-  const channelState = useChannelState();
-  const messageState = useMessageState();
-  const userState = useUserState();
+
+  const { user, userSettings } = useAuthState();
+  const { currentServer } = useServerState();
+  const { addChannel, setCurrentChannel } = useChannelState();
+  const us = useUserState();
+  const { members, get, removeMember } = us;
+  const { open, close } = getPs();
   const { membersLoading } = useLoadingState();
-  const { open, close } = usePopoutState();
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; member: Member } | null>(null);
   const [nicknameModal, setNicknameModal] = useState<{ member: Member } | null>(null);
@@ -92,12 +91,12 @@ export default function MemberList() {
 
   const spoilerState = useRef<Map<number, boolean>>(new Map());
 
-  const me = serverState.currentServer
-    ? userState.getMember(user?.id, serverState.currentServer.id)
+  const me = currentServer
+    ? us.getMember(user?.id, currentServer.id)
     : undefined;
-  const canKick = canKickMembers(me, serverState.currentServer);
-  const canBan = canBanMembers(me, serverState.currentServer);
-  const owner = isOwner(me, serverState.currentServer);
+  const canKick = canKickMembers(me, currentServer);
+  const canBan = canBanMembers(me, currentServer);
+  const owner = isOwner(me, currentServer);
 
   function openCtx(e: React.MouseEvent, member: Member) {
     e.preventDefault();
@@ -115,9 +114,9 @@ export default function MemberList() {
         icon: <MessageIcon size={14} />,
         onClick: async () => {
           try {
-            const dm = await createDm(member.userId, { headers: { Authorization: `Bearer ${token}` } });
-            channelState.addChannel(dm);
-            channelState.setCurrentChannel(dm);
+            const dm = await createDm(member.userId);
+            addChannel(dm);
+            setCurrentChannel(dm);
           } catch (e) { console.error(e); }
         },
       });
@@ -132,11 +131,11 @@ export default function MemberList() {
         icon: <UserMinusIcon size={14} />,
         danger: true,
         onClick: async () => {
-          if (!serverState.currentServer)
+          if (!!!currentServer)
             return;
           try {
-            await kickMember(serverState.currentServer.id, member.userId, undefined, { headers: { Authorization: `Bearer ${token}` } });
-            userState.removeMember(member.userId, serverState.currentServer.id);
+            await kickMember(currentServer.id, member.userId);
+            removeMember(member.userId, currentServer.id);
           } catch (e) { console.error(e); }
         },
       });
@@ -148,11 +147,11 @@ export default function MemberList() {
         icon: <BanIcon size={14} />,
         danger: true,
         onClick: async () => {
-          if (!serverState.currentServer)
+          if (!!!currentServer)
             return;
           try {
-            await banMember(serverState.currentServer.id, member.userId, undefined, { headers: { Authorization: `Bearer ${token}` } });
-            userState.removeMember(member.userId, serverState.currentServer.id);
+            await banMember(currentServer.id, member.userId);
+            removeMember(member.userId, currentServer.id);
           } catch (e) { console.error(e); }
         },
       });
@@ -169,16 +168,14 @@ export default function MemberList() {
     return items;
   }
 
-  const markdownData: RenderContext = { serverState, channelState, userState, userSettings };
-
-  const serverMembers = userState.members.filter(m => m.serverId === serverState.currentServer?.id);
-  const serverRoles = serverState.currentServer?.roles ?? [];
+  const serverMembers = members.filter(m => m.serverId === currentServer?.id);
+  const serverRoles = currentServer?.roles ?? [];
   const isLargeServer = serverMembers.length > LARGE_SERVER_THRESHOLD;
 
-  const { sections, offline } = buildSections(serverMembers, serverRoles, userState);
+  const { sections, offline } = buildSections(serverMembers, serverRoles, us);
 
   function renderMemberRow(m: Member) {
-    const u = userState.get(m.userId)!;
+    const u = get(m.userId)!;
     const avatar = getAvatar(u, m);
     const status = u.onlineStatus ?? OnlineStatus.Offline;
 
@@ -195,16 +192,7 @@ export default function MemberList() {
               <UserPopout
                 user={u}
                 member={m}
-                serverState={serverState}
-                channelState={channelState}
-                messageState={messageState}
-                userState={userState}
-                userSettings={userSettings}
-                currentUser={user}
-                open={open}
-                close={close}
                 onClose={() => close(id)}
-                token={token}
                 position={{ top: rect.bottom + window.scrollY, right: rect.left + window.scrollX }}
               />
             ),
@@ -234,8 +222,7 @@ export default function MemberList() {
         <Name
           user={u}
           member={m}
-          serverState={serverState}
-          md={markdownData}
+          md={{}}
           spoilerState={spoilerState}
           className="author uno"
           style={{
@@ -258,7 +245,7 @@ export default function MemberList() {
       );
     }
 
-    const colorStyle = roleToStyle(role, true, userSettings, false);
+    const colorStyle = roleToStyle(role, true, false);
     return (
       <div
         className="member-role-header"
@@ -335,7 +322,7 @@ export default function MemberList() {
               </div>
             )}
 
-            {sections.length === 0 && offline.length === 0 && serverState.currentServer && (
+            {sections.length === 0 && offline.length === 0 && currentServer && (
               <div style={{ padding: "16px 12px", color: "var(--text-5)", fontSize: 12 }}>
                 {t("member.empty")}
               </div>
@@ -354,10 +341,8 @@ export default function MemberList() {
 
       {nicknameModal && (
         <NicknameModal
-          open
-          target={userState.get(nicknameModal.member.userId)!}
+          user={us.get(nicknameModal.member.userId)!}
           onClose={() => setNicknameModal(null)}
-          onSaved={() => setNicknameModal(null)}
         />
       )}
     </>

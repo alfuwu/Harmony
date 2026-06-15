@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageState } from "../../../lib/state/Messages";
 import { RenderContext, RenderMarkdown } from "../../../lib/utils/MarkdownRenderer";
 import { Member, Review, User } from "../../../lib/utils/Types";
-import { UserSettings } from "../../../lib/utils/UserSettings";
 import MessageInput, { MessageInputHandle } from "../../messages/MessageInput";
 import { deleteReview, getReviews, submitReview, updateReview } from "../../../lib/api/UserApi";
 import { getAvatar } from "../../../lib/utils/UserUtils";
 import { Name, SectionLabel } from "../Generic";
-import { AuthState } from "../../../lib/state/Auth";
+import { getAs } from "../../../lib/state/Auth";
+import { getUs } from "../../../lib/state/Users";
 import { formatDate } from "../../../lib/utils/Funcs";
 import { t } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
@@ -17,12 +16,8 @@ export const reviewsCache = new Map<number, Review[]>();
 interface ReviewsModalProps {
   user: User;
   member?: Member;
-  currentUser: User | null;
   ctx: RenderContext;
-  messageState: MessageState;
-  authState: { token: string | null; userSettings: UserSettings | null; user: User | null; };
   spoilerState: React.MutableRefObject<Map<number, boolean>>;
-  opts: RequestInit;
   setPreviews: React.Dispatch<React.SetStateAction<Review[]>>;
   setCount: React.Dispatch<React.SetStateAction<number>>;
   onClose: () => void;
@@ -31,12 +26,8 @@ interface ReviewsModalProps {
 export default function ReviewsModal({
   user,
   member,
-  currentUser,
   ctx,
-  messageState,
-  authState,
   spoilerState,
-  opts,
   setPreviews,
   setCount,
   onClose
@@ -46,7 +37,8 @@ export default function ReviewsModal({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null | undefined>("");
   const [submitting, setSubmitting] = useState(false);
-  const getUser = ctx.userState?.getUser ?? (() => undefined);
+  const { getUser } = getUs();
+  const { user: currentUser } = getAs();
   
   const inputRef = useRef<MessageInputHandle>(null);
   const myReview = reviews.find(r => r.authorId === currentUser?.id);
@@ -68,7 +60,7 @@ export default function ReviewsModal({
       return;
     let cancelled = false;
     setLoading(true);
-    getReviews(user, opts)
+    getReviews(user)
       .then(data => {
         if (cancelled)
           return;
@@ -92,11 +84,11 @@ export default function ReviewsModal({
     setError(null);
     try {
       if (myReview)
-        await updateReview(user, draft.trim(), opts);
+        await updateReview(user, draft.trim());
       else
-        await submitReview(user, draft.trim(), opts);
+        await submitReview(user, draft.trim());
       reviewsCache.delete(user.id);
-      const fresh = await getReviews(user, opts);
+      const fresh = await getReviews(user);
       setReviews(user.id, fresh);
       setDraft("");
       inputRef.current?.setText("");
@@ -113,9 +105,9 @@ export default function ReviewsModal({
     setSubmitting(true);
     setError(null);
     try {
-      await deleteReview(user, opts);
+      await deleteReview(user);
       reviewsCache.delete(user.id);
-      const fresh = await getReviews(user, opts);
+      const fresh = await getReviews(user);
       setReviews(user.id, fresh);
       setDraft("");
     } catch {
@@ -129,7 +121,6 @@ export default function ReviewsModal({
     <Name
       user={user}
       member={member}
-      serverState={ctx.serverState}
       allowDmColors={true}
       md={ctx}
       spoilerState={spoilerState}
@@ -235,7 +226,6 @@ export default function ReviewsModal({
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 3 }}>
                     <Name
                       user={rUser}
-                      serverState={ctx.serverState}
                       allowDmColors={true}
                       md={ctx}
                       spoilerState={spoilerState}
@@ -289,11 +279,6 @@ export default function ReviewsModal({
                   </>
                 }
                 setText={setDraft}
-                authState={authState as AuthState}
-                serverState={ctx.serverState}
-                channelState={ctx.channelState}
-                messageState={messageState}
-                userState={ctx.userState}
                 onEnter={() => handleSubmit()}
                 ref={inputRef}
               />

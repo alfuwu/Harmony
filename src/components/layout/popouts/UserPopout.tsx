@@ -8,12 +8,9 @@ import {
   getHandle,
   getPronouns,
 } from "../../../lib/utils/UserUtils";
-import { ServerState } from "../../../lib/state/Servers";
-import { ChannelState } from "../../../lib/state/Channels";
-import { UserState } from "../../../lib/state/Users";
-import { UserSettings } from "../../../lib/utils/UserSettings";
-import { Popout } from "../../../lib/state/Popouts";
-import { MessageState } from "../../../lib/state/Messages";
+import { getSs } from "../../../lib/state/Servers";
+import { getUs } from "../../../lib/state/Users";
+import { getPs } from "../../../lib/state/Popouts";
 import { RenderContext, RenderMarkdown } from "../../../lib/utils/MarkdownRenderer";
 import {
   getUserBadges,
@@ -27,20 +24,13 @@ import type { TranslationKeys } from "../../../lib/i18n/Schema";
 import { Divider, Name, SectionLabel } from "../Generic";
 import ReviewsModal, { reviewsCache } from "../modals/ReviewsModal";
 import { formatDate, intToHex, makeMarkdownContext, roleToStyle } from "../../../lib/utils/Funcs";
+import { getAs } from "../../../lib/state/Auth";
+import { ClockIcon } from "../../svgs/other/Icons";
 
 interface UserPopoutProps {
   user: User;
   member?: Member;
-  serverState: ServerState;
-  channelState: ChannelState;
-  messageState: MessageState;
-  userState: UserState;
-  userSettings: UserSettings | null;
-  currentUser: User | null;
-  open: (popout: Popout) => void;
-  close: (id: string) => void;
   onClose: () => void;
-  token: string | null;
   position: { top: number; left?: number; right?: number };
 }
 
@@ -139,41 +129,29 @@ function XpBar({ label, level, totalXp, accentVar = "var(--accent-1)" }: {
 interface ReviewsButtonProps {
   user: User;
   member?: Member,
-  currentUser: User | null;
   ctx: RenderContext;
-  messageState: MessageState;
-  token: string | null;
-  userSettings: UserSettings | null;
   spoilerState: React.MutableRefObject<Map<number, boolean>>;
-  open: (popout: Popout) => void;
-  close: (id: string) => void;
 }
 
 function ReviewsButton({
   user,
   member,
-  currentUser,
   ctx,
-  messageState,
-  token,
-  userSettings,
-  spoilerState,
-  open,
-  close
+  spoilerState
 }: ReviewsButtonProps) {
-  const opts = { headers: { Authorization: `Bearer ${token}` } };
   const [previews, setPreviews] = useState<Review[]>(
     reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.slice(0, 4) : []
   );
   const [count, setCount] = useState(
     reviewsCache.has(user.id) ? reviewsCache.get(user.id)!.length : 0
   );
-  const { getUser } = ctx.userState!;
+  const { getUser } = getUs();
+  const { open, close } = getPs();
 
   useEffect(() => {
     if (reviewsCache.has(user.id))
       return;
-    getReviews(user, opts)
+    getReviews(user)
       .then(data => {
         reviewsCache.set(user.id, data);
         const sorted = [...data].sort(
@@ -196,12 +174,8 @@ function ReviewsButton({
         element: <ReviewsModal
           user={user}
           member={member}
-          currentUser={currentUser}
           ctx={ctx}
-          messageState={messageState}
-          authState={{ token, userSettings, user: currentUser }}
           spoilerState={spoilerState}
-          opts={opts}
           setPreviews={setPreviews}
           setCount={setCount}
           onClose={() => close("user-reviews")}
@@ -265,16 +239,7 @@ function ReviewsButton({
 export default function UserPopout({
   user,
   member,
-  serverState,
-  channelState,
-  messageState,
-  userState,
-  userSettings,
-  currentUser,
-  open,
-  close,
   onClose,
-  token,
   position
 }: UserPopoutProps) {
   useLocale();
@@ -289,6 +254,12 @@ export default function UserPopout({
   const [badges, setBadges] = useState<Badge[]>([]);
   const spoilerState = useRef<Map<number, boolean>>(new Map());
 
+  const { token } = getAs();
+  const { open, close } = getPs();
+  const ss = getSs();
+
+  const markdownData = makeMarkdownContext( open, openUserPopout );
+
   useLayoutEffect(() => {
     if (ref.current) {
       const rect = ref.current.getBoundingClientRect();
@@ -299,7 +270,7 @@ export default function UserPopout({
   useEffect(() => {
     if (!token)
       return;
-    getUserBadges(user.id, { headers: { Authorization: `Bearer ${token}` } })
+    getUserBadges(user.id)
       .then(b => setBadges(b.filter(x => x.isVisible).sort((a, b2) => a.displayOrder - b2.displayOrder)))
       .catch(() => {});
   }, [user.id, token]);
@@ -348,23 +319,13 @@ export default function UserPopout({
       element: (
         <UserPopout
           user={u} member={m}
-          serverState={serverState} channelState={channelState}
-          messageState={messageState} userState={userState}
-          userSettings={userSettings} currentUser={currentUser}
-          open={open} close={close}
           onClose={() => close(id)}
-          token={token}
           position={{ top: rect.bottom + window.scrollY, left: rect.right + window.scrollX }}
         />
       ),
       options: {},
     });
   }
-
-  const markdownData = makeMarkdownContext(
-    serverState, channelState, userState, messageState, userSettings, token,
-    open, openUserPopout
-  );
 
   return (
     <>
@@ -471,7 +432,6 @@ export default function UserPopout({
             <Name
               user={user}
               member={member}
-              serverState={serverState}
               md={markdownData}
               spoilerState={spoilerState}
               style={{
@@ -583,8 +543,8 @@ export default function UserPopout({
               <Divider />
               <div style={{ marginBottom: 8 }}>
                 <SectionLabel>{t("user.local_time")}</SectionLabel>
-                <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
-                  🕐 {tzDisplay}
+                <div style={{ color: "var(--text-3)", fontWeight: 500 }}>
+                  <ClockIcon size={12} /> {tzDisplay}
                 </div>
               </div>
             </>
@@ -624,14 +584,8 @@ export default function UserPopout({
             <ReviewsButton
               user={user}
               member={member}
-              currentUser={currentUser}
               ctx={markdownData}
-              messageState={messageState}
-              token={token}
-              userSettings={userSettings}
               spoilerState={spoilerState}
-              open={open}
-              close={close}
             />
           </div>
 
@@ -642,7 +596,7 @@ export default function UserPopout({
                 <SectionLabel>{t("user.roles_count", { count: member.roles.length })}</SectionLabel>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                   {member.roles.map(roleId => {
-                    const role = serverState?.get(member.serverId)?.roles.find(r => r.id === roleId);
+                    const role = ss.get(member.serverId)?.roles.find(r => r.id === roleId);
                     const roleStyle = role ? roleToStyle(role, false) : {};
 
                     return (

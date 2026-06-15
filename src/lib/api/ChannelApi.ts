@@ -1,4 +1,4 @@
-import { Channel, ChannelType } from "../utils/Types";
+import { Channel, ChannelType, Message } from "../utils/Types";
 import { api } from "./Http";
 
 export async function createChannel(
@@ -48,7 +48,7 @@ export async function searchMessages(
   query: string,
   page: number = 0,
   options: RequestInit = {}
-): Promise<any[]> {
+): Promise<Message[]> {
   return api(`/channels/${channelId}/search?q=${encodeURIComponent(query)}&page=${page}`, {
     ...options,
     method: "GET"

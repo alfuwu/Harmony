@@ -12,5 +12,7 @@ export function getBanner(server: Server | null): string | undefined {
 }
 
 export function getEmojiUrl(emoji: Emoji): string {
-    return DEFAULT_ICON; // todo: add emojis endpoints
+    if (emoji.id != null)
+        return `${hostUrl}/api/emojis/${emoji.id}`;
+    return DEFAULT_ICON;
 }

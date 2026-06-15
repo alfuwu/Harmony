@@ -8,14 +8,12 @@ type Step = "enter" | "verify";
 interface Props {
   open: boolean;
   currentPhone?: string | null;
-  token: string;
   onClose: () => void;
   onSaved: (newPhone: string) => void;
 }
 
-export default function ChangePhoneModal({ open, currentPhone, token, onClose, onSaved }: Props) {
+export default function ChangePhoneModal({ open, currentPhone, onClose, onSaved }: Props) {
   useLocale();
-  const opts = { headers: { Authorization: `Bearer ${token}` } };
 
   const [step, setStep] = useState<Step>("enter");
   const [phone, setPhone] = useState("");
@@ -49,7 +47,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
     setLoading(true);
     setError("");
     try {
-      await sendPhoneVerification(trimmed, opts);
+      await sendPhoneVerification(trimmed);
       setStep("verify");
       startCooldown(60);
     } catch (e: any) {
@@ -65,7 +63,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
     setLoading(true);
     setError("");
     try {
-      await sendPhoneVerification(phone.trim(), opts);
+      await sendPhoneVerification(phone.trim());
       startCooldown(60);
     } catch (e: any) {
       setError(e.message ?? "error.phone.resend");
@@ -83,7 +81,7 @@ export default function ChangePhoneModal({ open, currentPhone, token, onClose, o
     setLoading(true);
     setError("");
     try {
-      await verifyPhone(phone.trim(), trimmedCode, opts);
+      await verifyPhone(phone.trim(), trimmedCode);
       onSaved(phone.trim());
       onClose();
     } catch (e: any) {

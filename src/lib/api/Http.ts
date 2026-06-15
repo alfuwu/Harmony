@@ -1,4 +1,5 @@
 import { hostUrl } from "../../App";
+import { getAs } from "../state/Auth";
 
 export async function api(path: string, options: RequestInit = {}) {
   return binapi(path, { ...options, headers: { "Content-Type": "application/json", ...options.headers }});
@@ -17,8 +18,11 @@ export async function binapi(path: string, options: RequestInit = {}) {
 }
 
 export async function raw(path: string, options: RequestInit = {}, retry: number = 0) {
+  const token = getAs().token;
+
   const headers: Record<string, any> = {
-    ...(options.headers || {})
+    ...(options.headers || {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
 
   const res = await fetch(hostUrl + "/api" + path, {

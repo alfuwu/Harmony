@@ -12,14 +12,11 @@ type SetupStep = "loading" | "secret" | "confirm" | "recovery";
 interface Props {
   mode: "setup" | "disable";
   open: boolean;
-  token: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }: Props) {
-  const opts = { headers: { Authorization: `Bearer ${token}` } };
-
+export default function TwoFactorModal({ mode, open, onClose, onSuccess }: Props) {
   const [setupStep, setSetupStep] = useState<SetupStep>("loading");
   const [secret, setSecret] = useState("");
   const [qrUri, setQrUri] = useState("");
@@ -42,7 +39,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
     setSecretCopied(false);
     if (mode === "setup") {
       setSetupStep("loading");
-      twoFactorBeginSetup(opts)
+      twoFactorBeginSetup()
         .then(({ secret: s, qrUri: q }) => {
           setSecret(s);
           setQrUri(q);
@@ -64,7 +61,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
     setLoading(true);
     setError("");
     try {
-      const result = await twoFactorConfirmSetup(code.trim(), opts);
+      const result = await twoFactorConfirmSetup(code.trim());
       setRecoveryCodes(result.recoveryCodes);
       setSetupStep("recovery");
     } catch (e: any) {
@@ -80,7 +77,7 @@ export default function TwoFactorModal({ mode, open, token, onClose, onSuccess }
     setLoading(true);
     setError("");
     try {
-      await twoFactorDisable(code.trim(), opts);
+      await twoFactorDisable(code.trim());
       onSuccess();
       onClose();
     } catch (e: any) {

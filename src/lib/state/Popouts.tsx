@@ -1,6 +1,7 @@
-import { useState, useCallback, useContext, createRef, useEffect, useRef } from "react";
+import React, { useEffect, createRef } from "react";
 import { createPortal } from "react-dom";
-import { createContext } from "react";
+import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import { rootRef } from "../../App";
 
 export interface PopoutState {
@@ -14,50 +15,64 @@ export interface Popout {
   options: any;
   closeWhenClickOutside?: boolean;
   ref?: React.RefObject<HTMLDivElement>;
-  triggerRef?: React.RefObject<HTMLElement>
+  triggerRef?: React.RefObject<HTMLElement>;
 }
 
-export const PopoutContext = createContext<PopoutState | undefined>(undefined);
+const recentlyClosed = new Map<string, number>();
+
+interface PopoutStoreState {
+  items: Popout[];
+  open: (popout: Popout) => void;
+  close: (id: string) => void;
+  closeAll: () => void;
+}
+
+const usePopoutStore = create<PopoutStoreState>((set, get) => ({
+  items: [],
+
+  open: (popout) =>
+    set(state => {
+      const closedAt = recentlyClosed.get(popout.id);
+      if (closedAt !== undefined && Date.now() - closedAt < 100)
+        return state;
+
+      const exists = state.items.find(i => i.id === popout.id);
+      if (exists) {
+        return {
+          items: state.items.map(i =>
+            i.id === popout.id
+              ? { ...i, element: popout.element, options: popout.options, ref: createRef<HTMLDivElement>() }
+              : i
+          ),
+        };
+      }
+      return { items: [...state.items, { ...popout, ref: createRef<HTMLDivElement>() }] };
+    }),
+
+  close: (id) =>
+    set(state => ({ items: state.items.filter(i => i.id !== id) })),
+
+  closeAll: () =>
+    set(state => {
+      const now = Date.now();
+      state.items
+        .filter(i => i.closeWhenClickOutside !== false)
+        .forEach(i => recentlyClosed.set(i.id, now));
+      return { items: state.items.filter(i => i.closeWhenClickOutside === false) };
+    }),
+}));
+
+const containerStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 9999,
+  pointerEvents: "none"
+};
 
 export const PopoutProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [items, setItems] = useState<Popout[]>([]);
+  const items = usePopoutStore(s => s.items);
+  const closeAll = usePopoutStore(s => s.closeAll);
 
-  const recentlyClosedRef = useRef<Map<string, number>>(new Map());
-
-  // doesn't actually close all popouts
-  const closeAll = useCallback(() => {
-    setItems(prev => {
-      const now = Date.now();
-      prev
-        .filter(i => i.closeWhenClickOutside !== false)
-        .forEach(i => recentlyClosedRef.current.set(i.id, now));
-      return prev.filter(i => i.closeWhenClickOutside === false);
-    });
-  }, []);
-
-  const open = useCallback((popout: Popout) => {
-    setItems(prev => {
-      const closedAt = recentlyClosedRef.current.get(popout.id);
-      if (closedAt !== undefined && Date.now() - closedAt < 100) {
-        //recentlyClosedRef.current.delete(popout.id);
-        return prev; // stay closed
-      }
-
-      const exists = prev.find(i => i.id === popout.id);
-      if (exists)
-        return prev.map(i =>
-          i.id === popout.id
-            ? { ...i, element: popout.element, options: popout.options, ref: createRef<HTMLDivElement>() }
-            : i
-        );
-      return [...prev, { ...popout, ref: createRef<HTMLDivElement>() }];
-    });
-  }, []);
-
-  const close = useCallback((id: string) => {
-    setItems(prev => prev.filter(i => i.id !== id));
-  }, []);
-  
   useEffect(() => {
     function handleGlobalMouseUp(event: MouseEvent) {
       if (items.length === 0)
@@ -77,36 +92,29 @@ export const PopoutProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => document.removeEventListener("mouseup", handleGlobalMouseUp, { capture: true });
   }, [items, closeAll]);
 
-  const value = { open, close };
-
   return (
-    <PopoutContext.Provider value={value}>
+    <>
       {children}
       {createPortal(
-        // @ts-expect-error
         <div className="ven-colors" style={containerStyle}>
           {items.map(item => (
-            <div key={item.id} style={item.options.style ? {pointerEvents: "auto", ...item.options.style} : {pointerEvents: "auto"}} ref={item.ref}>
+            <div
+              key={item.id}
+              style={item.options.style ? { pointerEvents: "auto", ...item.options.style } : { pointerEvents: "auto" }}
+              ref={item.ref}
+            >
               {item.element}
             </div>
           ))}
         </div>,
         rootRef.current ?? document.body
       )}
-    </PopoutContext.Provider>
+    </>
   );
-}
-
-const containerStyle = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 9999,
-  pointerEvents: "none"
 };
 
 export const usePopoutState = (): PopoutState => {
-  const ctx = useContext(PopoutContext);
-  if (!ctx)
-    throw new Error("usePopoutState must be used within a PopoutProvider");
-  return ctx;
+  return usePopoutStore(useShallow((s: PopoutStoreState) => ({ open: s.open, close: s.close })));
 };
+
+export const getPs = () => usePopoutState();

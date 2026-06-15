@@ -1,7 +1,7 @@
-import { useAuthState } from "../../lib/state/Auth";
-import { useChannelState } from "../../lib/state/Channels";
-import { useMessageState } from "../../lib/state/Messages";
-import { useUserState } from "../../lib/state/Users";
+import { getAs } from "../../lib/state/Auth";
+import { getCs } from "../../lib/state/Channels";
+import { getMs } from "../../lib/state/Messages";
+import { getUs } from "../../lib/state/Users";
 import { useLoadingState } from "../../lib/state/Loading";
 import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
 import { AbstractChannel, ChannelType, DmChannel, GroupDmChannel, OnlineStatus } from "../../lib/utils/Types";
@@ -20,10 +20,10 @@ const STATUS_COLORS: Record<OnlineStatus, string> = {
 
 export default function DmList() {
   useLocale();
-  const { user, token, userSettings } = useAuthState();
-  const channelState = useChannelState();
-  const userState = useUserState();
-  const messageState = useMessageState();
+  const { user, userSettings } = getAs();
+  const channelState = getCs();
+  const { get } = getUs();
+  const { addMessages } = getMs();
   const { setMessagesLoading } = useLoadingState();
 
   const hidden = userSettings?.hiddenChannels ?? [];
@@ -50,10 +50,8 @@ export default function DmList() {
     const key = CacheKey.messages(c.id);
     try {
       if (cache.isStale(key)) {
-        const msgs = await getMessages(c.id, undefined, undefined, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        messageState.addMessages(msgs);
+        const msgs = await getMessages(c.id);
+        addMessages(msgs);
         cache.markFresh(key);
       }
     } catch (e) {
@@ -103,7 +101,7 @@ export default function DmList() {
 
         const dm = c as DmChannel;
         const otherId = dm.members?.find(id => id !== user?.id);
-        const other = otherId !== undefined ? userState.get(otherId) : undefined;
+        const other = otherId !== undefined ? get(otherId) : undefined;
         const name = other ? getDisplayName(other) : t("user.unknown");
         const avatar = getAvatar(other ?? null);
         const status = other?.onlineStatus ?? OnlineStatus.Offline;

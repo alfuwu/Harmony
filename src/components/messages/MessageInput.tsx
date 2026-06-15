@@ -8,13 +8,14 @@ import { createEditor, Node, Editor, Transforms, Range, Text, BaseElement, BaseE
 import { HistoryEditor, withHistory } from "slate-history";
 import ReactDOM from "react-dom";
 
-import { ChannelState, useChannelState } from "../../lib/state/Channels";
-import { MessageState, useMessageState } from "../../lib/state/Messages";
-import { AuthState, useAuthState } from "../../lib/state/Auth";
-import { UserState, useUserState } from "../../lib/state/Users";
-import { ServerState, useServerState } from "../../lib/state/Servers";
+import { useChannelState } from "../../lib/state/Channels";
+import { useMessageState } from "../../lib/state/Messages";
+import { useAuthState } from "../../lib/state/Auth";
+import { useUserState } from "../../lib/state/Users";
+import { useServerState } from "../../lib/state/Servers";
+import { usePopoutState } from "../../lib/state/Popouts";
 
-import { AbstractChannel, Channel, Role, Server, User, Emoji as CustomEmoji, DmChannel } from "../../lib/utils/Types";
+import { AbstractChannel, Channel, Role, Server, User, Emoji, DmChannel } from "../../lib/utils/Types";
 import { getAvatar, getDisplayRole } from "../../lib/utils/UserUtils";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { sendMessage, uploadAttachment } from "../../lib/api/MessageApi";
@@ -38,7 +39,7 @@ import {
   slateFromMarkdown,
 } from "../../lib/utils/SlateMarkdownPlugin";
 
-import data, { Emoji } from "@emoji-mart/data";
+import data, { Emoji as NativeEmoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
 import { connection } from "../../lib/api/SignalrClient";
 import { getEmojiUrl, getIcon } from "../../lib/utils/ServerUtils";
@@ -46,9 +47,8 @@ import { t, tr, useLocale } from "../../lib/i18n/Index";
 
 import katex from 'katex';
 import EmojiPickerPopout from "../layout/popouts/EmojiPickerPopout";
-import { PopoutState, usePopoutState } from "../../lib/state/Popouts";
 import TextDocument from "../svgs/other/TextDocument";
-import { intToHex, lerp, makeMarkdownContext } from "../../lib/utils/Funcs";
+import { intToHex, isFlag, lerp, makeMarkdownContext, normalizeEmojiId } from "../../lib/utils/Funcs";
 import { Name } from "../layout/Generic";
 import { PlusIcon, SmileIcon } from "../svgs/other/Icons";
 import Random from "../../lib/utils/Random";
@@ -92,7 +92,7 @@ function CodeBlockElement({
       <div spellCheck={false} style={{
         position: 'relative',
         color: 'transparent',
-        caretColor: 'var(--text-normal, #abb2bf)',
+        caretColor: 'var(--text-1, #abb2bf)'
       }}>
         {html !== null && (
           <div
@@ -110,7 +110,7 @@ function CodeBlockElement({
               overflow: 'hidden',
               margin: 0,
               padding: 0,
-              color: '#abb2bf'
+              color: 'var(--text-1, #abb2bf)'
             }}
             dangerouslySetInnerHTML={{ __html: html }}
           />
@@ -205,20 +205,6 @@ const REGIONAL_INDICATOR_LETTERS = 'abcdefghijklmnopqrstuvwxyz'.split('').map((c
   skins: [{ native: String.fromCodePoint(0x1F1E6 + i) }]
 }));
 
-function isFlag(native: string): boolean {
-  if (!native)
-    return false;
-  const pts = [...native].map(c => c.codePointAt(0) ?? 0);
-  return pts.length === 2 && pts.every(p => p >= 0x1F1E6 && p <= 0x1F1FF);
-}
-
-function normalizeEmojiId(id: string, native?: string): string {
-  let n = (id ?? "").replace(/-/g, "_");
-  if (native && isFlag(native) && !n.startsWith("flag_") && !n.startsWith("regional_"))
-    n = `flag_${n}`;
-  return n;
-}
-
 const withMentions = (editor: Editor) => {
   const { isInline, isVoid, markableVoid } = editor;
   const isSpecial = (el: any) => el.type?.startsWith("mention") || el.type === "emoji" || el.type === "customEmoji";
@@ -241,10 +227,10 @@ const insertServerMention = (editor: Editor, srv: Server) =>
   ins(editor, { type: 'mentionServer', id: srv.id, server: srv, children: [{ text: `<#&${srv.id}>` }] });
 const insertRoleMention = (editor: Editor, role: Role) =>
   ins(editor, { type: 'mentionRole', id: role.id, role, children: [{ text: `<@&${role.id}>` }] });
-const insertEmoji = (editor: Editor, emoji: Emoji) => {
+const insertEmoji = (editor: Editor, emoji: NativeEmoji) => {
   // @ts-expect-error
   const native = emoji.native ?? emoji.skins?.[0]?.native ?? "";
-  ins(editor, { type: "emoji", emoji: native, children: [{ text: native }] });
+  ins(editor, { type: "emoji", emoji: { name: native }, children: [{ text: native }] });
 };
 const insertCustomEmoji = (editor: Editor, name: string, id: number, url: string) =>
   ins(editor, {
@@ -264,7 +250,7 @@ function serializeInlineNode(node: any): string {
     case 'mentionServer': return `<#&${node.id}>`;
     case 'mentionRole': return `<@&${node.id}>`;
     case 'mentionEveryone': return `@${node.subtype}`;
-    case "emoji": return (node.emoji as string) ?? "";
+    case "emoji": return (node.emoji.name as string) ?? "";
     case "customEmoji": return `<:${node.emojiName}:${node.emojiId}>`;
     default:
       if (node.children)
@@ -290,25 +276,25 @@ function serializeFragmentToText(
       switch (block.type) {
         case 'quote':
           return partialStart ? content : `> ${content}`;
-        case 'list-item':
+        case 'listItem':
           return partialStart ? content : `- ${content}`;
-        case 'numbered-list-item':
+        case 'numberedListItem':
           return partialStart ? content : `${block.number ?? 1}. ${content}`;
-        case 'math-block':
+        case 'mathBlock':
           return (partialStart || partialEnd) ? content : `$$\n${content}\n$$`;
-        case 'code-block':
+        case 'codeBlock':
           return (partialStart || partialEnd)
             ? content
             : `\`\`\`${block.language ?? ''}\n${content}\n\`\`\``;
-        case 'nested-quote':
+        case 'nestedQuote':
           return partialStart ? content : `> > ${content}`;
-        case 'quote-list-item':
+        case 'quoteListItem':
           return partialStart ? content : `> - ${content}`;
-        case 'quote-numbered-list-item':
+        case 'quoteNumberedListItem':
           return partialStart ? content : `> ${block.number ?? 1}. ${content}`;
-        case 'list-item-quote':
+        case 'listItemQuote':
           return partialStart ? content : `- > ${content}`;
-        case 'numbered-list-item-quote':
+        case 'numberedListItemQuote':
           return partialStart ? content : `${block.number ?? 1}. > ${content}`;
         case 'collapsible': {
           if (partialStart || partialEnd)
@@ -355,13 +341,7 @@ const MessageInput = forwardRef(function MessageInput({
   onEnter,
   onKey,
   giveNull = false,
-  style,
-  authState,
-  channelState,
-  messageState,
-  userState,
-  serverState,
-  popoutState
+  style
 }: {
   isChannel?: boolean;
   placeholderText?: string;
@@ -372,29 +352,20 @@ const MessageInput = forwardRef(function MessageInput({
   onKey?: (e: React.KeyboardEvent<HTMLDivElement>) => boolean;
   giveNull?: boolean;
   style?: CSSProperties;
-  authState?: AuthState;
-  channelState?: ChannelState;
-  messageState?: MessageState;
-  userState?: UserState;
-  serverState?: ServerState;
-  popoutState?: PopoutState;
 }, ref) {
   useLocale();
-  const { token, user, userSettings } = authState ?? useAuthState();
-  serverState ??= useServerState();
-  channelState ??= useChannelState();
-  messageState ??= useMessageState();
-  userState ??= useUserState();
+
+  const { user, userSettings } = useAuthState();
   const {
     channels, currentChannel,
     getChannelDraft, setChannelDraft,
     getPendingReplies, clearPendingReplies,
     getPendingAttachments, addPendingAttachment, removePendingAttachment, clearPendingAttachments
-  } = channelState;
-  const { addMessage, updateMessage } = messageState;
-  const { users, getMember } = userState;
-  const { servers, currentServer } = serverState;
-  const { open, close } = popoutState ?? usePopoutState();
+  } = useChannelState();
+  const { addMessage, updateMessage } = useMessageState();
+  const { users, getUser, getMember } = useUserState();
+  const { servers, currentServer } = useServerState();
+  const { open, close } = usePopoutState();
 
   const usersRef = useRef(users);
   const channelsRef = useRef(channels);
@@ -535,7 +506,7 @@ const MessageInput = forwardRef(function MessageInput({
       return;
     const theme = getShikiTheme(userSettings ?? null);
     editor.children.forEach((block: any, i: number) => {
-      if (block?.type === 'code-block') {
+      if (block?.type === 'codeBlock') {
         shikiHighlighter.update(
           i,
           Node.string(block),
@@ -670,13 +641,11 @@ const MessageInput = forwardRef(function MessageInput({
       id,
       element: (
         <EmojiPickerPopout
-          userSettings={userSettings}
           position={{ top: rect.top - 480, left: rect.left }}
-          servers={servers}
           onSelect={(emoji, e) => {
             const native = typeof emoji === 'string' ? emoji : emoji;
             Transforms.select(editor, target!);
-            ins(editor, { type: "emoji", emoji: native, children: [{ text: native }] });
+            ins(editor, { type: "emoji", emoji: { name: native }, children: [{ text: native }] });
             ReactEditor.focus(editor);
             if (!e.shiftKey)
               close(id);
@@ -707,7 +676,7 @@ const MessageInput = forwardRef(function MessageInput({
       block = Node.get(editor, [path[0]]);
     } catch { return []; }
 
-    if (block?.type === 'math-block' || block?.type === 'code-block')
+    if (block?.type === 'mathBlock' || block?.type === 'codeBlock')
       return [];
 
     const blockText = Node.string(block);
@@ -854,7 +823,7 @@ const MessageInput = forwardRef(function MessageInput({
     switch (element.type) {
       case 'mentionUser': {
         const m = getMember(element.user?.id, currentServer?.id);
-        const r = m && getDisplayRole(serverState, m, true);
+        const r = m && getDisplayRole(m, true);
         const col = r?.colors?.[0] ?? r?.color;
         return (
           <span
@@ -866,9 +835,8 @@ const MessageInput = forwardRef(function MessageInput({
             <Name
               user={element.user}
               member={m}
-              serverState={serverState}
               allowDmColors={!!!currentServer}
-              md={markdownContext}
+              md={markdownData}
               spoilerState={spoilerState}
               prefix="@"
             />
@@ -887,9 +855,8 @@ const MessageInput = forwardRef(function MessageInput({
           >
             <Name
               user={null}
-              serverState={serverState}
               allowDmColors={!!!currentServer}
-              md={markdownContext}
+              md={markdownData}
               spoilerState={spoilerState}
               overRole={element.role}
               prefix="@"
@@ -901,14 +868,14 @@ const MessageInput = forwardRef(function MessageInput({
       case 'mentionChannel':
         return (
           <span {...attributes} contentEditable={false} className="mention int">
-            {getChannelIcon(element.channel, { className: "icon" })}{RenderMarkdown({ content: element.channel?.name, spoilerStateRef: spoilerState, ...markdownContext })}
+            {getChannelIcon(element.channel, { className: "icon" })}{RenderMarkdown({ content: element.channel?.name, spoilerStateRef: spoilerState, ...markdownData })}
           </span>
         );
 
       case 'mentionServer':
         return (
           <span {...attributes} contentEditable={false} className="mention int">
-            <img src={getIcon(element.server)} className="server-icon2" />{RenderMarkdown({ content: element.server?.name, spoilerStateRef: spoilerState, ...markdownContext })}
+            <img src={getIcon(element.server)} className="server-icon2" />{RenderMarkdown({ content: element.server?.name, spoilerStateRef: spoilerState, ...markdownData })}
           </span>
         );
       
@@ -922,7 +889,7 @@ const MessageInput = forwardRef(function MessageInput({
       case "emoji":
         return (
           <span {...attributes} contentEditable={false}>
-            {renderEmoji(userSettings, element.emoji)}
+            {renderEmoji(element.emoji)}
           </span>
         );
 
@@ -949,31 +916,31 @@ const MessageInput = forwardRef(function MessageInput({
       case "quote":
         return <div {...attributes} className="editor-block-quote">{children}</div>;
 
-      case "nested-quote":
+      case "nestedQuote":
         return (
           <div {...attributes} className="editor-block-quote">
             <div className="editor-block-quote">{children}</div>
           </div>
         );
 
-      case "list-item":
+      case "listItem":
         return <div {...attributes} className="editor-list-item">{children}</div>;
 
-      case "numbered-list-item":
+      case "numberedListItem":
         return (
           <div {...attributes} className="editor-numbered-item" data-number={String(element.number) + '.'}>
             {children}
           </div>
         );
 
-      case "quote-list-item":
+      case "quoteListItem":
         return (
           <div {...attributes} className="editor-block-quote">
             <div className="editor-list-item">{children}</div>
           </div>
         );
 
-      case "quote-numbered-list-item":
+      case "quoteNumberedListItem":
         return (
           <div {...attributes} className="editor-block-quote">
             <div {...attributes} className="editor-numbered-item" data-number={String(element.number) + '.'}>
@@ -982,16 +949,16 @@ const MessageInput = forwardRef(function MessageInput({
           </div>
         );
 
-      case "list-item-quote":
+      case "listItemQuote":
         return (
-          <div {...attributes} className="editor-list-item editor-list-item-quote">
+          <div {...attributes} className="editor-list-item editor-listItemQuote">
             <div className="editor-block-quote">
               {children}
             </div>
           </div>
         );
 
-      case "numbered-list-item-quote":
+      case "numberedListItemQuote":
         return (
           <div {...attributes} className="editor-numbered-item" data-number={String(element.number) + '.'}>
             <div className="editor-block-quote">
@@ -1000,7 +967,7 @@ const MessageInput = forwardRef(function MessageInput({
           </div>
         );
 
-      case "code-block":
+      case "codeBlock":
         return (
           <CodeBlockElement
             attributes={attributes}
@@ -1012,7 +979,7 @@ const MessageInput = forwardRef(function MessageInput({
           </CodeBlockElement>
         );
 
-      case "math-block": {
+      case "mathBlock": {
         const rawLatex = Node.string(element);
         let mathHtml = '';
         try {
@@ -1078,7 +1045,7 @@ const MessageInput = forwardRef(function MessageInput({
       const serverEmojis = servers
         .flatMap(sv => sv.emojis ?? [])
         .filter(e => e.name.toLowerCase().startsWith(raw.toLowerCase()))
-        .map(e => ({ ...e, type: "customEmoji" as const }));
+        .map(e => ({ ...e, type: "customEmoji" }));
 
       const flagDirect = [];
       const flagCodeMatch = raw.match(/^(?:flag_)?([a-z]{2})$/i);
@@ -1099,7 +1066,7 @@ const MessageInput = forwardRef(function MessageInput({
 
   const initialValue = useMemo(() => slateFromMarkdown(initialText), []);
 
-  const markdownContext = makeMarkdownContext(serverState, channelState, userState, messageState, userSettings, token);
+  const markdownData = makeMarkdownContext();
   const spoilerState = useRef<Map<number, boolean>>(new Map());
 
   const getCurrentBlockType = (): string | null => {
@@ -1153,7 +1120,7 @@ const MessageInput = forwardRef(function MessageInput({
         if (superHighlighter) {
           const theme = getShikiTheme(userSettings ?? null);
           editor.children.forEach((block: any, i: number) => {
-            if (block?.type === 'code-block') {
+            if (block?.type === 'codeBlock') {
               shikiHighlighter.update(
                 i,
                 Node.string(block),
@@ -1227,9 +1194,8 @@ const MessageInput = forwardRef(function MessageInput({
                       <Name
                         user={u}
                         member={m}
-                        serverState={serverState}
                         allowDmColors={!!!currentServer}
-                        md={markdownContext}
+                        md={markdownData}
                         spoilerState={spoilerState}
                       />
                       <span className="username">@{u.username}</span>
@@ -1272,19 +1238,19 @@ const MessageInput = forwardRef(function MessageInput({
                   );
                 }
                 case "emoji": {
-                  const e = item as Emoji;
+                  const e = item as NativeEmoji;
                   const native = e.skins?.[0]?.native ?? "";
-                  const displayId = normalizeEmojiId(e.id, native);
+                  const displayId = normalizeEmojiId(native, e.id);
                   return (
                     <div key={item.id} className={`mention-item int ${i === index ? "active" : ""}`}
                       onMouseDown={ev => { ev.preventDefault(); Transforms.select(editor, target!); insertEmoji(editor, e); setTarget(null); }}
                       onMouseEnter={() => setIndex(i)}>
-                      <span>{renderEmoji(userSettings, native)} :{displayId}:</span>
+                      <span>{renderEmoji({ name: native })} :{displayId}:</span>
                     </div>
                   );
                 }
                 case "customEmoji": {
-                  const ce = item as CustomEmoji;
+                  const ce = item as Emoji;
                   const url = getEmojiUrl(ce);
                   return (
                     <div key={ce.id} className={`mention-item int ${i === index ? "active" : ""}`}
@@ -1295,12 +1261,14 @@ const MessageInput = forwardRef(function MessageInput({
                         setTarget(null);
                       }}
                       onMouseEnter={() => setIndex(i)}>
-                      <img
-                        src={url}
-                        alt={ce.name}
-                        style={{ width: 20, height: 20, objectFit: "contain", borderRadius: 4, flexShrink: 0 }}
-                      />
-                      <span>:{ce.name}:</span>
+                      <span>
+                        <img
+                          src={url}
+                          alt={ce.name}
+                          style={{ width: 20, height: 20, objectFit: "contain", borderRadius: 4, flexShrink: 0 }}
+                        />
+                        {' '}:{ce.name}:
+                      </span>
                     </div>
                   );
                 }
@@ -1380,14 +1348,13 @@ const MessageInput = forwardRef(function MessageInput({
                   ? placeholderText
                   : isChannel
                     ? currentChannel
-                      ? !!currentServer
+                      ? currentChannel.serverId !== undefined
                         ? <>{tr("input.placeholder", { channel: <>{getChannelIcon(currentChannel, { className: "inline-icon" })}{currentChannel.name}</> })}</>
-                        // todo: expand to support group dms
+                        // TODO: expand to support group dms
                         : <>{tr("input.placeholder.dm", { user: <Name
-                            user={userState.get((currentChannel as DmChannel).members.filter(m => m !== user?.id)[0]) ?? null}
-                            serverState={serverState}
+                            user={getUser((currentChannel as DmChannel).members?.filter(m => m !== user?.id)[0]) ?? null}
                             allowDmColors={true}
-                            md={markdownContext}
+                            md={markdownData}
                             spoilerState={spoilerState}
                             prefix="@"
                           />})}</>
@@ -1648,10 +1615,10 @@ const MessageInput = forwardRef(function MessageInput({
                       break;
                     case "emoji":
                       setEmojiResults([]);
-                      insertEmoji(editor, results[index] as Emoji);
+                      insertEmoji(editor, results[index] as NativeEmoji);
                       break;
                     case "customEmoji": {
-                      const ce = results[index] as CustomEmoji;
+                      const ce = results[index] as Emoji;
                       insertCustomEmoji(editor, ce.name, ce.id!, getEmojiUrl(ce) ?? "");
                       break;
                     }
@@ -1666,7 +1633,7 @@ const MessageInput = forwardRef(function MessageInput({
 
             if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
               const blockType = getCurrentBlockType();
-              if (['code-block', 'math-block'].includes(blockType ?? '')) {
+              if (['codeBlock', 'mathBlock'].includes(blockType ?? '')) {
                 e.preventDefault();
                 Transforms.select(editor, {
                   anchor: Editor.start(editor, []),
@@ -1690,9 +1657,9 @@ const MessageInput = forwardRef(function MessageInput({
               const blockType = getCurrentBlockType();
               if (e.shiftKey) {
                 if ([
-                  'quote', 'list-item', 'numbered-list-item', 'code-block', 'math-block',
-                  'nested-quote', 'quote-list-item', 'quote-numbered-list-item',
-                  'list-item-quote', 'numbered-list-item-quote'
+                  'quote', 'listItem', 'numberedListItem', 'codeBlock', 'mathBlock',
+                  'nestedQuote', 'quoteListItem', 'quoteNumberedListItem',
+                  'listItemQuote', 'numberedListItemQuote'
                 ].includes(blockType ?? '')) {
                   e.preventDefault();
                   editor.insertBreak();
@@ -1708,7 +1675,7 @@ const MessageInput = forwardRef(function MessageInput({
                   }
                 }
               } else {
-                if (!e.ctrlKey && blockType === 'code-block') {
+                if (!e.ctrlKey && blockType === 'codeBlock') {
                   e.preventDefault();
                   editor.insertBreak();
                   return;
@@ -1733,8 +1700,9 @@ const MessageInput = forwardRef(function MessageInput({
                   const filesToUpload = [...pendingFiles];
                   clearPendingAttachments(currentChannel.id);
 
+                  const nonce = Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`);
                   const msg = {
-                    id: -1,
+                    id: -nonce,
                     channelId: currentChannel.id,
                     authorId: user.id,
                     mentions: [],
@@ -1743,10 +1711,9 @@ const MessageInput = forwardRef(function MessageInput({
                     previousContent: null,
                     timestamp: new Date().toString(),
                     editedTimestamp: null,
-                    isDeleted: false,
                     isPinned: false,
                     sending: true,
-                    nonce: Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`),
+                    nonce: nonce,
                     references,
                     attachments: filesToUpload.map(f => ({
                       fileName: f.name,
@@ -1758,7 +1725,6 @@ const MessageInput = forwardRef(function MessageInput({
                   };
                   addMessage(msg);
 
-                  const opts = { headers: { Authorization: `Bearer ${token}` } };
                   const progressMap = new Map<string, number>(filesToUpload.map(f => [f.name, 0]));
 
                   const reportProgress = (fileName: string, percent: number) => {
@@ -1768,16 +1734,16 @@ const MessageInput = forwardRef(function MessageInput({
                       nonce: msg.nonce,
                       attachments: msg.attachments.map(a => ({
                         ...a,
-                        progress: progressMap.get(a.fileName) ?? a.progress,
-                      })),
+                        progress: progressMap.get(a.fileName) ?? a.progress
+                      }))
                     });
                   };
 
-                  Promise.all(filesToUpload.map(f => uploadAttachment(f, opts, pct => reportProgress(f.name, pct))))
+                  Promise.all(filesToUpload.map(f => uploadAttachment(f, pct => reportProgress(f.name, pct))))
                     .then(uploaded => uploaded.map(r => r.id))
                     .catch(() => [])
                     .then(attachmentIds =>
-                      sendMessage(currentChannel.id, md, msg.nonce!, references, attachmentIds, opts))
+                      sendMessage(currentChannel.id, md, msg.nonce!, references, attachmentIds))
                     .then(sentMsg => addMessage(sentMsg));
                 } else if (onEnter) {
                   e.preventDefault();
@@ -1790,7 +1756,7 @@ const MessageInput = forwardRef(function MessageInput({
             }
 
             // allow escaping block elements via arrow keys either at the start of the block or the end
-            if (["ArrowDown", "ArrowUp"].includes(e.key) && ['code-block', 'math-block'].includes(getCurrentBlockType() ?? '')) {
+            if (["ArrowDown", "ArrowUp"].includes(e.key) && ['codeBlock', 'mathBlock'].includes(getCurrentBlockType() ?? '')) {
               const sel = editor.selection;
               if (sel && Range.isCollapsed(sel)) {
                 const path = Editor.path(editor, sel);
@@ -1834,7 +1800,7 @@ const MessageInput = forwardRef(function MessageInput({
 
             if (isChannel && currentChannel) {
               const lines = text.split('\n');
-              if (lines.length > 250) {
+              if (lines.length > 2500) {
                 const blob = new Blob([text], { type: 'text/plain' });
                 const file = new File([blob], 'paste.txt', { type: 'text/plain' });
                 addPendingAttachment(currentChannel.id, file);
@@ -1847,7 +1813,7 @@ const MessageInput = forwardRef(function MessageInput({
 
             const blockType = getCurrentBlockType();
 
-            if (blockType === "code-block") {
+            if (blockType === "codeBlock") {
               Transforms.insertText(editor, text);
               return;
             }

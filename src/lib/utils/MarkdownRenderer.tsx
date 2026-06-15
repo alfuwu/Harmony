@@ -10,11 +10,8 @@ import type {
 import { parseDocument, isBigEmoji } from './MarkdownParser';
 import { getDisplayRole } from './UserUtils';
 import { getChannelIcon } from './ChannelUtils';
-import type { AbstractChannel, Server, User } from './Types';
+import type { AbstractChannel, Emoji, Server, User } from './Types';
 import { EmojiStyle, Theme, type UserSettings } from './UserSettings';
-import type { UserState } from '../state/Users';
-import type { ServerState } from '../state/Servers';
-import type { ChannelState } from '../state/Channels';
 import Twemoji from 'react-twemoji';
 import { useShikiHighlighter } from 'react-shiki';
 import { getIcon } from './ServerUtils';
@@ -27,6 +24,10 @@ import { intToHex, lerp, toHash } from './Funcs';
 import { Name } from '../../components/layout/Generic';
 import Random from './Random';
 import Graphemer from 'graphemer';
+import { userSettings } from '../state/Auth';
+import { getUs } from '../state/Users';
+import { getSs } from '../state/Servers';
+import { getCs } from '../state/Channels';
 
 declare global {
   namespace Intl {
@@ -153,9 +154,12 @@ function fmtRelative(date: Date): string {
   return rtf.format(Math.round(mo / 12), 'year');
 }
 
-export function renderEmoji(userSettings: UserSettings | null, emoji: string, className: string = "emoji-text", onClick: Function | null = null) {
+export function renderEmoji(emoji: Emoji, className: string = "emoji-text", onClick: Function | null = null) {
+  if (emoji.id) {
+    return null;
+  }
   return (
-    userSettings?.emojiStyle === EmojiStyle.System ? (
+    userSettings()?.emojiStyle === EmojiStyle.System ? (
       <span
         className={className.replace(/emoji-([a-z]+)/g, match => match + "-system")}
         onClick={e => {
@@ -165,7 +169,7 @@ export function renderEmoji(userSettings: UserSettings | null, emoji: string, cl
         }}
         onDoubleClick={e => e.stopPropagation()}
       >
-        {emoji}
+        {emoji.name}
       </span>
     ) : (
       <Twemoji
@@ -184,7 +188,7 @@ export function renderEmoji(userSettings: UserSettings | null, emoji: string, cl
           }}
           onDoubleClick={e => e.stopPropagation()}
         >
-          {emoji}
+          {emoji.name}
         </span>
       </Twemoji>
     )
@@ -206,10 +210,6 @@ export function formatTimestamp(ms: number, style = 'f'): string {
 }
 
 export interface RenderContext {
-  userState?: UserState;
-  serverState?: ServerState;
-  channelState?: ChannelState;
-  userSettings?: UserSettings | null;
   noBigEmoji?: boolean;
   showSpoilers?: 'always' | 'onHover';
   forceInline?: boolean;
@@ -217,7 +217,7 @@ export interface RenderContext {
   onRoleClick?: (role: any, server: Server, e: React.MouseEvent) => void;
   onChannelClick?: (ch: AbstractChannel, e: React.MouseEvent) => void;
   onServerClick?: (srv: Server, e: React.MouseEvent) => void;
-  onEmojiClick?: (emoji: string, e: React.MouseEvent) => void;
+  onEmojiClick?: (emoji: Emoji, e: React.MouseEvent) => void;
   onToggleDetails?: () => void;
 }
 
@@ -511,6 +511,12 @@ function consumeChars(cc: CharCounter | null, text: string): string {
   return visible + '...';
 }
 
+function consumeCount(cc: CharCounter | null, count: number): boolean {
+  if (!cc || cc.done)
+    return false;
+  return (cc.remaining -= count) >= 0;
+}
+
 function ri(
   nodes: InlineNode[],
   ctx: RenderContext,
@@ -537,10 +543,8 @@ function rin(
     return <span key={k()} />;
 
   switch (node.type) {
-    case 'text': {
-      const visible = consumeChars(cc, node.content);
-      return <span key={k()}>{visible}</span>;
-    }
+    case 'text':
+      return <span key={k()}>{consumeChars(cc, node.content)}</span>;
 
     case 'bold': return <b key={k()} data-md-pre="**" data-md-post="**">{ch(node.children)}</b>;
     case 'italic': return <i key={k()} data-md-pre="*" data-md-post="*">{ch(node.children)}</i>;
@@ -565,6 +569,7 @@ function rin(
     }
 
     case 'inlineMath': {
+      consumeCount(cc, node.content.length);
       try {
         const html = katex.renderToString(node.content, { throwOnError: false, displayMode: false });
         return <span key={k()} className="math-inline" data-md-verbatim={`$${node.content}$`} dangerouslySetInnerHTML={{ __html: html }} />;
@@ -580,14 +585,14 @@ function rin(
       return <span key={k()} className="lowlight" data-md-pre="===" data-md-post="===">{ch(node.children)}</span>;
 
     case 'hexColor':
-      return <span key={k()} className="hex-color" style={{ '--color': node.content } as any}>{consumeChars(cc, node.content)}</span>;
+      return <span key={k()} className="hex-color" style={{ '--color': node.content } as React.CSSProperties}>{consumeChars(cc, node.content)}</span>;
 
     case 'code':
       return <code key={k()} data-md-pre="`" data-md-post="`">{consumeChars(cc, node.content)}</code>;
 
     case 'color':
       return (
-        <span key={k()} className={"colored" + (node.colors ? " gradient" : "")} style={{ '--color': node.hex, ...(node.colors && { '--gradient': `linear-gradient(90deg, ${node.colors.join(", ")})` }) } as any}>
+        <span key={k()} className={"colored" + (node.colors ? " gradient" : "")} style={{ '--color': node.hex, ...(node.colors && { '--gradient': `linear-gradient(90deg, ${node.colors.join(", ")})` }) } as React.CSSProperties}>
           {ch(node.children)}
         </span>
       );
@@ -625,20 +630,23 @@ function rin(
       return <ShakyText key={k()}>{ch(node.children)}</ShakyText>;
 
     case 'timestamp':
+      consumeCount(cc, 8);
       return <LiveTimestampSpan key={k()} ts={node.timestamp} style={node.style} />;
 
     case 'progressBar':
+      consumeCount(cc, 10);
       return <ProgressBarInline key={k()} value={node.value} label={node.label} />;
-
+      
     case 'mentionEveryone':
-      return <span key={k()} className="mention int" onDoubleClick={e => e.stopPropagation()}>{consumeChars(cc, `@${node.subtype}`)}</span>;
+      consumeCount(cc, node.subtype.length + 1);
+      return <span key={k()} className="mention int" onDoubleClick={e => e.stopPropagation()}>@{node.subtype}</span>;
 
     case 'mentionUser': {
-      const us = ctx.userState;
-      const ss = ctx.serverState;
+      const us = getUs();
+      const ss = getSs();
       const u = us?.get(node.id);
       const m = u && us ? us.getMember(u.id, ss?.currentServer?.id) : undefined;
-      const r = m && ss && getDisplayRole(ss, m, true);
+      const r = m && ss && getDisplayRole(m, true);
       const col = r?.colors?.[0] ?? r?.color;
       consumeChars(cc, "@" + (m?.nickname ?? u?.displayName ?? u?.username ?? ""));
       return (
@@ -651,7 +659,6 @@ function rin(
           <Name
             user={u ?? null}
             member={m}
-            serverState={ss}
             allowDmColors={!!!ss?.currentServer}
             md={ctx}
             spoilerState={sm ?? undefined}
@@ -662,11 +669,12 @@ function rin(
     }
 
     case 'mentionRole': {
-      const ss = ctx.serverState;
+      const ss = getSs();
       const s = ss?.currentServer;
       const r = s?.roles.find(x => x.id === node.id);
       const col = r?.colors?.[0] ?? r?.color;
-      consumeChars(cc, "@" + (r?.name ?? ""));
+      const name = r?.name ? `@${r.name}` : `<@&${node.id}>`;
+      consumeCount(cc, name.length);
       return (
         <span
           key={k()}
@@ -675,23 +683,21 @@ function rin(
         >
           <Name
             user={null}
-            serverState={ss}
             allowDmColors={!!!ss?.currentServer}
             md={ctx}
             spoilerState={sm ?? undefined}
             overRole={r}
-            prefix={r ? "@" : `<@&`}
-            text={r?.name ?? `${node.id}>`}
+            text={name}
           />
         </span>
       );
     }
 
     case 'mentionChannel': {
-      const cs = ctx.channelState;
+      const cs = getCs();
       const ch2 = cs?.channels.find((x: AbstractChannel) => x.id === node.id) as AbstractChannel | undefined;
       const name = ch2?.name ?? `<#${node.id}>`;
-      consumeChars(cc, name);
+      consumeCount(cc, name.length);
       return (
         <span
           key={k()}
@@ -705,10 +711,10 @@ function rin(
     }
 
     case 'mentionServer': {
-      const ss = ctx.serverState;
+      const ss = getSs();
       const srv = ss?.servers.find((x: Server) => x.id === node.id);
       const name = srv?.name ? `${srv.name}` : `<#&${node.id}>`;
-      consumeChars(cc, name);
+      consumeCount(cc, name.length);
       return (
         <span
           key={k()}
@@ -721,12 +727,14 @@ function rin(
       );
     }
 
-    case 'emoji':
+    case 'emoji': {
+      consumeCount(cc, 1);
       return (
         <span key={k()}>
-          {renderEmoji(ctx.userSettings ?? null, consumeChars(cc, node.native), 'emoji-text int', ctx.onEmojiClick ?? null)}
+          {renderEmoji(node, 'emoji-text int', ctx.onEmojiClick ?? null)}
         </span>
       );
+    }
 
     default:
       return <span key={k()} />;
@@ -1066,8 +1074,9 @@ function renderBlocks(
         continue;
       }
 
+      const us = userSettings();
       out.push(
-        <CodeBlock key={k()} content={block.content} language={block.language} theme={ctx.userSettings?.theme} showLineNumbers={ctx.userSettings?.showLineNumbers} />
+        <CodeBlock key={k()} content={block.content} language={block.language} theme={us?.theme} showLineNumbers={us?.showLineNumbers} />
       );
       prevWasInline = false;
       i++;
@@ -1096,7 +1105,7 @@ function renderBlock(
   sc: { n: number },
   kc: { n: number },
   bigEmoji: boolean,
-  cc: CharCounter | null,
+  cc: CharCounter | null
 ): ReactNode {
   const k = () => ++kc.n;
   const ch = (ns: InlineNode[]) => ri(ns, ctx, sm, sc, kc, cc);
@@ -1111,7 +1120,8 @@ function renderBlock(
                 const visible = consumeChars(cc, n.content);
                 return <span key={k()}>{visible}</span>;
               }
-              if (n.type === 'emoji') return <span key={k()}>{renderEmoji(ctx.userSettings ?? null, n.native, 'emoji-big int', ctx.onEmojiClick ?? null)}</span>;
+              if (n.type === 'emoji')
+                return <span key={k()}>{renderEmoji(n, 'emoji-big int', ctx.onEmojiClick ?? null)}</span>;
               return rin(n, ctx, sm, sc, kc, cc);
             })}
           </span>

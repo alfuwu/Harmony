@@ -264,12 +264,21 @@ button {
   user-select: none;         /* Standard */
 }
 
-button:hover {
+button:hover, .dl-btn:hover {
   border-color: var(--hover);
 }
-button:active {
+button:active, .dl-btn:active {
   border-color: var(--active);
   background-color: var(--active-2);
+}
+.dl-btn {
+  border-radius: 8px;
+  border: 1px solid var(--button-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.25s, background-color 0.25s;
 }
 
 select,
@@ -1540,37 +1549,37 @@ h1, h2, h3 {
   text-align: center;
 }
 .h1, .h2, .h3, .h4, .h5, .h6 {
+  display: inline-block;
   font-size: 2em;
-  margin-block-start: 0.85em;
-  margin-block-end: 0.67em;
+  margin-block-start: 0.75em;
+  margin-block-end: 0.4em;
   margin-inline-start: 0;
   margin-inline-end: 0;
   font-weight: bold;
 }
 .h2 {
   font-size: 1.5em;
-  margin-block-start: 0.75em;
-  margin-block-end: 0.75em;
+  margin-block-end: 0.35em;
 }
 .h3 {
   font-size: 1.17em;
-  margin-block-start: 0.83em;
-  margin-block-end: 0.83em;
+  margin-block-start: 0.63em;
+  margin-block-end: 0.33em;
 }
 .h4 {
   font-size: 1em;
-  margin-block-start: 1.12em;
-  margin-block-end: 1.12em;
+  margin-block-start: 0.56em;
+  margin-block-end: 0.32em;
 }
 .h5 {
   font-size: 0.83em;
-  margin-block-start: 1.5em;
-  margin-block-end: 1.5em;
+  margin-block-start: 0.50em;
+  margin-block-end: 0.3em;
 }
 .h6 {
   font-size: 0.67em;
-  margin-block-start: 1.67em;
-  margin-block-end: 1.67em;
+  margin-block-start: 0.43em;
+  margin-block-end: 0.27em;
 }
 .spoiler {
   position: relative;
@@ -1707,17 +1716,9 @@ code {
   pointer-events: none;
 }
 
-.editor-code-block [data-slate-placeholder] {
+/*.editor-code-block [data-slate-placeholder] {
   top: 10px !important;
-}
-
-.mds {
-  font-weight: 500 !important;
-  font-style: normal !important;
-  color: #888 !important;
-  text-decoration: none !important;
-  text-decoration-line: none !important;
-}
+}*/
 
 .subheader {
   color: #888;
@@ -1926,8 +1927,9 @@ ul li {
   animation: marquee-scroll 4s linear infinite;
 }
 
-.wobbly {
+.wobbly, .shaky {
   display: inline-block;
+  contain: paint;
 }
 
 .wobbly .char {
@@ -1994,6 +1996,18 @@ span.list {
 }
 span.list::before {
   display: none;
+}
+
+.mds {
+  font-weight: 500 !important;
+  font-style: normal !important;
+  color: #888 !important;
+  text-decoration: none !important;
+  text-decoration-line: none !important;
+}
+
+.mds .marquee-track {
+  animation: none !important;
 }
 
 @keyframes marquee-scroll {
@@ -2267,6 +2281,33 @@ body[data-server-icon-shape="square"] .server-icon   { border-radius: 0; }
   font-size: 10px;
 }
 
+.skeleton-bone {
+  background: var(--bg-2);
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.skeleton-bone::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--bg-4, color-mix(in hsl, var(--bg-3), white 6%)) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: skeleton-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX( 200%); }
+}
+
 @keyframes glow-pulse-text {
   0%, 100% { text-shadow: 0 0 8px var(--role-glow-color, currentColor); }
   50% {
@@ -2277,12 +2318,8 @@ body[data-server-icon-shape="square"] .server-icon   { border-radius: 0; }
 }
 
 @keyframes gradient-glow-pulse {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 200% 50%;
-  }
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
 }
 
 .role-glow-hover:hover,
@@ -2312,10 +2349,41 @@ body[data-server-icon-shape="square"] .server-icon   { border-radius: 0; }
   background-clip: initial;
 }
 
+.mds .colored {
+  color: #888 !important;
+}
+.mds .colored.gradient,
+.colored.gradient code {
+  -webkit-text-fill-color: initial !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  background: none !important;
+}
+
+@supports (-moz-appearance: none) {
+  .marquee {
+    transform: translateY(3px);
+  }
+}
+
 @supports (not (-moz-appearance: none)) {
+  /* Chromium does not support many complex gradients, but Firefox does.
+   * Note that this is only when ENCOMPASSED by a gradient, not when the markdown symbol itself encompasses the gradient.
+   * Why that is? I couldn't tell you. It merely is.
+   * Marquees, LaTeX, shaky, wobbly, ... are all affected.
+   */
   .has-gradient-role .math-inline,
   .has-gradient-role .math-inline .katex,
-  .has-gradient-role .math-inline .katex * {
+  .has-gradient-role .math-inline .katex *,
+  .has-gradient-role .marquee,
+  .has-gradient-role .wobbly,
+  .has-gradient-role .shaky,
+  .colored.gradient .math-inline,
+  .colored.gradient .math-inline .katex,
+  .colored.gradient .math-inline .katex *,
+  .colored.gradient .marquee
+  .colored.gradient .wobbly,
+  .colored.gradient .shaky {
     -webkit-text-fill-color: initial;
     -webkit-background-clip: initial;
     background-clip: initial;

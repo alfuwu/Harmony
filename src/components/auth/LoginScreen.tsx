@@ -11,10 +11,7 @@ import {
   sendVerificationEmail,
 } from "../../lib/api/AuthApi";
 import { api } from "../../lib/api/Http";
-import { useServerState } from "../../lib/state/Servers";
-import { useChannelState } from "../../lib/state/Channels";
 import { initializeClient } from "../../lib/client/Init";
-import { useMessageState } from "../../lib/state/Messages";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { t, tr, useLocale } from "../../lib/i18n/Index";
 import { TranslationKeys } from "../../lib/i18n/Schema";
@@ -23,13 +20,9 @@ type View = "login" | "register" | "twoFactor" | "emailPending";
 
 export default function LoginScreen() {
   useLocale();
-  const authState = useAuthState();
-  const { setUser, setToken, setUserSettings } = authState;
-  const serverState = useServerState();
-  const channelState = useChannelState();
-  const messageState = useMessageState();
-  const userState = useUserState();
-  const { addUser } = userState;
+
+  const { setUser, setToken } = useAuthState();
+  const { addUser } = useUserState();
 
   const [view, setView] = useState<View>("login");
   const [isRegister, setIsRegister] = useState(false);
@@ -91,10 +84,10 @@ export default function LoginScreen() {
   async function completeLogin(token: string) {
     setToken(token);
     localStorage.setItem("token", token);
-    const me = await api("/users/@me", { headers: { Authorization: `Bearer ${token}` } });
+    const me = await api("/users/@me");
     setUser(me);
     addUser(me);
-    initializeClient({ authState, serverState, channelState, messageState, userState, setUserSettings });
+    initializeClient();
   }
 
   async function handleLogin() {
@@ -112,8 +105,6 @@ export default function LoginScreen() {
       }
 
       await completeLogin(result.token);
-    } catch (e: any) {
-      setError(e.message ?? "login.failed");
     } finally {
       setLoading(false);
     }

@@ -1,33 +1,21 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { renderEmoji } from "../../../lib/utils/MarkdownRenderer";
-import { UserSettings } from "../../../lib/utils/UserSettings";
 import { t, tr } from "../../../lib/i18n/Index";
-
-function isFlag(native: string): boolean {
-  const pts = [...(native ?? "")].map(c => c.codePointAt(0) ?? 0);
-  return pts.length === 2 && pts.every(p => p >= 0x1f1e6 && p <= 0x1f1ff);
-}
-
-function normalizeEmojiId(id: string, native?: string): string {
-  let n = (id ?? "").replace(/-/g, "_");
-  if (native && isFlag(native) && !n.startsWith("flag_") && !n.startsWith("regional_"))
-    n = `flag_${n}`;
-  return n;
-}
+import { Emoji } from "../../../lib/utils/Types";
+import { normalizeEmojiId } from "../../../lib/utils/Funcs";
 
 interface EmojiPopoutProps {
-  emoji: string;
-  emojiName: string;
-  userSettings: UserSettings | null;
+  emoji: Emoji;
+  emojiId?: string;
   position: { top: number; left?: number; right?: number; };
 }
 
-export default function EmojiPopout({ emoji, emojiName, userSettings, position }: EmojiPopoutProps) {
+export default function EmojiPopout({ emoji, emojiId, position }: EmojiPopoutProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [copied, setCopied] = useState(false);
 
-  const displayName = normalizeEmojiId(emojiName, emoji);
+  const displayName = normalizeEmojiId(emoji.name, emojiId);
 
   useLayoutEffect(() => {
     if (ref.current) {
@@ -86,7 +74,7 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
           border: "1px solid var(--border)",
           flexShrink: 0,
         }}>
-          {renderEmoji(userSettings, emoji, "emoji-big")}
+          {renderEmoji(emoji, "emoji-big")}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "3px", minWidth: 0 }}>
           <span style={{
@@ -99,21 +87,26 @@ export default function EmojiPopout({ emoji, emojiName, userSettings, position }
           }}>
             :{displayName}:
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{
-              fontSize: "10px",
-              fontWeight: 600,
-              color: "var(--text-5)",
-              background: "color-mix(in hsl, var(--bg-4), transparent 30%)",
-              border: "1px solid var(--border)",
-              borderRadius: "4px",
-              padding: "1px 5px",
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-            }}>
-              {t("emoji.standard")}
-            </span>
-          </div>
+          {!!!emoji.id ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+              <span style={{
+                fontSize: "10px",
+                fontWeight: 600,
+                color: "var(--text-5)",
+                background: "color-mix(in hsl, var(--bg-4), transparent 30%)",
+                border: "1px solid var(--border)",
+                borderRadius: "4px",
+                padding: "1px 5px",
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+              }}>
+                {t("emoji.standard")}
+              </span>
+            </div>
+          ) : (
+            // TODO: add server emoji section thing
+            <></>
+          )}
         </div>
       </div>
 

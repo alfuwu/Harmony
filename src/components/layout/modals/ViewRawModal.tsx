@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../lib/i18n/Index";
+import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 interface Props {
-  title?: string;
+  title?: TranslationKeys;
   data: unknown;
   onClose: () => void;
 }
@@ -41,7 +42,7 @@ export default function RawViewModal({ title, data, onClose }: Props) {
           borderBottom: "1px solid var(--border)",
           flexShrink: 0
         }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)" }}>{title ?? t("json.raw_title")}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)" }}>{t(title ?? "json.raw_title")}</span>
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={copy}

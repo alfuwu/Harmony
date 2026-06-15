@@ -9,13 +9,13 @@ import ServerList from "./components/layout/ServerList";
 import MessageList from "./components/messages/MessageList";
 import MessageInput from "./components/messages/MessageInput";
 import TitleBar from "./components/layout/TitleBar";
-import { AuthProvider, useAuthState } from "./lib/state/Auth"; 
-import { UserProvider, useUserState } from "./lib/state/Users";
-import { ServerProvider, useServerState } from "./lib/state/Servers";
-import { ChannelProvider, useChannelState } from "./lib/state/Channels";
-import { MessageProvider, useMessageState } from "./lib/state/Messages";
-import { initializeClient, syncSignalRRefs } from "./lib/client/Init";
+import { useUserState } from "./lib/state/Users";
+import { useServerState } from "./lib/state/Servers";
+import { useChannelState } from "./lib/state/Channels";
+import { useMessageState } from "./lib/state/Messages";
+import { useAuthState } from "./lib/state/Auth";
 import { PopoutProvider } from "./lib/state/Popouts";
+import { initializeClient } from "./lib/client/Init";
 import { getAvatar } from "./lib/utils/UserUtils";
 import UserSettingsModal from "./components/layout/modals/UserSettingsModal";
 import TypingIndicator from "./components/messages/TypingIndicator";
@@ -73,7 +73,7 @@ function applySettings(settings: UserSettings | null) {
 function AppInner() {
   useLocale();
   const authState = useAuthState();
-  const { user, setUser, token, setToken, userSettings, setUserSettings } = authState;
+  const { user, setUser, token, setToken, userSettings } = authState;
   const [loading, setLoading] = useState(true);
   const serverState = useServerState();
   const channelState = useChannelState();
@@ -87,13 +87,6 @@ function AppInner() {
   //const [serverModalOpen, setServerModalOpen] = useState(false);
   //const [quotebookOpen, setQuotebookOpen] = useState(false);
   const [showDms, setShowDms] = useState(false);
-
-  syncSignalRRefs(messageState, channelState, serverState, userState);
-
-  const userStateRef = useRef(userState);
-  useEffect(() => {
-    userStateRef.current = userState;
-  });
 
   useEffect(() => {
     applySettings(userSettings);
@@ -122,14 +115,15 @@ function AppInner() {
     function goIdle() {
       if (isIdleRef.current)
         return;
-      const live = userStateRef.current.get(user!.id);
+      const us = useUserState();
+      const live = us.get(user!.id);
       if (live?.onlineStatus !== OnlineStatus.Online)
         return;
 
       isIdleRef.current = true;
       connection?.invoke("SetStatus", OnlineStatus.Idle).catch(e => console.log(e));
       if (live)
-        userStateRef.current.addUser({ ...live, onlineStatus: OnlineStatus.Idle });
+        us.addUser({ ...live, onlineStatus: OnlineStatus.Idle });
     }
 
     function onActivity() {
@@ -139,9 +133,10 @@ function AppInner() {
       if (isIdleRef.current) {
         isIdleRef.current = false;
         connection?.invoke("SetStatus", OnlineStatus.Online).catch(() => {});
-        const live = userStateRef.current.get(user!.id);
+        const us = useUserState();
+        const live = us.get(user!.id);
         if (live)
-          userStateRef.current.addUser({ ...live, onlineStatus: OnlineStatus.Online });
+          us.addUser({ ...live, onlineStatus: OnlineStatus.Online });
       }
 
       idleTimerRef.current = setTimeout(goIdle, IDLE_MS);
@@ -167,7 +162,7 @@ function AppInner() {
       }
       setToken(cached);
       try {
-        const me = await api("/users/@me", { headers: { Authorization: `Bearer ${cached}` } });
+        const me = await api("/users/@me");
         setUser(me);
         userState.addUser(me);
       } catch (e) {
@@ -193,16 +188,8 @@ function AppInner() {
   }
 
   useEffect(() => {
-    if (user && token) {
-      initializeClient({
-        authState,
-        serverState,
-        channelState,
-        messageState,
-        userState,
-        setUserSettings
-      });
-    }
+    if (user && token)
+      initializeClient();
   }, [user, token]);
 
   if (loading)
@@ -223,7 +210,7 @@ function AppInner() {
       <UserSettingsModal open={modalOpen} onClose={() => setModalOpen(false)} />
 
       {user ? (
-        <div className="app">    
+        <div className="app">
           <div className="valign-ungreedy">
             <div className="halign">
               <ServerList onDmClick={handleDmClick} showDms={showDms} />
@@ -291,17 +278,7 @@ function AppInner() {
 export default function App() {
   return (
     <PopoutProvider>
-      <AuthProvider>
-        <UserProvider>
-          <ServerProvider>
-            <ChannelProvider>
-              <MessageProvider>
-                <AppInner />
-              </MessageProvider>
-            </ChannelProvider>
-          </ServerProvider>
-        </UserProvider>
-      </AuthProvider>
+      <AppInner />
     </PopoutProvider>
   );
 }
