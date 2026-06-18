@@ -1,7 +1,8 @@
 import { BigJSON } from "../utils/JSON";
-import { Review, Server, User } from "../utils/Types";
+import { LinkedAccount, Review, Server, User } from "../utils/Types";
 import { FriendRequestContext, UserContext, UserSettings } from "../utils/UserSettings";
 import { api, binapi } from "./Http";
+import { Badge } from "./SocialApi";
 
 export async function changeAvatar(file: File, options: RequestInit = {}): Promise<{ avatar: string }> {
   const formData = new FormData();
@@ -116,4 +117,8 @@ export async function getUsersBulk(userIds: bigint[], options: RequestInit = {})
     method: "POST",
     body: BigJSON.stringify(userIds)
   });
+}
+
+export async function getUserDetail(userId: bigint, options: RequestInit = {}): Promise<{ badges: Badge[]; linked: LinkedAccount[]; note: string; }> {
+  return await api(`/users/${userId}/detail`, { ...options, method: "GET" });
 }

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type React from "react";
-import { AbstractChannel, Message, Typing } from "../utils/Types";
+import { AbstractChannel, DmCategory, Message, Typing } from "../utils/Types";
 
 const MAX_PENDING_REPLIES = 5;
 const MAX_PENDING_ATTACHMENTS = 10;
@@ -16,9 +16,11 @@ export interface ChannelState {
   addChannels: (channels: AbstractChannel[]) => void;
   removeChannel: (id: bigint) => void;
   removeChannels: (ids: bigint[]) => void;
+
   getTyping: (id: bigint) => bigint[];
   startTyping: (event: Typing) => void;
   stopTyping: (event: Typing) => void;
+  
   getChannelDraft: (channelId: bigint) => string;
   setChannelDraft: (channelId: bigint, draft: string) => void;
   getPendingReplies: (channelId: bigint) => Message[];
@@ -29,11 +31,17 @@ export interface ChannelState {
   addPendingAttachment: (channelId: bigint, file: File) => void;
   removePendingAttachment: (channelId: bigint, index: number) => void;
   clearPendingAttachments: (channelId: bigint) => void;
+
+  dmCategories: DmCategory[];
+  setDmCategories: (cats: DmCategory[]) => void;
+  addDmCategory: (cat: DmCategory) => void;
+  removeDmCategory: (id: bigint) => void;
 }
 
 export const useChannelState = create<ChannelState>((set, get) => ({
   currentChannel: null,
   channels: [],
+  dmCategories: [],
 
   setCurrentChannel: (value) =>
     set(state => ({
@@ -148,6 +156,12 @@ export const useChannelState = create<ChannelState>((set, get) => ({
       attachments.set(channelId, []);
       return { _attachments: attachments } as any;
     }),
+
+  setDmCategories: (dmCategories) => set({ dmCategories }),
+  addDmCategory: (cat) =>
+    set(s => ({ dmCategories: [...s.dmCategories.filter(c => c.id !== cat.id), cat] })),
+  removeDmCategory: (id) =>
+    set(s => ({ dmCategories: s.dmCategories.filter(c => c.id !== id) })),
 
   _typing: new Map(),
   _drafts: new Map(),

@@ -1,4 +1,3 @@
-import { useNicknames } from "../../lib/state/Nicknames";
 import { getRoleGlowClass, isGradientRole, roleToStyle } from "../../lib/utils/Funcs";
 import { RenderContext, RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
 import { Member, Role, User } from "../../lib/utils/Types";
@@ -26,7 +25,7 @@ export function Divider() {
 }
 
 type Props = React.HTMLAttributes<HTMLSpanElement | HTMLDivElement> & {
-  user: User | null;
+  user?: User | null;
   member?: Member;
   allowDmColors?: boolean;
   md?: RenderContext;
@@ -39,12 +38,10 @@ type Props = React.HTMLAttributes<HTMLSpanElement | HTMLDivElement> & {
 
 export function Name({ user, member, allowDmColors = false, md, spoilerState, as = "span", overRole, prefix, text, ...opts }: Props) {
   const Component = as ?? "span";
-  const { get: getNickname } = useNicknames();
  
   const role = overRole ?? (member && getDisplayRole(member, true));
   const textStyle = role ? roleToStyle(role, true, true) : {};
-  const personalNickname = user ? getNickname(user.id) : undefined;
-  const name = text ?? personalNickname ?? getDisplayName(user, member);
+  const name = text ?? getDisplayName(user, member);
  
   const extraClasses: string[] = [];
   if (role && isGradientRole(role))

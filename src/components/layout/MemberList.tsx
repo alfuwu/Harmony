@@ -8,17 +8,18 @@ import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
 import UserPopout from "./popouts/UserPopout";
 import { useLoadingState } from "../../lib/state/Loading";
 import { useRef, useState } from "react";
-import { canBanMembers, canKickMembers, isOwner } from "../../lib/utils/PermissionUtils";
+import { canBanMembers, canKickMembers } from "../../lib/utils/PermissionUtils";
 import { Member, OnlineStatus, Role } from "../../lib/utils/Types";
 import { createDm } from "../../lib/api/DmApi";
 import ContextMenu, { ContextMenuItem } from "./ContextMenu";
-import { banMember, kickMember } from "../../lib/api/ServerApi";
+import { banMember, ipBanMember, kickMember } from "../../lib/api/ServerApi";
 import NicknameModal from "./modals/NicknameModal";
 import { SkeletonMemberList } from "./Skeleton";
 import { Name } from "./Generic";
 import { roleToStyle } from "../../lib/utils/Funcs";
 import { t, useLocale } from "../../lib/i18n/Index";
 import { BanIcon, EditIcon, HashIcon, MessageIcon, UserMinusIcon } from "../svgs/other/Icons";
+import ModerationModal from "./modals/ModerationModal";
 
 const LARGE_SERVER_THRESHOLD = 1500;
 
@@ -90,13 +91,16 @@ export default function MemberList() {
   const [showOffline, setShowOffline] = useState(true);
 
   const spoilerState = useRef<Map<number, boolean>>(new Map());
+  const [moderationTarget, setModerationTarget] = useState<{
+    member: Member;
+    action: "kick" | "ban" | "ip_ban";
+  } | null>(null);
 
   const me = currentServer
     ? us.getMember(user?.id, currentServer.id)
     : undefined;
   const canKick = canKickMembers(me, currentServer);
   const canBan = canBanMembers(me, currentServer);
-  const owner = isOwner(me, currentServer);
 
   function openCtx(e: React.MouseEvent, member: Member) {
     e.preventDefault();
@@ -124,37 +128,29 @@ export default function MemberList() {
       items.push({ label: "", onClick: () => {}, divider: true });
     }
 
-    if (!isSelf && (canKick || owner)) {
+    if (!isSelf && (canKick || canBan)) {
       items.push({ label: "", onClick: () => {}, divider: true });
-      items.push({
-        label: t("member.kick"),
-        icon: <UserMinusIcon size={14} />,
-        danger: true,
-        onClick: async () => {
-          if (!!!currentServer)
-            return;
-          try {
-            await kickMember(currentServer.id, member.userId);
-            removeMember(member.userId, currentServer.id);
-          } catch (e) { console.error(e); }
-        },
-      });
-    }
-
-    if (!isSelf && (canBan || owner)) {
-      items.push({
-        label: t("member.ban"),
-        icon: <BanIcon size={14} />,
-        danger: true,
-        onClick: async () => {
-          if (!!!currentServer)
-            return;
-          try {
-            await banMember(currentServer.id, member.userId);
-            removeMember(member.userId, currentServer.id);
-          } catch (e) { console.error(e); }
-        },
-      });
+      if (canKick)
+        items.push({
+          label: t("member.kick"),
+          icon: <UserMinusIcon size={14} />,
+          danger: true,
+          onClick: () => setModerationTarget({ member, action: "kick" })
+        });
+      if (canBan) {
+        items.push({
+          label: t("member.ban"),
+          icon: <BanIcon size={14} />,
+          danger: true,
+          onClick: () => setModerationTarget({ member, action: "ban" })
+        });
+        items.push({
+          label: t("member.ip_ban"),
+          icon: <BanIcon size={14} />, // TODO: new icon?
+          danger: true,
+          onClick: () => setModerationTarget({ member, action: "ip_ban" })
+        });
+      }
     }
 
     if (userSettings?.developerMode) {
@@ -345,7 +341,26 @@ export default function MemberList() {
           onClose={() => setNicknameModal(null)}
         />
       )}
+
+      {moderationTarget && (
+        <ModerationModal
+          target={moderationTarget.member}
+          action={moderationTarget.action}
+          onConfirm={async (reason) => {
+            if (!currentServer)
+              return;
+            const { userId } = moderationTarget.member;
+            if (moderationTarget.action === "kick")
+              await kickMember(currentServer.id, userId, reason || undefined);
+            else if (moderationTarget.action === "ban")
+              await banMember(currentServer.id, userId, reason || undefined);
+            else
+              await ipBanMember(currentServer.id, userId, reason || undefined);
+            removeMember(userId, currentServer.id);
+          }}
+          onClose={() => setModerationTarget(null)}
+        />
+      )}
     </>
   );
 }
- 

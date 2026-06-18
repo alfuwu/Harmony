@@ -9,112 +9,98 @@ import { useServerState } from "../state/Servers";
 import { useUserState } from "../state/Users";
 import { useLoadingState } from "../state/Loading";
 import { useCacheState, CacheKey } from "../state/Cache";
-import { getAllNicknames } from "../api/SocialApi";
-import { useNicknames } from "../state/Nicknames";
 import { initGateway } from "./GatewayClient";
 
 export async function initializeClient() {
   const { setUserSettings } = useAuthState.getState();
-
   const ss = useServerState.getState();
   const cs = useChannelState.getState();
   const us = useUserState.getState();
   const ms = useMessageState.getState();
-
   const loading = useLoadingState.getState();
   const cache = useCacheState.getState();
 
   loading.setServersLoading(true);
-  const servers = await getServers();
-  for (const server of servers)
-    server.roles = await getRoles(server.id);
+
+  const [servers, dmsResult, settings] = await Promise.all([
+    getServers(),
+    getDmChannels().catch(() => ({ channels: [], categories: [] })),
+    api("/users/@me/settings").catch(() => null),
+  ]);
+
+  if (settings)
+    setUserSettings(settings);
+  cs.addChannels(dmsResult.channels as any[]);
+  cs.setDmCategories(dmsResult.categories);
+  cache.markFresh(CacheKey.dms);
+
+  const rolesResults = await Promise.all(
+    servers.map(s => getRoles(s.id).then(r => ({ serverId: s.id, ...r })).catch(() => ({ serverId: s.id, roles: [], categories: [] })))
+  );
+  for (const { serverId, roles, categories } of rolesResults) {
+    const server = servers.find(s => s.id === serverId);
+    if (server) {
+      server.roles = roles;
+      server.roleCategories = categories;
+    }
+  }
   ss.addServers(servers);
   cache.markFresh(CacheKey.servers);
   loading.setServersLoading(false);
 
-  try {
-    const dms = await getDmChannels();
-    cs.addChannels(dms as any[]);
-    cache.markFresh(CacheKey.dms);
-  } catch (e) {
-    console.warn("Could not fetch DM channels", e);
-  }
-
-  const allChannels: any[] = [];
-
-  if (servers.length > 0) {
-    const lastServerId = BigInt(
-      localStorage.getItem("currentServerId") || servers[0].id
-    );
-    const targetServer =
-      servers.find((s) => s.id === lastServerId) ?? servers[0];
-    ss.setCurrentServer(targetServer);
-
-    loading.setChannelsLoading(true);
-    for (const server of servers) {
-      try {
-        const channels = await getServerChannels(server.id);
-        allChannels.push(...channels);
-        cache.markFresh(CacheKey.channels(server.id));
-      } catch (e) {
-        console.warn(`Could not load channels for server ${server.id}`, e);
-      }
-    }
-    cs.addChannels(allChannels);
-    loading.setChannelsLoading(false);
-
-    loading.setMembersLoading(true);
-    try {
-      const members = await getServerMembers(targetServer.id);
-      us.addMembers(members);
-      cache.markFresh(CacheKey.members(targetServer.id));
-    } catch (e) {
-      console.warn("Could not load members", e);
-    }
-    loading.setMembersLoading(false);
-
-    const lastChannelId = BigInt(localStorage.getItem("currentChannelId") || 0);
-    const serverChannels = allChannels.filter(
-      (c) => c.serverId === targetServer.id
-    );
-    const currentChannel =
-      serverChannels.find((c) => c.id === lastChannelId) ??
-      serverChannels.find((c) => c.type === 1);
-
-    if (currentChannel) {
-      cs.setCurrentChannel(currentChannel);
-      loading.setMessagesLoading(true);
-      try {
-        const msgs = await getMessages(currentChannel.id);
-        ms.addMessages(msgs);
-        cache.markFresh(CacheKey.messages(currentChannel.id));
-      } catch (e) {
-        console.warn("Could not load messages", e);
-      }
-      loading.setMessagesLoading(false);
-    } else {
-      loading.setMessagesLoading(false);
-    }
-  } else {
+  if (servers.length === 0) {
     loading.setChannelsLoading(false);
     loading.setMembersLoading(false);
     loading.setMessagesLoading(false);
+    initGateway({ initialChannels: [], initialServers: [] });
+    return;
   }
 
-  try {
-    const settings = await api("/users/@me/settings");
-    setUserSettings(settings);
-  } catch (e) {
-    console.warn("Could not load user settings", e);
-  }
+  const lastServerId = BigInt(localStorage.getItem("currentServerId") || servers[0].id);
+  const targetServer = servers.find(s => s.id === lastServerId) ?? servers[0];
+  ss.setCurrentServer(targetServer);
+  loading.setChannelsLoading(true);
+  loading.setMembersLoading(true);
 
-  try {
-    const nicknames = await getAllNicknames();
-    useNicknames.getState().init(
-      nicknames.map(n => ({ subjectId: n.subjectId, nickname: n.nickname }))
-    );
-  } catch (e) {
-    console.warn("Could not load nicknames", e);
+  const [channelResults, members] = await Promise.all([
+    Promise.all(
+      servers.map(s =>
+        getServerChannels(s.id)
+          .then(chs => {
+            cache.markFresh(CacheKey.channels(s.id));
+            return chs;
+          }).catch(() => [])
+      )
+    ),
+    getServerMembers(targetServer.id)
+      .then(m => {
+        cache.markFresh(CacheKey.members(targetServer.id));
+        return m;
+      }).catch(() => []),
+  ]);
+
+  const allChannels = channelResults.flat();
+  cs.addChannels(allChannels);
+  loading.setChannelsLoading(false);
+  us.addMembers(members);
+  loading.setMembersLoading(false);
+
+  const lastChannelId = BigInt(localStorage.getItem("currentChannelId") || 0);
+  const serverChannels = allChannels.filter(c => c.serverId === targetServer.id);
+  const currentChannel =
+    serverChannels.find(c => c.id === lastChannelId) ?? serverChannels.find(c => c.type === 1);
+
+  if (currentChannel) {
+    cs.setCurrentChannel(currentChannel);
+    loading.setMessagesLoading(true);
+    try {
+      const msgs = await getMessages(currentChannel.id);
+      ms.addMessages(msgs);
+      cache.markFresh(CacheKey.messages(currentChannel.id));
+    } catch {}
+    loading.setMessagesLoading(false);
+  } else {
+    loading.setMessagesLoading(false);
   }
 
   initGateway({

@@ -54,6 +54,7 @@ export interface User {
   joinedAt: string;
   lastSeen: string;
   flags: bigint;
+  nick?: string;
   dmColor?: number | null;
   dmColors?: number[] | null;
   dmNameDisplayType?: RoleDisplayType | null;
@@ -77,6 +78,16 @@ export interface User {
   whoCanSeeBanner?: UserContext | null;
   whoCanSeeStatus?: UserContext | null;
   whoCanSeePasswordHash?: UserContext | null;
+}
+
+export interface LinkedAccount {
+  provider: string;
+  providerUserId: string;
+  providerUsername?: string | null;
+  providerDisplayName?: string | null;
+  providerAvatarUrl?: string | null;
+  isPublic?: boolean | null;
+  linkedAt: string;
 }
 
 export enum OnlineStatus {
@@ -139,6 +150,13 @@ export interface VoiceState {
 }
 
 /// roles
+export interface RoleCategory {
+  id: bigint;
+  serverId: bigint;
+  name: string;
+  position: number;
+}
+
 export interface Role {
   id: bigint;
   serverId: bigint;
@@ -195,6 +213,15 @@ export interface Channel extends AbstractChannel {
   position: number;
   slowmode: number;
   createdAt: string;
+}
+
+export interface DmCategory {
+  id: bigint;
+  userId: bigint;
+  name: string;
+  color?: string | null;
+  position: number;
+  channelIds: bigint[];
 }
 
 export interface DmChannel extends AbstractChannel {
@@ -257,6 +284,7 @@ export interface Server {
   tags?: string[] | null;
   inviteUrls?: string[] | null;
   roles: Role[];
+  roleCategories: RoleCategory[];
   emojis: Emoji[];
   createdAt: string;
   loaded?: boolean;

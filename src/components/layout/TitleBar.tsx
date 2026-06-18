@@ -1,17 +1,18 @@
-import { useRef, useState } from "react";
+import { ReactNode, useRef, useState } from "react";
 import { useChannelState } from "../../lib/state/Channels";
 import { useUserState } from "../../lib/state/Users";
 import { useAuthState } from "../../lib/state/Auth";
 import { useMessageState } from "../../lib/state/Messages";
 import { getChannelIcon } from "../../lib/utils/ChannelUtils";
 import { ChannelType, DmChannel } from "../../lib/utils/Types";
-import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
+import { getAvatar } from "../../lib/utils/UserUtils";
 import { searchMessages } from "../../lib/api/ChannelApi";
 import { t, useLocale } from "../../lib/i18n/Index";
 import { CloseIcon, SearchIcon, UsersIcon } from "../svgs/other/Icons";
 import { useServerState } from "../../lib/state/Servers";
 import { makeMarkdownContext } from "../../lib/utils/Funcs";
 import { RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
+import { Name } from "./Generic";
 
 export default function TitleBar() {
   useLocale();
@@ -44,7 +45,7 @@ export default function TitleBar() {
     }
   }
 
-  function getTitle(): { icon: React.ReactNode; name: string; sub?: string } {
+  function getTitle(): { icon: ReactNode; name: ReactNode; sub?: string } {
     if (!currentChannel)
       return { icon: getChannelIcon(currentChannel, { className: "title-icon" }), name: t("title.void") };
 
@@ -55,10 +56,8 @@ export default function TitleBar() {
       const otherId = dm.dmMembers?.find(id => id !== user?.id);
       const other = otherId !== undefined ? get(otherId) : undefined;
       return {
-        icon: other ? (
-          <img src={getAvatar(other)} alt="" style={{ width: 24, height: 24, borderRadius: "50%", marginRight: 6 }} />
-        ) : null,
-        name: other ? getDisplayName(other) : t("title.dm"),
+        icon: <img src={getAvatar(other)} alt="" style={{ width: 24, height: 24, borderRadius: "50%" }} />,
+        name: <Name user={other} md={{}} allowDmColors={true} />,
         sub: other ? `@${other.username}` : undefined
       };
     }
@@ -66,7 +65,7 @@ export default function TitleBar() {
     if (type === ChannelType.GroupDM) {
       // TODO: make group dms able to have custom image icons
       return {
-        icon: <UsersIcon size={14} />,
+        icon: <UsersIcon size={24} />,
         name: currentChannel.name ?? t("title.group_dm"),
       };
     }
@@ -107,7 +106,7 @@ export default function TitleBar() {
               setQuery(searchRef.current!.value = "");
             }
           }}
-          placeholder={`Search ${currentServer?.name}...`}
+          placeholder={`Search ${currentServer ? currentServer.name : name}...`}
           style={{
             background: "var(--bg-1)", border: "1px solid var(--border)", marginLeft: "auto",
             borderRadius: 6, padding: "4px 10px", color: "var(--text-2)", fontSize: 13,

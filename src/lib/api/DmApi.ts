@@ -1,8 +1,8 @@
 import { BigJSON } from "../utils/JSON";
-import { ChannelType, DmChannel, GroupDmChannel } from "../utils/Types";
+import { ChannelType, DmCategory, DmChannel, GroupDmChannel } from "../utils/Types";
 import { api } from "./Http";
 
-export async function getDmChannels(options: RequestInit = {}): Promise<(DmChannel | GroupDmChannel)[]> {
+export async function getDmChannels(options: RequestInit = {}): Promise<{ channels: (DmChannel | GroupDmChannel)[]; categories: DmCategory[] }> {
   return api(`/dms`, { ...options, method: "GET" });
 }
 

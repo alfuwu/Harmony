@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { User } from "../../../lib/utils/Types";
-import { useNicknames } from "../../../lib/state/Nicknames";
 import { deleteNickname, setNickname } from "../../../lib/api/SocialApi";
+import { getUs } from "../../../lib/state/Users";
 
 interface Props {
   user: User;
@@ -11,14 +11,15 @@ interface Props {
 const MAX_LEN = 32;
 
 export default function NicknameModal({ user, onClose }: Props) {
-  const { get, set } = useNicknames();
-  const current = get(user.id) ?? "";
+  const current = user?.nick ?? "";
+
+  const { addUser } = getUs();
 
   const [value, setValue] = useState(current);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const trimmed   = value.trim();
+  const trimmed = value.trim();
   const unchanged = trimmed === current;
 
   async function save() {
@@ -34,7 +35,8 @@ export default function NicknameModal({ user, onClose }: Props) {
       else
         await deleteNickname(user.id);
 
-      set(user.id, trimmed || null);
+      user.nick = trimmed;
+      addUser(user);
       onClose();
     } catch {
       setError("Failed to save nickname.");

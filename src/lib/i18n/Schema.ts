@@ -382,6 +382,7 @@ export const defaultTranslations = {
     "member.copy_id": "Copy User ID",
     "member.kick": "Kick Member",
     "member.ban": "Ban Member",
+    "member.ip_ban": "IP Ban Member",
     "member.header": "Members — {count}",
     "member.offline": "Offline — {count}",
     "member.offline_hidden": "(hidden for performance)",
@@ -720,9 +721,19 @@ export const defaultTranslations = {
     "server.role_gradient_glow": "Gradient Glow",
     "server.unbanning": "Unbanning...",
     "server.unban": "Unban",
-    "server.deleting": "Deleting…",
+    "server.deleting": "Deleting...",
     "server.delete_confirm": "Delete \"{name}\"",
-    "server.failed_update_role": "Failed to update role"
+    "server.failed_update_role": "Failed to update role",
+
+    "moderation.kick": "Kick",
+    "moderation.ban": "Ban",
+    "moderation.ip_ban": "IP Ban",
+    "moderation.kick.target": "Kick {target}",
+    "moderation.ban.target": "Ban {target}",
+    "moderation.ip_ban.target": "IP ban {target}",
+    "moderation.kick.desc": "This member will be removed from the server but can rejoin.",
+    "moderation.ban.desc": "This member will be permanently removed and cannot rejoin.",
+    "moderation.ip_ban.desc": "This member and everyone else using the same network as them will be permanently removed and unable to rejoin."
 };
 
 export type TranslationKeys = keyof typeof defaultTranslations;

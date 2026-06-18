@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { BigJSON } from "../utils/JSON";
 
 export type ServerFolder = {
   id: string;
@@ -21,7 +22,7 @@ function load(): Arrangement {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw)
       return { order: [], folders: {} };
-    const parsed = JSON.parse(raw);
+    const parsed = BigJSON.parse(raw);
     return {
       order: Array.isArray(parsed.order) ? parsed.order : [],
       folders: parsed.folders && typeof parsed.folders === "object"
@@ -37,14 +38,14 @@ function save(a: Arrangement) {
   try {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ order: a.order, folders: a.folders })
+      BigJSON.stringify({ order: a.order, folders: a.folders })
     );
   } catch { }
 }
 
 // Merge known server IDs into the stored order, appending any new ones.
 function mergeOrder(stored: (bigint | string)[], knownIds: bigint[]): (bigint | string)[] {
-  const inOrder = new Set(stored.filter(x => typeof x === "bigint") as bigint[]);
+  const inOrder = new Set(stored.filter(x => typeof x === "bigint" || typeof x === "number") as bigint[]);
   const fresh = knownIds.filter(id => !inOrder.has(id));
   return [...stored, ...fresh];
 }
@@ -69,7 +70,7 @@ export const useServerArrangement = create<ServerArrangementStore>((set, get) =>
       const order = mergeOrder(s.order, serverIds);
       const knownSet = new Set(serverIds);
       const cleaned = order.filter(x =>
-        typeof x === "string" || knownSet.has(x as bigint)
+        typeof x === "string" || knownSet.has(x)
       );
       const folders = { ...s.folders };
       for (const fid of Object.keys(folders)) {

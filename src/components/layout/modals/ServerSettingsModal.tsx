@@ -33,11 +33,11 @@ import {
   getBans,
   unbanMember,
   assignRole,
+  removeRole,
 } from "../../../lib/api/ServerApi";
 import { t, useLocale } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
 import { AlertTriangleIcon, BanIcon, EditIcon, FilmIcon, HomeIcon, InviteIcon, SearchIcon, SmileIcon, StarIcon, TrashIcon, UsersIcon } from "../../svgs/other/Icons";
-import { BigJSON } from "../../../lib/utils/JSON";
 
 // ═══════════════════════════════════════════════════════════
 // Permission definitions
@@ -2569,19 +2569,13 @@ export default function ServerSettingsModal({
                           <button
                             key={role.id}
                             onClick={async () => {
-                              if (!currentServer) return;
+                              if (!currentServer)
+                                return;
                               try {
-                                if (hasRole) {
-                                  await api(
-                                    `/servers/${currentServer.id}/roles/revoke`,
-                                    {
-                                      method: "POST",
-                                      body: BigJSON.stringify({ userId: u.id, roleId: role.id }),
-                                    }
-                                  );
-                                } else {
+                                if (hasRole)
+                                  removeRole(currentServer.id, u.id, role.id);
+                                else
                                   assignRole(currentServer.id, u.id, role.id);
-                                }
                               } catch (e: any) {
                                 setSaveError(e.message ?? t("server.failed_update_role"));
                               }

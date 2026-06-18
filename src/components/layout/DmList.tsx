@@ -3,12 +3,13 @@ import { useChannelState } from "../../lib/state/Channels";
 import { useMessageState } from "../../lib/state/Messages";
 import { useUserState } from "../../lib/state/Users";
 import { useLoadingState } from "../../lib/state/Loading";
-import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
+import { getAvatar } from "../../lib/utils/UserUtils";
 import { AbstractChannel, ChannelType, DmChannel, GroupDmChannel, OnlineStatus } from "../../lib/utils/Types";
 import { getMessages } from "../../lib/api/MessageApi";
 import { joinChannel } from "../../lib/client/GatewayClient";
 import { useCacheState, CacheKey } from "../../lib/state/Cache";
 import { t, useLocale } from "../../lib/i18n/Index";
+import { Name } from "./Generic";
 
 const STATUS_COLORS: Record<OnlineStatus, string> = {
   [OnlineStatus.Online]: "var(--online)",
@@ -101,7 +102,6 @@ export default function DmList() {
         const dm = c as DmChannel;
         const otherId = dm.dmMembers?.find(id => id !== user?.id);
         const other = otherId !== undefined ? get(otherId) : undefined;
-        const name = other ? getDisplayName(other) : t("user.unknown");
         const avatar = getAvatar(other ?? null);
         const status = other?.onlineStatus ?? OnlineStatus.Offline;
 
@@ -125,9 +125,12 @@ export default function DmList() {
                 border: "2px solid var(--bg-3)",
               }} />
             </div>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-              {name}
-            </span>
+            <Name
+              user={other}
+              md={{}}
+              allowDmColors={true}
+              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}
+            />
           </div>
         );
       })}

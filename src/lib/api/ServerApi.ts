@@ -1,4 +1,4 @@
-import { Channel, Member, Role, RoleDisplayType, Server, User } from "../utils/Types";
+import { Channel, Member, Role, RoleCategory, RoleDisplayType, Server, User } from "../utils/Types";
 import { api } from "./Http";
 import { useCacheState, CacheKey } from "../state/Cache";
 import { useUserState } from "../state/Users";
@@ -20,11 +20,26 @@ export async function getServers(options: RequestInit = {}): Promise<Server[]> {
   });
 }
 
-export async function getRoles(serverId: bigint, options: RequestInit = {}): Promise<Role[]> {
-  return api(`/servers/${serverId}/roles`, {
-    ...options,
-    method: "GET"
-  });
+export function transformRole(raw: Role): Role {
+  const flags = typeof raw.flags === 'bigint' ? raw.flags : BigInt(raw.flags ?? 0);
+  const permissions = typeof raw.permissions === 'bigint'
+    ? raw.permissions
+    : BigInt(raw.permissions ?? 0);
+  return {
+    ...raw,
+    id: typeof raw.id === 'bigint' ? raw.id : BigInt(raw.id),
+    permissions,
+    flags,
+    displaysSeparately: (flags & 1n) !== 0n
+  };
+}
+
+export async function getRoles(serverId: bigint, options: RequestInit = {}): Promise<{ roles: Role[]; categories: RoleCategory[] }> {
+  const data = await api(`/servers/${serverId}/roles`, { ...options, method: "GET" });
+  return {
+    roles: (data.roles ?? []).map(transformRole),
+    categories: data.categories ?? [],
+  };
 }
 
 export async function getServerChannels(serverId: bigint, options: RequestInit = {}): Promise<Channel[]> {
@@ -50,8 +65,9 @@ export async function loadServer(server: Server): Promise<void> {
   if (!isStale(channelKey) && !isStale(memberKey) && server.loaded)
     return;
 
-  const roles = await getRoles(server.id);
+  const { roles, categories } = await getRoles(server.id);
   server.roles = roles;
+  server.roleCategories = categories;
 
   server.loaded = true;
 
@@ -105,6 +121,14 @@ export async function banMember(serverId: bigint, userId: bigint, reason: string
   });
 }
 
+export async function ipBanMember(serverId: bigint, userId: bigint, reason: string | undefined = undefined, options: RequestInit = {}) {
+  return api(`/servers/${serverId}/ip-ban`, {
+    ...options,
+    method: "POST",
+    body: BigJSON.stringify({ userId: userId, reason })
+  });
+}
+
 export async function unbanMember(serverId: bigint, user: User, options: RequestInit = {}) {
   return api(`/servers/${serverId}/bans/${user.id}`, {
     ...options,
@@ -151,9 +175,10 @@ export async function assignRole(serverId: bigint, userId: bigint, roleId: bigin
 }
 
 export async function removeRole(serverId: bigint, userId: bigint, roleId: bigint, options: RequestInit = {}) {
-  return api(`/servers/${serverId}/members/${userId}/roles/${roleId}`, {
+  return api(`/servers/${serverId}/members/${userId}/roles`, {
     ...options,
-    method: "DELETE"
+    method: "PATCH",
+    body: BigJSON.stringify({ remove: [roleId] })
   });
 }
 

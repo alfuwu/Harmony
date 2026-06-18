@@ -10,6 +10,7 @@ import { isMentioned, sendDesktopNotification } from "../utils/Funcs";
 import { getServerId } from "../utils/ChannelUtils";
 import { useUnread } from "../state/Unread";
 import { BigJSON } from "../utils/JSON";
+import { transformRole } from "../api/ServerApi";
 
 interface ServerFrame {
   op: string;
@@ -254,12 +255,13 @@ function handleFrame(raw: string) {
       const ss = getSs();
       const server = ss.get(d.serverId);
       if (server) {
-        const exists = server.roles.some((r: any) => r.id === d.role.id);
+        const role = transformRole(d.role);
+        const exists = server.roles.some(r => r.id === role.id);
         ss.addServer({
           ...server,
           roles: exists
-            ? server.roles.map((r: any) => (r.id === d.role.id ? d.role : r))
-            : [...server.roles, d.role],
+            ? server.roles.map(r => r.id === role.id ? role : r)
+            : [...server.roles, role],
         });
       }
       break;
