@@ -6,9 +6,9 @@ export interface LoadingState {
   membersLoading: boolean;
   messagesLoading: boolean;
 
-  setServersLoading:  (v: boolean) => void;
+  setServersLoading: (v: boolean) => void;
   setChannelsLoading: (v: boolean) => void;
-  setMembersLoading:  (v: boolean) => void;
+  setMembersLoading: (v: boolean) => void;
   setMessagesLoading: (v: boolean) => void;
 }
 
@@ -23,5 +23,5 @@ export const useLoadingState = create<LoadingState>((set) => ({
   setServersLoading:  (v) => set({ serversLoading: v }),
   setChannelsLoading: (v) => set({ channelsLoading: v }),
   setMembersLoading:  (v) => set({ membersLoading: v }),
-  setMessagesLoading: (v) => set({ messagesLoading: v }),
+  setMessagesLoading: (v) => set({ messagesLoading: v })
 }));

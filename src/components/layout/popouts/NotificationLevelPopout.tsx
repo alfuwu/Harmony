@@ -3,8 +3,8 @@ import { NotificationLevel, NOTIF_LABELS, useNotifications } from "../../../lib/
 import { BanIcon, BellIcon, BellOffIcon } from "../../svgs/other/Icons";
 
 interface Props {
-  channelId: number;
-  serverId?: number;
+  channelId: bigint;
+  serverId?: bigint;
   isServer?: boolean;
   position: { top: number; left: number };
   onClose: () => void;

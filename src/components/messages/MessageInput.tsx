@@ -41,7 +41,7 @@ import {
 
 import data, { Emoji as NativeEmoji } from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
-import { connection } from "../../lib/api/SignalrClient";
+import { stopTyping, startTyping } from "../../lib/client/GatewayClient";
 import { getEmojiUrl, getIcon } from "../../lib/utils/ServerUtils";
 import { t, tr, useLocale } from "../../lib/i18n/Index";
 
@@ -50,7 +50,7 @@ import EmojiPickerPopout from "../layout/popouts/EmojiPickerPopout";
 import TextDocument from "../svgs/other/TextDocument";
 import { intToHex, isFlag, lerp, makeMarkdownContext, normalizeEmojiId } from "../../lib/utils/Funcs";
 import { Name } from "../layout/Generic";
-import { PlusIcon, SmileIcon } from "../svgs/other/Icons";
+import { ArchiveIcon, CubeIcon, FilmIcon, MusicNoteIcon, PlusIcon, SmileIcon } from "../svgs/other/Icons";
 import Random from "../../lib/utils/Random";
 
 init({ data });
@@ -124,6 +124,12 @@ function CodeBlockElement({
 function AttachmentPreview({ file, onRemove }: { file: File; onRemove: () => void }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const isImage = file.type.startsWith('image/');
+  const isVideo = file.type.startsWith('video/');
+  const isAudio = file.type.startsWith('audio/');
+  const is3D = file.type.startsWith('model/');
+  const isArchive = (['application/zip', 'application/x-cfb', 'application/x-7z-compressed',
+    'application/x-rar-compressed', 'application/gzip', 'application/x-bzip2', 'application/x-xz',
+    'application/zstd', 'application/x-lz4'] as const).includes(file.type as any);
 
   useEffect(() => {
     if (!isImage)
@@ -166,10 +172,13 @@ function AttachmentPreview({ file, onRemove }: { file: File; onRemove: () => voi
           <div style={{
             width: 64, height: 64, borderRadius: 6,
             background: 'var(--bg-3)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 26,
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>
-            <TextDocument />
+            {isVideo ? <FilmIcon size={28} /> :
+             is3D ? <CubeIcon size={28} /> :
+             isAudio ? <MusicNoteIcon size={28} /> :
+             isArchive ? <ArchiveIcon size={28} /> :
+             <TextDocument />}
           </div>
         )
       }
@@ -232,7 +241,7 @@ const insertEmoji = (editor: Editor, emoji: NativeEmoji) => {
   const native = emoji.native ?? emoji.skins?.[0]?.native ?? "";
   ins(editor, { type: "emoji", emoji: { name: native }, children: [{ text: native }] });
 };
-const insertCustomEmoji = (editor: Editor, name: string, id: number, url: string) =>
+const insertCustomEmoji = (editor: Editor, name: string, id: bigint, url: string) =>
   ins(editor, {
     type: "customEmoji",
     emojiName: name,
@@ -401,7 +410,7 @@ const MessageInput = forwardRef(function MessageInput({
     }
   }, []);
 
-  const prevChannelIdRef = useRef<number | undefined>(currentChannel?.id);
+  const prevChannelIdRef = useRef<bigint | undefined>(currentChannel?.id);
 
   useEffect(() => {
     if (!isChannel)
@@ -460,7 +469,7 @@ const MessageInput = forwardRef(function MessageInput({
     clearInterval(typingIntervalRef.current);
     typingIntervalRef.current = null;
     if (isChannel && currentChannel && invoke)
-      connection?.invoke("StopTyping", currentChannel.id).catch(() => {});
+      stopTyping(currentChannel.id);
   }, [isChannel, currentChannel]);
 
   const startTypingIndicator = useCallback(() => {
@@ -469,9 +478,9 @@ const MessageInput = forwardRef(function MessageInput({
     if (!isChannel || !currentChannel || typingIntervalRef.current !== null)
       return;
 
-    connection?.invoke("StartTyping", currentChannel.id).catch(() => {});
+    startTyping(currentChannel.id);
     typingIntervalRef.current = setInterval(() => {
-      connection?.invoke("StartTyping", currentChannel.id).catch(() => {});
+      startTyping(currentChannel.id);
       if (shouldStopTyping.current)
         stopTypingIndicator(false);
       shouldStopTyping.current = true;
@@ -651,10 +660,10 @@ const MessageInput = forwardRef(function MessageInput({
               close(id);
           }}
           onSelectCustomEmoji={(name, emojiId) => {
-            const srv = servers.find(s => s.emojis?.some(em => em.id === Number(emojiId)));
-            const em = srv?.emojis?.find(em => em.id === Number(emojiId));
+            const srv = servers.find(s => s.emojis?.some(em => em.id === BigInt(emojiId)));
+            const em = srv?.emojis?.find(em => em.id === BigInt(emojiId));
             if (em)
-              insertCustomEmoji(editor, name, Number(emojiId), getEmojiUrl(em) ?? '');
+              insertCustomEmoji(editor, name, BigInt(emojiId), getEmojiUrl(em) ?? '');
             ReactEditor.focus(editor);
             if (!e.shiftKey)
               close(id);
@@ -698,35 +707,91 @@ const MessageInput = forwardRef(function MessageInput({
       const overlapStart = Math.max(t.start, nodeStart);
       const overlapEnd = Math.min(t.end, nodeEnd);
 
-      if (t.style === 'shaky' || t.style === 'wobbly') {
-        const len = overlapEnd - overlapStart;
+      if (overlapStart < overlapEnd) {
+        const glitch = t.style === 'glitch';
+        if (t.style === 'shaky' || t.style === 'wobbly' || glitch) {
+          const len = overlapEnd - overlapStart;
 
-        for (let i = 0; i < len; i++) {
-          const seed = BigInt(t.start + i);
-          const rand = Random.create(seed);
+          for (let i = 0; i < len; i++) {
+            const seed = BigInt(t.start + i);
+            const rand = Random.create(seed);
 
-          const r = (-0.5 + rand.nextFloat()) * 2;
-          const amp = lerp(r, r < 0 ? -1 : 1, 0.5) / 16;
-          const speed = 0.5 + rand.nextFloat() * 0.5;
+            const r = (-0.5 + rand.nextFloat()) * 2;
+            const amp = glitch ? 0.02 + rand.nextFloat() * 0.05 : lerp(r, r < 0 ? -1 : 1, 0.5) / 16;
+            const speed = glitch ? 3 + rand.nextFloat() * 7 : 0.5 + rand.nextFloat() * 0.5;
+            const delay = -(rand.nextFloat() * 2);
 
+            const result = {
+              char: true,
+              anchor: { path, offset: overlapStart - nodeStart + i },
+              focus: { path, offset: overlapStart - nodeStart + i + 1 }
+            } as any;
+
+            if (t.style === 'shaky' || glitch) {
+              result.amp = amp;
+              result.speed = speed;
+              if (glitch) 
+                result.delay = delay;
+            } else {
+              result.i = i;
+            }
+
+            results.push(result);
+          }
+        }
+
+        const isGradient = t.style === 'color' && t.attributes?.colors;
+
+        if (isGradient) {
+          const bounds = new Set<number>([overlapStart, overlapEnd]);
+          for (const other of tokens) {
+            if (other === t)
+              continue;
+            if (other.style === 'shaky' || other.style === 'wobbly' || other.style === 'glitch') {
+              const s = Math.max(other.start, overlapStart);
+              const e = Math.min(other.end, overlapEnd);
+              for (let c = s; c <= e; c++)
+                bounds.add(c);
+            } else {
+              if (other.start > overlapStart && other.start < overlapEnd)
+                bounds.add(other.start);
+              if (other.end > overlapStart && other.end < overlapEnd)
+                bounds.add(other.end);
+            }
+          }
+
+          const mdsTokens = tokens.filter(m => m.style === 'mds');
+          const adjTotalLen = (t.end - t.start) - mdsTokens.reduce((sum, m) => {
+            const s = Math.max(m.start, t.start), e = Math.min(m.end, t.end);
+            return s < e ? sum + (e - s) : sum;
+          }, 0);
+
+          const sorted = [...bounds].sort((a, b) => a - b);
+          for (let i = 0; i < sorted.length - 1; i++) {
+            const sS = sorted[i], sE = sorted[i + 1];
+            const adjFragOffset = (sS - t.start) - mdsTokens.reduce((sum, m) => {
+              const s = Math.max(m.start, t.start), e = Math.min(m.end, sS);
+              return s < e ? sum + (e - s) : sum;
+            }, 0);
+
+            results.push({
+              [t.style]: true,
+              ...(t.attributes ?? {}),
+              _fragOffset: adjFragOffset,
+              _totalLen: adjTotalLen,
+              _id: `${t.style}${path[0]}_${t.start}_${t.end}`,
+              anchor: { path, offset: sS - nodeStart },
+              focus: { path, offset: sE - nodeStart }
+            });
+          }
+        } else {
           results.push({
-            char: true,
-            amp,
-            speed,
-            i,
-            anchor: { path, offset: overlapStart - nodeStart + i },
-            focus: { path, offset: overlapStart - nodeStart + i + 1 }
+            [t.style]: true,
+            ...(t.attributes ?? {}),
+            anchor: { path, offset: overlapStart - nodeStart },
+            focus: { path, offset: overlapEnd - nodeStart }
           });
         }
-      }
-
-      if (overlapStart < overlapEnd) {
-        results.push({
-          [t.style]: true,
-          ...(t.attributes ?? {}),
-          anchor: { path, offset: overlapStart - nodeStart },
-          focus: { path, offset: overlapEnd - nodeStart }
-        });
       }
     }
     return results;
@@ -751,11 +816,30 @@ const MessageInput = forwardRef(function MessageInput({
       rendered = <sup>{rendered}</sup>;
     if (leaf.subscript)
       rendered = <sub>{rendered}</sub>;
-    if (leaf.color)
-      rendered = <span className={"colored" + (leaf.colors ? " gradient" : "")} style={{ '--color': leaf.hex, ...(leaf.colors && { '--gradient': `linear-gradient(90deg, ${leaf.colors.join(", ")})` }) } as React.CSSProperties}>{rendered}</span>;
+    if (leaf.color) {
+      const colorStyle: Record<string, string> = { '--color': leaf.hex as string };
+      if (leaf.colors && !leaf.mds) {
+        colorStyle['--gradient'] = `linear-gradient(90deg, ${(leaf.colors as string[]).join(', ')})`;
+        const fragOffset = leaf._fragOffset ?? 0;
+        const fragLen = (leaf.text as string).length;
+        const totalLen = leaf._totalLen;
+        if (fragLen < totalLen) {
+          colorStyle.backgroundSize = `${(totalLen / fragLen * 100).toFixed(2)}% 100%`;
+          colorStyle.backgroundPosition = `${(fragOffset * 100 / (totalLen - fragLen)).toFixed(2)}% 0`;
+        }
+      }
+      rendered = (
+        <span
+          className={'colored' + (leaf.colors && !leaf.mds ? ' gradient' : '')}
+          style={colorStyle as CSSProperties}
+        >
+          {rendered}
+        </span>
+      );
+    }
     if (leaf.link)
       rendered = <a>{rendered}</a>;
-    if (leaf.marquee)
+    if (leaf.marquee) {
       rendered = (
         <span className="marquee">
           <span className="marquee-track">
@@ -763,12 +847,14 @@ const MessageInput = forwardRef(function MessageInput({
           </span>
         </span>
       );
+    }
     if (leaf.char)
       rendered = (
         <span className="char"
           style={{
             '--amp': `${leaf.amp}em`,
             '--speed': `${leaf.speed}s`,
+            '--delay': `${leaf.delay}s`,
             '--i': leaf.i
           } as React.CSSProperties}
         >
@@ -779,6 +865,10 @@ const MessageInput = forwardRef(function MessageInput({
       rendered = <span className="wobbly">{rendered}</span>;
     if (leaf.shaky)
       rendered = <span className="shaky">{rendered}</span>;
+    if (leaf.float)
+      rendered = <span className="float">{rendered}</span>;
+    if (leaf.glitch)
+      rendered = <span className="glitch">{rendered}</span>;
     if (leaf.timestamp)
       rendered = <span className="timestamp-edit" title={formatTimestamp(Number(leaf.timestamp), leaf.style)}>{rendered}</span>;
     if (leaf.mentionEveryone)
@@ -814,7 +904,6 @@ const MessageInput = forwardRef(function MessageInput({
     }
     if (leaf.mds)
       rendered = <span className="mds">{rendered}</span>;
-
     return <span {...attributes}>{rendered}</span>;
   };
 
@@ -1352,7 +1441,7 @@ const MessageInput = forwardRef(function MessageInput({
                         ? <>{tr("input.placeholder", { channel: <>{getChannelIcon(currentChannel, { className: "inline-icon" })}{currentChannel.name}</> })}</>
                         // TODO: expand to support group dms
                         : <>{tr("input.placeholder.dm", { user: <Name
-                            user={getUser((currentChannel as DmChannel).members?.filter(m => m !== user?.id)[0]) ?? null}
+                            user={getUser((currentChannel as DmChannel).dmMembers?.filter(m => m !== user?.id)[0]) ?? null}
                             allowDmColors={true}
                             md={markdownData}
                             spoilerState={spoilerState}
@@ -1700,7 +1789,7 @@ const MessageInput = forwardRef(function MessageInput({
                   const filesToUpload = [...pendingFiles];
                   clearPendingAttachments(currentChannel.id);
 
-                  const nonce = Number(`${Date.now()}${Math.floor(Math.random() * 1000000)}`);
+                  const nonce = BigInt(`${Date.now()}${Math.floor(Math.random() * 1000000)}`);
                   const msg = {
                     id: -nonce,
                     channelId: currentChannel.id,

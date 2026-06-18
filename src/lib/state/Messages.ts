@@ -7,14 +7,14 @@ export interface MessageState {
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   addMessage: (msg: Message) => void;
   addMessages: (msgs: Message[]) => void;
-  updateMessage: (msg: Partial<Message> & { id: number }) => void;
-  get: (id?: number | null) => Message | undefined;
-  getMessage: (id?: number | null) => Message | undefined;
-  removeMessage: (id: number) => void;
-  removeMessages: (ids: number[]) => void;
-  removeMessageByNonce: (nonce: number) => void;
-  addReaction: (payload: { messageId: number; userId: number; emoji: any }) => void;
-  removeReaction: (payload: { messageId: number; userId: number; emoji: any }) => void;
+  updateMessage: (msg: Partial<Message> & { id: bigint }) => void;
+  get: (id?: bigint | null) => Message | undefined;
+  getMessage: (id?: bigint | null) => Message | undefined;
+  removeMessage: (id: bigint) => void;
+  removeMessages: (ids: bigint[]) => void;
+  removeMessageByNonce: (nonce: bigint) => void;
+  addReaction: (payload: { messageId: bigint; userId: bigint; emoji: any }) => void;
+  removeReaction: (payload: { messageId: bigint; userId: bigint; emoji: any }) => void;
 }
 
 export const useMessageState = create<MessageState>((set, get) => ({

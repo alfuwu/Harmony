@@ -2,13 +2,13 @@ import { useState } from "react";
 import { getCs } from "../../../lib/state/Channels";
 import { createChannel } from "../../../lib/api/ChannelApi";
 import { ChannelType } from "../../../lib/utils/Types";
-import { connection, joinChannel } from "../../../lib/api/SignalrClient";
+import { joinChannel } from "../../../lib/client/GatewayClient";
 import { t, useLocale } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
 
 interface CreateChannelModalProps {
   open: boolean;
-  serverId: number;
+  serverId: bigint;
   onClose: () => void;
 }
 
@@ -48,7 +48,6 @@ export default function CreateChannelModal({ open, serverId, onClose }: CreateCh
       );
       addChannel(channel);
       joinChannel(channel.id);
-      connection?.invoke("JoinChannel", channel.id).catch(() => {});
       setCurrentChannel(channel);
       setName("");
       setDescription("");

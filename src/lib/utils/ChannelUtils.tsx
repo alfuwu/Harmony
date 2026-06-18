@@ -56,15 +56,15 @@ export function isPrivate(channel: AbstractChannel) {
   return channel.type === ChannelType.DM || channel.type === ChannelType.GroupDM;
 }
 
-export function getServerId(channelId: number): number | undefined {
+export function getServerId(channelId: bigint): bigint | undefined {
   return getCs().channels.find(c => c.id === channelId)?.serverId;
 }
 
-export function getChannelIds(serverId: number): number[] {
+export function getChannelIds(serverId: bigint): bigint[] {
   return getCs().channels.filter(c => c.serverId === serverId).map(c => c.id);
 }
 
-export function getLastMessage(channelId: number): number | undefined {
+export function getLastMessage(channelId: bigint): bigint | undefined {
   return getMs().messages
     .filter((m) => m.channelId === channelId)
     .sort((a, b) =>

@@ -177,6 +177,7 @@ export default function EmojiPopout({ emoji, emojiId, position }: EmojiPopoutPro
           lineHeight: 1.4,
         }}>
           {tr("emoji.find_hint", { hint: <code
+            key={emoji.id ?? emoji.name}
             style={{
               fontSize: "11px",
               background: "var(--bg-1)",

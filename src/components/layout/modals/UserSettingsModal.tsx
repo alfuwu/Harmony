@@ -22,14 +22,8 @@ import type { Language, UserSettings } from "../../../lib/utils/UserSettings";
 import { User } from "../../../lib/utils/Types";
 import { t, useLocale } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
-import { getDateLocale } from "../../../lib/utils/Funcs";
-
-function intToHex(n: number): string {
-  return "#" + Math.max(0, n >>> 0).toString(16).padStart(6, "0");
-}
-function hexToInt(hex: string): number {
-  return parseInt(hex.replace("#", ""), 16) || 0;
-}
+import { getDateLocale, hexToInt, intToHex } from "../../../lib/utils/Funcs";
+import { BigJSON } from "../../../lib/utils/JSON";
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -670,7 +664,7 @@ function ProfilePreviewCard({ user, displayName, pronouns, bio, bannerColorHex, 
   displayName: string | null | undefined;
   pronouns: string | null | undefined;
   bio: string | null | undefined;
-  bannerColorHex: string;
+  bannerColorHex?: string;
   previewAvatar: string;
   previewBanner: string | undefined;
   fontFamily: string;
@@ -794,7 +788,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
   const [displayName, setDisplayName] = useState<string | null | undefined>(user?.displayName);
   const [pronouns, setPronouns] = useState<string | null | undefined>(user?.pronouns);
   const [bio, setBio] = useState<string | null | undefined>(user?.bio);
-  const [bannerColorHex, setBannerColorHex] = useState(intToHex(user?.bannerColor ?? 0));
+  const [bannerColorHex, setBannerColorHex] = useState(user?.bannerColor && user?.bannerColor > -1 ? intToHex(user?.bannerColor) : undefined);
 
   const [emailRevealed, setEmailRevealed] = useState(false);
   const [phoneRevealed, setPhoneRevealed] = useState(false);
@@ -856,7 +850,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
       displayName !== initialRef.current.displayName ||
       pronouns !== initialRef.current.pronouns ||
       bio !== initialRef.current.bio ||
-      hexToInt(bannerColorHex) !== initialRef.current.bannerColor ||
+      (bannerColorHex && hexToInt(bannerColorHex) !== initialRef.current.bannerColor || !!!bannerColorHex && initialRef.current.bannerColor !== -1) ||
       fAviFile !== null || fBaniFile !== null ||
       (fontFile !== null && !(typeof fontFile === "string" && fontFile === user?.nameFont));
     return { settingsDirty, privacyDirty, profileDirty };
@@ -958,7 +952,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
     setDisplayName(initialRef.current.displayName);
     setPronouns(initialRef.current.pronouns);
     setBio(initialRef.current.bio);
-    setBannerColorHex(intToHex(initialRef.current.bannerColor));
+    setBannerColorHex(initialRef.current.bannerColor > -1 ? intToHex(initialRef.current.bannerColor) : undefined);
     if (initialRef.current.settings)
       setUserSettings(JSON.parse(initialRef.current.settings));
     setPrivacy(JSON.parse(initialRef.current.privacy));
@@ -979,10 +973,10 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
           displayName: displayName ?? null,
           pronouns: pronouns ?? null,
           bio: bio ?? null,
-          bannerColor: hexToInt(bannerColorHex),
+          bannerColor: bannerColorHex ? hexToInt(bannerColorHex) : null,
         });
         u = { ...u, displayName: displayName ?? null, pronouns: pronouns ?? null,
-          bio: bio ?? null, bannerColor: hexToInt(bannerColorHex) };
+          bio: bio ?? null, bannerColor: bannerColorHex ? hexToInt(bannerColorHex) : -1 };
       }
 
       if (fAviFile) {
@@ -1015,7 +1009,7 @@ export default function UserSettingsModal({ open, onClose }: { open: boolean; on
       if (dc.settingsDirty && userSettings)
         await updateSettings(userSettings);
 
-      if (JSON.stringify(u) !== JSON.stringify(user)) {
+      if (BigJSON.stringify(u) !== BigJSON.stringify(user)) {
         setUser(u);
         addUser(u);
       }

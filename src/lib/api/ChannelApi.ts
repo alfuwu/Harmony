@@ -1,24 +1,25 @@
+import { BigJSON } from "../utils/JSON";
 import { Channel, ChannelType, Message } from "../utils/Types";
 import { api } from "./Http";
 
 export async function createChannel(
-  serverId: number,
+  serverId: bigint,
   name: string,
   type: ChannelType,
   description?: string | null,
-  parentId?: number | null,
+  parentId?: bigint | null,
   options: RequestInit = {}
 ): Promise<Channel> {
   return api(`/servers/${serverId}/channels`, {
     ...options,
     method: "POST",
-    body: JSON.stringify({ name, type, description, parentId })
+    body: BigJSON.stringify({ name, type, description, parentId })
   });
 }
 
 export async function deleteChannel(
-  serverId: number,
-  channelId: number,
+  serverId: bigint,
+  channelId: bigint,
   options: RequestInit = {}
 ): Promise<void> {
   return api(`/servers/${serverId}/channels/${channelId}`, {
@@ -28,23 +29,23 @@ export async function deleteChannel(
 }
 
 export async function updateChannelOverride(
-  serverId: number,
-  channelId: number,
-  roleId: number,
-  allow: number,
-  deny: number,
+  serverId: bigint,
+  channelId: bigint,
+  roleId: bigint,
+  allow: bigint,
+  deny: bigint,
   hardDeny: boolean,
   options: RequestInit = {}
 ): Promise<void> {
   return api(`/servers/${serverId}/roles/${roleId}/overrides/${channelId}`, {
     ...options,
     method: "PUT",
-    body: JSON.stringify({ roleId, allow, deny, hardDeny })
+    body: BigJSON.stringify({ roleId, allow, deny, hardDeny })
   });
 }
 
 export async function searchMessages(
-  channelId: number,
+  channelId: bigint,
   query: string,
   page: number = 0,
   options: RequestInit = {}
@@ -56,13 +57,13 @@ export async function searchMessages(
 }
 
 export async function markRead(
-  channelId: number,
-  messageId: number,
+  channelId: bigint,
+  messageId: bigint,
   options: RequestInit = {}
 ): Promise<void> {
   return api(`/channels/${channelId}/receipts`, {
     ...options,
     method: "POST",
-    body: JSON.stringify({ messageId })
+    body: BigJSON.stringify({ messageId })
   });
 }

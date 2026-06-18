@@ -216,7 +216,7 @@ export default function ServerContextMenu({
 
       {notifOpen && (
         <NotificationLevelPopout
-          channelId={-1}
+          channelId={-1n}
           serverId={server.id}
           isServer
           position={{ top: y, left: x + menuWidth + 4 }}

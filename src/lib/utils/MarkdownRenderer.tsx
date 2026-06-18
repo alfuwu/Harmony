@@ -28,6 +28,7 @@ import { userSettings } from '../state/Auth';
 import { getUs } from '../state/Users';
 import { getSs } from '../state/Servers';
 import { getCs } from '../state/Channels';
+import { CodeBracketsIcon } from '../../components/svgs/other/Icons';
 
 declare global {
   namespace Intl {
@@ -341,12 +342,21 @@ const CodeBlock = React.memo(function CodeBlock({
   );
 
   return (
-    <div className="code-block-wrapper">
-      <div className="code-block-header">
-        <span className="code-block-lang">{effectiveLanguage}</span>
-        <button className="code-block-copy" onClick={copy} onDoubleClick={e => e.stopPropagation()} title={t("code.copy_title")}>
-          {copied ? t("copied") : t("copy")}
-        </button>
+    <div className="code-block-wrapper" style={{ marginTop: 4, width: "fit-content", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", background: "var(--bg-2)" }}>
+     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)" }}>
+        <span style={{ color: "var(--text-3)", flexShrink: 0, display: "flex" }}>
+          <CodeBracketsIcon />
+        </span>
+        {content !== null && (
+          <span style={{ fontSize: 11, color: "var(--text-2)", fontFamily: "monospace", flexShrink: 0 }}>
+            {language}
+          </span>
+        )}
+        {content !== null && (
+          <button onClick={copy} style={{ float: "right", marginLeft: "auto", fontSize: 11, padding: "5px 8px", borderRadius: 4, flexShrink: 0, background: "var(--bg-1)", border: "1px solid var(--border)", color: "var(--text-2)", cursor: "pointer" }}>
+            {copied ? t("copied") : t("copy")}
+          </button>
+        )}
       </div>
       <div className="multiline-code" data-md-pre={`\`\`\`${effectiveLanguage}\n`} data-md-post="\n```">
         <div data-testid="shiki-container" data-slot="container" className="rs-root not-prose rs-default-styles shiki">
@@ -354,7 +364,7 @@ const CodeBlock = React.memo(function CodeBlock({
             // fallback to manually created output that mimicks useShikiHighlighter
             <pre className={`shiki ${shikiTheme}`} tabIndex={0} style={{ backgroundColor: light ? "#fff" : "#24292e", color: light ? "#24292e" : "#e1e4e8" }}>
               <code className={showLineNumbers ? "rs-has-line-numbers" : undefined}>
-                {content.split('\n').map(line => <span className={"line" + (showLineNumbers ? " rs-line-number" : "")}><span>{line + '\n'}</span></span>)}
+                {content.split('\n').map((line, i) => <span key={i} className={"line" + (showLineNumbers ? " rs-line-number" : "")}><span>{line + '\n'}</span></span>)}
               </code>
             </pre>
           )}
@@ -445,17 +455,38 @@ export function ShakyText({ children }: { children: ReactNode }) {
             <span
               key={i}
               className="char"
-              style={
-                {
-                  "--amp": `${amp}em`,
-                  "--speed": `${speed}s`
-                } as React.CSSProperties
+              style={{ "--amp": `${amp}em`, "--speed": `${speed}s` } as React.CSSProperties
               }
             >
               {char === " " ? "\u00A0" : char}
             </span>
           );
         })
+      })}
+    </span>
+  );
+}
+
+export function GlitchText({ children }: { children: ReactNode }) {
+  return (
+    <span className="glitch">
+      {mapTextNodes(children, text => {
+        const rand = Random.create(BigInt(toHash(text.join(""))));
+        return text.map((char, i) => {
+          const speed = 3 + rand.nextFloat() * 7;
+          const delay = -(rand.nextFloat() * 2);
+          const amp = 0.02 + rand.nextFloat() * 0.05;
+
+          return (
+            <span
+              key={i}
+              className="char"
+              style={{ "--amp": `${amp}em`, "--speed": `${speed}s`, "--delay": `${delay}s` } as React.CSSProperties}
+            >
+              {char === ' ' ? '\u00A0' : char}
+            </span>
+          );
+        });
       })}
     </span>
   );
@@ -628,6 +659,12 @@ function rin(
 
     case 'shaky':
       return <ShakyText key={k()}>{ch(node.children)}</ShakyText>;
+
+    case 'glitch':
+      return <GlitchText key={k()}>{ch(node.children)}</GlitchText>;
+
+    case 'float':
+      return <span key={k()} className="float">{ch(node.children)}</span>;
 
     case 'timestamp':
       consumeCount(cc, 8);

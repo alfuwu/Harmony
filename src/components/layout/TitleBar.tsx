@@ -10,6 +10,8 @@ import { searchMessages } from "../../lib/api/ChannelApi";
 import { t, useLocale } from "../../lib/i18n/Index";
 import { CloseIcon, SearchIcon, UsersIcon } from "../svgs/other/Icons";
 import { useServerState } from "../../lib/state/Servers";
+import { makeMarkdownContext } from "../../lib/utils/Funcs";
+import { RenderMarkdown } from "../../lib/utils/MarkdownRenderer";
 
 export default function TitleBar() {
   useLocale();
@@ -25,6 +27,8 @@ export default function TitleBar() {
   const [searching, setSearching] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const spoilerState = useRef<Map<number, boolean>>(new Map());
 
   async function handleSearch() {
     if (!currentChannel || !query.trim())
@@ -48,14 +52,14 @@ export default function TitleBar() {
 
     if (type === ChannelType.DM) {
       const dm = currentChannel as DmChannel;
-      const otherId = dm.members?.find(id => id !== user?.id);
+      const otherId = dm.dmMembers?.find(id => id !== user?.id);
       const other = otherId !== undefined ? get(otherId) : undefined;
       return {
         icon: other ? (
           <img src={getAvatar(other)} alt="" style={{ width: 24, height: 24, borderRadius: "50%", marginRight: 6 }} />
         ) : null,
         name: other ? getDisplayName(other) : t("title.dm"),
-        sub: other ? `@${other.username}` : undefined,
+        sub: other ? `@${other.username}` : undefined
       };
     }
 
@@ -75,13 +79,19 @@ export default function TitleBar() {
   }
 
   const { icon, name, sub } = getTitle();
+  const markdownData = makeMarkdownContext();
 
   return (
     <div className="title-bar" data-tauri-drag-region>
       <div className="title uno">
         {icon}
         <span>{name}</span>
-        {sub && <span style={{ fontSize: 12, color: "var(--text-5)", fontWeight: 400, marginLeft: 8 }}>{sub}</span>}
+        {sub && (
+          <span style={{ fontSize: 12, color: "var(--text-5)", fontWeight: 400, marginLeft: 16 }}>
+            <span className="bmr">•</span>
+            {RenderMarkdown({ content: sub, spoilerStateRef: spoilerState, allowBlocks: false, maxLength: 128, ...markdownData })}
+          </span>
+        )}
       </div>
       {currentChannel && (<>
         <input

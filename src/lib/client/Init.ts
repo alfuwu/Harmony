@@ -1,8 +1,7 @@
 import { api } from "../api/Http";
 import { getMessages } from "../api/MessageApi";
-import { getServerChannels, getServerMembers, getServers } from "../api/ServerApi";
+import { getRoles, getServerChannels, getServerMembers, getServers } from "../api/ServerApi";
 import { getDmChannels } from "../api/DmApi";
-import { initSignalR } from "../api/SignalrClient";
 import { useAuthState } from "../state/Auth";
 import { useChannelState } from "../state/Channels";
 import { useMessageState } from "../state/Messages";
@@ -12,6 +11,7 @@ import { useLoadingState } from "../state/Loading";
 import { useCacheState, CacheKey } from "../state/Cache";
 import { getAllNicknames } from "../api/SocialApi";
 import { useNicknames } from "../state/Nicknames";
+import { initGateway } from "./GatewayClient";
 
 export async function initializeClient() {
   const { setUserSettings } = useAuthState.getState();
@@ -26,6 +26,8 @@ export async function initializeClient() {
 
   loading.setServersLoading(true);
   const servers = await getServers();
+  for (const server of servers)
+    server.roles = await getRoles(server.id);
   ss.addServers(servers);
   cache.markFresh(CacheKey.servers);
   loading.setServersLoading(false);
@@ -41,7 +43,7 @@ export async function initializeClient() {
   const allChannels: any[] = [];
 
   if (servers.length > 0) {
-    const lastServerId = Number(
+    const lastServerId = BigInt(
       localStorage.getItem("currentServerId") || servers[0].id
     );
     const targetServer =
@@ -71,7 +73,7 @@ export async function initializeClient() {
     }
     loading.setMembersLoading(false);
 
-    const lastChannelId = Number(localStorage.getItem("currentChannelId") || 0);
+    const lastChannelId = BigInt(localStorage.getItem("currentChannelId") || 0);
     const serverChannels = allChannels.filter(
       (c) => c.serverId === targetServer.id
     );
@@ -115,7 +117,7 @@ export async function initializeClient() {
     console.warn("Could not load nicknames", e);
   }
 
-  initSignalR({
+  initGateway({
     initialChannels: allChannels,
     initialServers: servers
   });

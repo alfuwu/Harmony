@@ -1,3 +1,4 @@
+import { BigJSON } from "../utils/JSON";
 import { Review, Server, User } from "../utils/Types";
 import { FriendRequestContext, UserContext, UserSettings } from "../utils/UserSettings";
 import { api, binapi } from "./Http";
@@ -65,7 +66,7 @@ export async function updateProfile(
   await api(`/users/@me/profile${server ? `/${server.id}` : ""}`, {
     ...options,
     method: "PATCH",
-    body: JSON.stringify(user)
+    body: BigJSON.stringify(user)
   });
 }
 
@@ -78,7 +79,7 @@ export async function updateMe(
   },
   options: RequestInit = {}
 ) {
-  await api(`/users/@me`, { ...options, method: "PATCH", body: JSON.stringify(user) });
+  await api(`/users/@me`, { ...options, method: "PATCH", body: BigJSON.stringify(user) });
 }
 
 export async function getReviews(user: User, options: RequestInit = {}): Promise<Review[]> {
@@ -103,4 +104,16 @@ export async function updateReview(user: User, content: string, options: Request
 
 export async function deleteReview(user: User, options: RequestInit = {}): Promise<void> {
   await api(`/users/${user.id}/reviews`, { ...options, method: "DELETE" });
+}
+
+export async function getUser(userId: bigint, options: RequestInit = {}): Promise<User> {
+  return await api(`/users/${userId}`, { ...options, method: "GET" });
+}
+
+export async function getUsersBulk(userIds: bigint[], options: RequestInit = {}): Promise<User[]> {
+  return await api(`/users/bulk`, {
+    ...options,
+    method: "POST",
+    body: BigJSON.stringify(userIds)
+  });
 }

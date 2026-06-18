@@ -8,7 +8,7 @@ import { userSettings } from "../../../lib/state/Auth";
 
 interface Props {
   channel: AbstractChannel;
-  serverId?: number;
+  serverId?: bigint;
   position: { x: number; y: number };
   canManageChannel?: boolean;
   onClose: () => void;

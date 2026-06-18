@@ -4,12 +4,12 @@ export type ServerFolder = {
   id: string;
   name: string;
   color?: string;
-  serverIds: number[];
+  serverIds: bigint[];
   collapsed: boolean;
 };
 
 type Arrangement = {
-  order: (number | string)[]; // server id OR folder id, top-to-bottom
+  order: (bigint | string)[]; // server id OR folder id, top-to-bottom
   folders: Record<string, ServerFolder>;
 };
 
@@ -35,27 +35,30 @@ function load(): Arrangement {
 
 function save(a: Arrangement) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ order: a.order, folders: a.folders }));
-  } catch {}
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ order: a.order, folders: a.folders })
+    );
+  } catch { }
 }
 
 // Merge known server IDs into the stored order, appending any new ones.
-function mergeOrder(stored: (number | string)[], knownIds: number[]): (number | string)[] {
-  const inOrder = new Set(stored.filter(x => typeof x === "number") as number[]);
+function mergeOrder(stored: (bigint | string)[], knownIds: bigint[]): (bigint | string)[] {
+  const inOrder = new Set(stored.filter(x => typeof x === "bigint") as bigint[]);
   const fresh = knownIds.filter(id => !inOrder.has(id));
   return [...stored, ...fresh];
 }
 
 interface ServerArrangementStore extends Arrangement {
-  init: (serverIds: number[]) => void;
+  init: (serverIds: bigint[]) => void;
   move: (fromIdx: number, toIdx: number) => void;
   createFolder: (name: string, color?: string) => string;
   renameFolder: (folderId: string, name: string) => void;
   colorFolder: (folderId: string, color: string) => void;
   deleteFolder: (folderId: string) => void;
   toggleFolder: (folderId: string) => void;
-  addToFolder: (serverId: number, folderId: string) => void;
-  removeFromFolder: (serverId: number, folderId: string) => void;
+  addToFolder: (serverId: bigint, folderId: string) => void;
+  removeFromFolder: (serverId: bigint, folderId: string) => void;
 }
 
 export const useServerArrangement = create<ServerArrangementStore>((set, get) => ({
@@ -66,7 +69,7 @@ export const useServerArrangement = create<ServerArrangementStore>((set, get) =>
       const order = mergeOrder(s.order, serverIds);
       const knownSet = new Set(serverIds);
       const cleaned = order.filter(x =>
-        typeof x === "string" || knownSet.has(x as number)
+        typeof x === "string" || knownSet.has(x as bigint)
       );
       const folders = { ...s.folders };
       for (const fid of Object.keys(folders)) {

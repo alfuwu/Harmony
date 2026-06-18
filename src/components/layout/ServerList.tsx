@@ -6,16 +6,22 @@ import { useLoadingState } from "../../lib/state/Loading";
 import { SkeletonServerList } from "./Skeleton";
 import CreateServerModal from "./modals/CreateSeverModal";
 import ContextMenu, { ContextMenuItem } from "./ContextMenu";
-import { joinServer } from "../../lib/api/SignalrClient";
+import { joinServer } from "../../lib/client/GatewayClient";
 import { hostUrl } from "../../App";
 import { getIcon } from "../../lib/utils/ServerUtils";
 import { t, useLocale } from "../../lib/i18n/Index";
-import { HashIcon, InviteIcon, LogOutIcon, MessageIcon } from "../svgs/other/Icons";
+import { BellIcon, CodeBracketsIcon, GearIcon, HashIcon, InviteIcon, LogOutIcon, MessageIcon, PlusIcon } from "../svgs/other/Icons";
 import { Server } from "../../lib/utils/Types";
 import UnreadBadge from "./misc/UnreadBadge";
+import ViewRawModal from "./modals/ViewRawModal";
 import { ServerFolder, useServerArrangement } from "../../lib/state/ServerArrangement";
 import { useUnread } from "../../lib/state/Unread";
 import { getChannelIds } from "../../lib/utils/ChannelUtils";
+import { getAs, userSettings } from "../../lib/state/Auth";
+import { hasPermission, Permission } from "../../lib/utils/PermissionUtils";
+import { getUs } from "../../lib/state/Users";
+import ServerSettingsModal from "./modals/ServerSettingsModal";
+import { BigJSON } from "../../lib/utils/JSON";
 
 function ServerIcon({
   server,
@@ -50,7 +56,6 @@ function ServerIcon({
         transition: dragging ? "none" : "opacity 120ms"
       }}
     >
-      {/* Active / unread pill on left */}
       <div
         style={{
           position: "absolute",
@@ -118,16 +123,16 @@ function FolderItem({
 }: {
   folder: ServerFolder;
   servers: Server[];
-  currentServerId?: number | null;
-  unreadMap: Record<number, boolean>;
-  mentionMap: Record<number, boolean>;
+  currentServerId?: bigint | null;
+  unreadMap: Map<bigint, boolean>;
+  mentionMap: Map<bigint, boolean>;
   onSelect: (s: Server) => void;
   onContextMenu: (e: React.MouseEvent, s: Server) => void;
   onFolderContextMenu: (e: React.MouseEvent, folder: ServerFolder) => void;
 }) {
   const toggleFolder = useServerArrangement(s => s.toggleFolder);
-  const folderUnread  = folder.serverIds.some(id => unreadMap[id]);
-  const folderMention = folder.serverIds.some(id => mentionMap[id]);
+  const folderUnread  = folder.serverIds.some(id => unreadMap.get(id));
+  const folderMention = folder.serverIds.some(id => mentionMap.get(id));
   const color = folder.color ?? "var(--accent-1)";
 
   if (folder.collapsed) {
@@ -205,8 +210,8 @@ function FolderItem({
           key={s.id}
           server={s}
           active={currentServerId === s.id}
-          unread={unreadMap[s.id] ?? false}
-          mention={mentionMap[s.id] ?? false}
+          unread={unreadMap.get(s.id) ?? false}
+          mention={mentionMap.get(s.id) ?? false}
           dragging={false}
           onPointerDown={() => {}}
           onClick={() => onSelect(s)}
@@ -234,28 +239,34 @@ export default function ServerList({ onDmClick, showDms }: Props) {
   const { serverHasUnread, hasMention } = useUnread();
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; serverId: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; server: Server } | null>(null);
 
-  const prevIds = useRef<number[]>([]);
+  const prevIds = useRef<bigint[]>([]);
   const ids = servers.map(s => s.id);
-  if (JSON.stringify(ids) !== JSON.stringify(prevIds.current)) {
+  if (BigJSON.stringify(ids) !== BigJSON.stringify(prevIds.current)) {
     prevIds.current = ids;
     init(ids);
   }
 
-  const unreadMap: Record<number, boolean> = {};
-  const mentionMap: Record<number, boolean> = {};
+  const unreadMap: Map<bigint, boolean> = new Map();
+  const mentionMap: Map<bigint, boolean> = new Map();
   for (const s of servers) {
     const channelIds = getChannelIds(s.id);
-    unreadMap[s.id] = serverHasUnread(channelIds);
-    mentionMap[s.id] = channelIds.some(hasMention);
+    unreadMap.set(s.id, serverHasUnread(channelIds));
+    mentionMap.set(s.id, channelIds.some(hasMention));
   }
 
-  const serverMap = Object.fromEntries(servers.map(s => [s.id, s]));
+  const serverMap = new Map(servers.map(s => [s.id, s]));
 
   const dragIdx = useRef<number | null>(null);
   const [draggingOrderIdx, setDraggingOrderIdx] = useState<number | null>(null);
   const dragStartY = useRef(0);
+
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [rawOpen, setRawOpen] = useState<Server | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [folderPickOpen,  setFolderPickOpen] = useState(false);
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
 
   const onPointerDown = useCallback((e: React.PointerEvent, orderIdx: number) => {
     e.preventDefault();
@@ -309,7 +320,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
     joinServer(s.id);
   }
 
-  async function handleLeaveServer(serverId: number) {
+  async function handleLeaveServer(serverId: bigint) {
     try {
       await leaveServer(serverId);
       removeServer(serverId);
@@ -325,26 +336,25 @@ export default function ServerList({ onDmClick, showDms }: Props) {
   function openCtx(e: React.MouseEvent, server: Server) {
     e.preventDefault();
     e.stopPropagation();
-    setCtxMenu({ x: e.clientX, y: e.clientY, serverId: server.id });
+    setCtxMenu({ x: e.clientX, y: e.clientY, server });
   }
 
-  function buildCtxItems(serverId: number): ContextMenuItem[] {
-    const server = servers.find((s) => s.id === serverId);
+  function buildCtxItems(server: Server): ContextMenuItem[] {
     if (!server)
       return [];
 
     const items: ContextMenuItem[] = [
       {
-        label: t("server.copy_id"),
-        icon: <HashIcon size={14} />,
-        onClick: () => navigator.clipboard.writeText(String(serverId))
-      },
+        label: "Notification level...",
+        icon: <BellIcon size={16} />,
+        onClick: () => setNotifOpen(true)
+      }
     ];
 
     if (server.inviteUrls?.[0]) {
       items.push({
         label: t("server.copy_invite"),
-        icon: <InviteIcon size={14} />,
+        icon: <InviteIcon size={16} />,
         onClick: () =>
           navigator.clipboard.writeText(
             `${hostUrl}/invite/${server.inviteUrls![0]}`
@@ -352,12 +362,34 @@ export default function ServerList({ onDmClick, showDms }: Props) {
       });
     }
 
+    if (hasPermission(getUs().getMember(getAs().user?.id, server.id), server, Permission.ManageServer)) {
+      items.push({
+        label: "Server Settings",
+        icon: <GearIcon size={16} />,
+        onClick: () => setSettingsOpen(true)
+      })
+    }
+
+    if (userSettings()?.developerMode) {
+      items.push({ label: "", onClick: () => {}, divider: true });
+      items.push({
+        label: t("server.copy_id"),
+        icon: <HashIcon size={16} />,
+        onClick: () => navigator.clipboard.writeText(String(server.id))
+      })
+      items.push({
+        label: "View Raw",
+        icon: <CodeBracketsIcon size={16} />,
+        onClick: () => setRawOpen(server)
+      })
+    }
+
     items.push({ label: "", onClick: () => {}, divider: true });
     items.push({
       label: t("server.leave"),
-      icon: <LogOutIcon size={14} />,
+      icon: <LogOutIcon size={16} />,
       danger: true,
-      onClick: () => handleLeaveServer(serverId)
+      onClick: () => handleLeaveServer(server.id)
     });
 
     return items;
@@ -400,7 +432,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
               if (!folder)
                 return null;
               const folderServers = folder.serverIds
-                .map(id => serverMap[id])
+                .map(id => serverMap.get(id))
                 .filter(Boolean) as Server[];
 
               return (
@@ -418,7 +450,7 @@ export default function ServerList({ onDmClick, showDms }: Props) {
               );
             }
 
-            const server = serverMap[item];
+            const server = serverMap.get(item);
             if (!server)
               return null;
 
@@ -427,8 +459,8 @@ export default function ServerList({ onDmClick, showDms }: Props) {
                 key={server.id}
                 server={server}
                 active={currentServer?.id !== undefined && currentServer?.id === server.id}
-                unread={unreadMap[server.id] ?? false}
-                mention={mentionMap[server.id] ?? false}
+                unread={unreadMap.get(server.id) ?? false}
+                mention={mentionMap.get(server.id) ?? false}
                 dragging={draggingOrderIdx === idx}
                 onPointerDown={e => onPointerDown(e, idx)}
                 onClick={() => handleSelectServer(server)}
@@ -441,20 +473,8 @@ export default function ServerList({ onDmClick, showDms }: Props) {
 
       <hr />
 
-      <div className="uno create-server">
-        <svg
-          className="create-server"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-          role="img"
-          fill="none"
-          viewBox="0 0 90 90"
-          onClick={() => setModalOpen(true)}
-        >
-          <path d="M 45 69.478 c -1.657 0 -3 -1.343 -3 -3 V 23.523 c 0 -1.657 1.343 -3 3 -3 c 1.657 0 3 1.343 3 3 v 42.955 C 48 68.135 46.657 69.478 45 69.478 z" stroke="none" strokeWidth="1" strokeDasharray="none" strokeLinejoin="miter" strokeMiterlimit="10" fill="currentColor" fillRule="nonzero" opacity="1" transform="matrix(1 0 0 1 0 0)" strokeLinecap="round" />
-          <path d="M 66.478 48 H 23.523 c -1.657 0 -3 -1.343 -3 -3 c 0 -1.657 1.343 -3 3 -3 h 42.955 c 1.657 0 3 1.343 3 3 C 69.478 46.657 68.135 48 66.478 48 z" stroke="none" strokeWidth="1" strokeDasharray="none" strokeLinejoin="miter" strokeMiterlimit="10" fill="currentColor" fillRule="nonzero" opacity="1" transform="matrix(1 0 0 1 0 0)" strokeLinecap="round" />
-          <path d="M 45 90 C 20.187 90 0 69.813 0 45 C 0 20.187 20.187 0 45 0 c 24.813 0 45 20.187 45 45 C 90 69.813 69.813 90 45 90 z M 45 6 C 23.495 6 6 23.495 6 45 s 17.495 39 39 39 s 39 -17.495 39 -39 S 66.505 6 45 6 z" stroke="none" strokeWidth="1" strokeDasharray="none" strokeLinejoin="miter" strokeMiterlimit="10" fill="currentColor" fillRule="nonzero" opacity="1" transform="matrix(1 0 0 1 0 0)" strokeLinecap="round"/>
-        </svg>
+      <div className="uno create-server" onClick={() => setModalOpen(true)}>
+        <PlusIcon className="create-server" size={32} />
       </div>
 
       <CreateServerModal
@@ -465,11 +485,21 @@ export default function ServerList({ onDmClick, showDms }: Props) {
 
       {ctxMenu && (
         <ContextMenu
-          items={buildCtxItems(ctxMenu.serverId)}
+          items={buildCtxItems(ctxMenu.server)}
           position={{ x: ctxMenu.x, y: ctxMenu.y }}
           onClose={() => setCtxMenu(null)}
         />
       )}
+
+      {rawOpen && (
+        <ViewRawModal
+          title="json.raw_server"
+          data={rawOpen}
+          onClose={() => { setRawOpen(null); setCtxMenu(null); }}
+        />
+      )}
+
+      <ServerSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

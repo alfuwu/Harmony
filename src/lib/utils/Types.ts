@@ -13,27 +13,27 @@ export interface Attachment {
 }
 
 export interface Message {
-  id: number;
-  channelId: number;
-  authorId: number;
+  id: bigint;
+  channelId: bigint;
+  authorId: bigint;
   mentionsEveryone?: boolean | null;
-  mentions?: number[] | null;
-  mentionRoles?: number[] | null;
+  mentions?: bigint[] | null;
+  mentionRoles?: bigint[] | null;
   reactions?: Reaction[] | null;
   content: string;
   previousContent?: string[] | null;
-  references?: number[] | null;
+  references?: bigint[] | null;
   attachments?: Attachment[] | null;
   timestamp: string;
   editedTimestamp?: string | null;
   isPinned: boolean;
   sending?: boolean;
-  nonce?: number;
+  nonce?: bigint;
 }
 
 /// users
 export interface User {
-  id: number;
+  id: bigint;
   email?: string | null;
   emailVerified?: boolean | null;
   phoneNumber?: string | null;
@@ -53,7 +53,7 @@ export interface User {
   nameFont?: string | null;
   joinedAt: string;
   lastSeen: string;
-  flags: number;
+  flags: bigint;
   dmColor?: number | null;
   dmColors?: number[] | null;
   dmNameDisplayType?: RoleDisplayType | null;
@@ -88,9 +88,8 @@ export enum OnlineStatus {
 }
 
 export interface Member {
-  userId: number;
-  user?: User;
-  serverId: number;
+  userId: bigint;
+  serverId: bigint;
   nickname?: string | null;
   bio?: string | null;
   pronouns?: string | null;
@@ -98,39 +97,39 @@ export interface Member {
   banner?: string | null;
   nameFont?: string | null;
   joinedAt: string;
-  roles: number[];
+  roles: bigint[];
   totalXp?: number | null;
   level?: number | null;
 }
 
 export interface QuotebookEntry {
-  id: number;
-  userId: number;
-  messageId: number;
-  channelId: number;
+  id: bigint;
+  userId: bigint;
+  messageId: bigint;
+  channelId: bigint;
   note?: string | null;
   savedAt: string;
 }
 
 export interface Review {
-  authorId: number;
-  subjectId: number;
+  authorId: bigint;
+  subjectId: bigint;
   content: string;
   createdAt: string;
   editedAt?: string | null;
 }
 
 export interface Presence {
-  userId: number;
+  userId: bigint;
   onlineStatus: OnlineStatus;
   statusText?: string | null;
   showStatusWhileOffline?: boolean;
 }
 
 export interface VoiceState {
-  userId: number;
-  channelId?: number;
-  serverId?: number;
+  userId: bigint;
+  channelId?: bigint;
+  serverId?: bigint;
   muted?: boolean;
   deafeaned?: boolean;
   selfMuted?: boolean;
@@ -141,29 +140,28 @@ export interface VoiceState {
 
 /// roles
 export interface Role {
-  id: number;
-  serverId: number;
+  id: bigint;
+  serverId: bigint;
   name: string;
   description?: string | null;
   icon?: string | null;
-  permissions: number;
+  permissions: bigint;
   position: number;
   displaysSeparately: boolean;
-  flags: number;
+  flags: bigint;
   color?: number | null;
   colors?: number[] | null;
   displayType: RoleDisplayType;
-  visibleTo?: number[] | null;
-  categoryId?: number | null;
+  visibleTo?: bigint[] | null;
+  categoryId?: bigint | null;
 }
 
 export interface FullRole extends Role {
-  linkedRoles?: number[] | null;
-  mutuallyExclusiveRoles?: number[] | null;
-  prerequisites?: RolePrerequisite[] | null;
-  permissionPriority: number;
-  grantableRoles?: number[] | null;
-  canPing?: number[] | null;
+  linkedRoles?: bigint[] | null;
+  mutuallyExclusiveRoles?: bigint[] | null;
+  permissionPriority: bigint;
+  grantableRoles?: bigint[] | null;
+  canPing?: bigint[] | null;
 }
 
 export enum RoleDisplayType {
@@ -173,32 +171,15 @@ export enum RoleDisplayType {
   GradientGlow = 3
 }
 
-export interface RolePrerequisite {
-  type: PrequisiteType;
-  requiredRoleId?: number;
-  minAccountAge?: string;
-  minServerDuration?: string;
-  minMessageCount?: number;
-  autoGrant: boolean;
-  autoRevoke: boolean;
-}
-
-export enum PrequisiteType {
-  RoleHeld = 0,
-  AccountAge = 1,
-  MembershipDuration = 2,
-  MessageCount = 3
-}
-
 /// channels
 export interface AbstractChannel {
-  id: number;
+  id: bigint;
   type: ChannelType;
-  lastMessage?: number | null;
+  lastMessage?: bigint | null;
   name?: string | null;
   description?: string | null;
-  serverId?: number;
-  parentId?: number;
+  serverId?: bigint;
+  parentId?: bigint;
   icon?: string | null;
   position?: number;
   slowmode?: number;
@@ -206,8 +187,8 @@ export interface AbstractChannel {
 }
 
 export interface Channel extends AbstractChannel {
-  serverId: number;
-  parentId: number;
+  serverId: bigint;
+  parentId: bigint;
   name: string;
   description?: string | null;
   icon?: string | null;
@@ -217,23 +198,23 @@ export interface Channel extends AbstractChannel {
 }
 
 export interface DmChannel extends AbstractChannel {
-  members: number[];
+  dmMembers: bigint[];
   isDeleted: boolean;
 }
 
 export interface GroupDmChannel extends AbstractChannel {
-  ownerId: number;
+  ownerId: bigint;
   name?: string | null;
   description?: string | null;
   icon?: string | null;
   inviteUrls?: string[] | null;
-  members: number[];
+  members: bigint[];
   createdAt: string;
 }
 
 export interface Thread extends Channel {
-  ownerId: number;
-  members: number[];
+  ownerId: bigint;
+  members: bigint[];
   archiveAfter: number;
   archived: boolean;
   private: boolean;
@@ -266,8 +247,8 @@ export enum RelationshipType {
 
 /// server
 export interface Server {
-  id: number;
-  ownerId: number;
+  id: bigint;
+  ownerId: bigint;
   name: string;
   description?: string | null;
   icon?: string | null;
@@ -283,23 +264,23 @@ export interface Server {
 
 /// small stuff
 export interface Typing {
-  channelId: number;
-  userId: number;
+  channelId: bigint;
+  userId: bigint;
 }
 
 export interface Reaction {
-  reactors: number[];
+  reactors: bigint[];
   emoji: Emoji;
 }
 
 export interface Emoji {
-  id?: number | null;
+  id?: bigint | null;
   animated?: boolean;
   name: string;
 }
 
 export interface RelationshipEntry {
-  userId: number;
+  userId: bigint;
   type: RelationshipType;
   isIncoming?: boolean | null;
 }

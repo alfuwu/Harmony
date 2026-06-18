@@ -1,7 +1,8 @@
+import { BigJSON } from "../utils/JSON";
 import { QuotebookEntry } from "../utils/Types";
 import { api } from "./Http";
 
-export async function getUserNote(subjectId: number, options: RequestInit = {}): Promise<{ content: string; authorId: number; subjectId: number } | null> {
+export async function getUserNote(subjectId: bigint, options: RequestInit = {}): Promise<{ content: string; authorId: bigint; subjectId: bigint } | null> {
   try {
     return await api(`/users/${subjectId}/note`, { ...options, method: "GET" });
   } catch {
@@ -9,7 +10,7 @@ export async function getUserNote(subjectId: number, options: RequestInit = {}):
   }
 }
 
-export async function setUserNote(subjectId: number, content: string, options: RequestInit = {}): Promise<void> {
+export async function setUserNote(subjectId: bigint, content: string, options: RequestInit = {}): Promise<void> {
   await api(`/users/${subjectId}/note`, {
     ...options,
     method: "PUT",
@@ -17,13 +18,13 @@ export async function setUserNote(subjectId: number, content: string, options: R
   });
 }
 
-export async function deleteUserNote(subjectId: number, options: RequestInit = {}): Promise<void> {
+export async function deleteUserNote(subjectId: bigint, options: RequestInit = {}): Promise<void> {
   await api(`/users/${subjectId}/note`, { ...options, method: "DELETE" });
 }
 
 export interface Nickname {
-  assignerId: number;
-  subjectId: number;
+  assignerId: bigint;
+  subjectId: bigint;
   nickname: string;
   setAt: string;
 }
@@ -32,15 +33,15 @@ export async function getAllNicknames(options: RequestInit = {}): Promise<Nickna
   return api(`/users/@me/nicknames`, { ...options, method: "GET" });
 }
 
-export async function setNickname(subjectId: number, nickname: string, options: RequestInit = {}): Promise<void> {
+export async function setNickname(subjectId: bigint, nickname: string, options: RequestInit = {}): Promise<void> {
   await api(`/users/${subjectId}/nickname`, {
     ...options,
     method: "PUT",
-    body: JSON.stringify({ subjectId, nickname })
+    body: BigJSON.stringify({ subjectId, nickname })
   });
 }
 
-export async function deleteNickname(subjectId: number, options: RequestInit = {}): Promise<void> {
+export async function deleteNickname(subjectId: bigint, options: RequestInit = {}): Promise<void> {
   await api(`/users/${subjectId}/nickname`, { ...options, method: "DELETE" });
 }
 
@@ -59,27 +60,18 @@ export const BadgeLabels: Record<number, string> = {
   2: "Bug Reporter",
   3: "Staff",
   4: "Verified",
-  5: "Supporter",
-};
-
-export const BadgeIcons: Record<number, string> = {
-  0: "⭐",
-  1: "🔥",
-  2: "🐛",
-  3: "🛡️",
-  4: "✅",
-  5: "💎",
+  5: "Supporter"
 };
 
 export interface Badge {
-  userId: number;
+  userId: bigint;
   type: number;
   isVisible: boolean;
   displayOrder: number;
   earnedAt: string;
 }
 
-export async function getUserBadges(userId: number, options: RequestInit = {}): Promise<Badge[]> {
+export async function getUserBadges(userId: bigint, options: RequestInit = {}): Promise<Badge[]> {
   return api(`/users/${userId}/badges`, { ...options, method: "GET" });
 }
 
@@ -95,31 +87,31 @@ export async function getQuotebook(page: number = 0, options: RequestInit = {}):
   return api(`/users/@me/quotebook?page=${page}&pageSize=50`, { ...options, method: "GET" });
 }
 
-export async function addToQuotebook(messageId: number, channelId: number, note?: string, options: RequestInit = {}): Promise<QuotebookEntry> {
+export async function addToQuotebook(messageId: bigint, channelId: bigint, note?: string, options: RequestInit = {}): Promise<QuotebookEntry> {
   return api(`/users/@me/quotebook`, {
     ...options,
     method: "POST",
-    body: JSON.stringify({ messageId, channelId, note })
+    body: BigJSON.stringify({ messageId, channelId, note })
   });
 }
 
-export async function removeFromQuotebook(entryId: number, options: RequestInit = {}): Promise<void> {
+export async function removeFromQuotebook(entryId: bigint, options: RequestInit = {}): Promise<void> {
   await api(`/users/@me/quotebook/${entryId}`, { ...options, method: "DELETE" });
 }
 
-export async function sendFriendRequest(targetId: number, options: RequestInit = {}): Promise<void> {
+export async function sendFriendRequest(targetId: bigint, options: RequestInit = {}): Promise<void> {
   await api(`/users/add-friend`, {
     ...options,
     method: "POST",
-    body: JSON.stringify(targetId)
+    body: BigJSON.stringify(targetId)
   });
 }
 
-export async function acceptFriendRequest(sourceId: number, options: RequestInit = {}): Promise<void> {
+export async function acceptFriendRequest(sourceId: bigint, options: RequestInit = {}): Promise<void> {
   await api(`/users/accept-friend`, {
     ...options,
     method: "POST",
-    body: JSON.stringify(sourceId)
+    body: BigJSON.stringify(sourceId)
   });
 }
 

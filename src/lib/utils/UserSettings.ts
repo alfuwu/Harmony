@@ -247,7 +247,7 @@ export interface UserSettings {
     developerMode: boolean;
 
     // hidden stuff (not shown in user settings modal)
-    hiddenChannels: number[];
-    mutedChannels: number[];
+    //hiddenChannels: bigint[];
+    //mutedChannels: bigint[];
     preferredStatus: OnlineStatus | null;
 }

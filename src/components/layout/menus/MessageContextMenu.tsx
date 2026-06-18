@@ -18,8 +18,8 @@ type MenuItem = Action | "separator";
 
 interface Props {
   message: Message;
-  channelId: number;
-  serverId?: number;
+  channelId: bigint;
+  serverId?: bigint;
   position: { x: number; y: number };
   canManageMessages?: boolean;
   canPin?: boolean;
@@ -53,7 +53,7 @@ export default function MessageContextMenu({
   const [rawOpen, setRawOpen] = useState(false);
 
   const { entries, translate, dismiss } = useTranslations();
-  const isTranslated = Boolean(entries[message.id]);
+  const isTranslated = Boolean(entries.get(message.id));
 
   const { user: currentUser, userSettings } = getAs();
 

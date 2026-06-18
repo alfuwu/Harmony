@@ -295,11 +295,11 @@ export function slateFromMarkdown(text: string | null | undefined): any[] {
       while (j < lines.length && lines[j].trim() !== '```')
         body.push(lines[j++]);
       if (j < lines.length) {
-        result.push({ type: 'code-block', ...(lang && { language: lang }), children: [{ text: body.join('\n') }] });
+        result.push({ type: 'codeBlock', ...(lang && { language: lang }), children: [{ text: body.join('\n') }] });
         i = j + 1;
         continue;
       }
-      result.push({ type: 'code-block', ...(lang && { language: lang }), children: [{ text: body.join('\n') }] });
+      result.push({ type: 'codeBlock', ...(lang && { language: lang }), children: [{ text: body.join('\n') }] });
       i = lines.length;
       continue;
     }
@@ -408,9 +408,9 @@ function getEmojiNative(name: string): string | null {
 
 export function withAutoFormatMentions(
   editor: Editor,
-  getUser: (id: number) => User | undefined,
-  getChannel: (id: number) => AbstractChannel | undefined,
-  getServer: (id: number) => Server | undefined,
+  getUser: (id: bigint) => User | undefined,
+  getChannel: (id: bigint) => AbstractChannel | undefined,
+  getServer: (id: bigint) => Server | undefined,
   getUserFromName: (username: string, discriminator: number) => User | undefined
 ): Editor {
   const { normalizeNode } = editor;
@@ -418,19 +418,19 @@ export function withAutoFormatMentions(
   const MENTION_PATTERNS = [
     {
       re: /<@&(\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mentionRole', id, children: [{ text: raw }] })
+      build: (id: bigint, raw: string) => ({ type: 'mentionRole', id, children: [{ text: raw }] })
     },
     {
       re: /<@(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mentionUser', id, user: getUser(id), children: [{ text: raw }] })
+      build: (id: bigint, raw: string) => ({ type: 'mentionUser', id, user: getUser(id), children: [{ text: raw }] })
     },
     {
       re: /<#&(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mentionServer', id, server: getServer(id), children: [{ text: raw }] })
+      build: (id: bigint, raw: string) => ({ type: 'mentionServer', id, server: getServer(id), children: [{ text: raw }] })
     },
     {
       re: /<#(-?\d+)>/,
-      build: (id: number, raw: string) => ({ type: 'mentionChannel', id, channel: getChannel(id), children: [{ text: raw }] })
+      build: (id: bigint, raw: string) => ({ type: 'mentionChannel', id, channel: getChannel(id), children: [{ text: raw }] })
     }
   ];
 
@@ -480,7 +480,7 @@ export function withAutoFormatMentions(
           best = {
             index: m.index,
             end: m.index + m[0].length,
-            voidNode: build(Number(m[1]), m[0])
+            voidNode: build(BigInt(m[1]), m[0])
           };
       }
 

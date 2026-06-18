@@ -1,3 +1,4 @@
+import { BigJSON } from "../utils/JSON";
 import { ChannelType, DmChannel, GroupDmChannel } from "../utils/Types";
 import { api } from "./Http";
 
@@ -5,22 +6,22 @@ export async function getDmChannels(options: RequestInit = {}): Promise<(DmChann
   return api(`/dms`, { ...options, method: "GET" });
 }
 
-export async function createDm(userId: number, options: RequestInit = {}): Promise<DmChannel> {
+export async function createDm(userId: bigint, options: RequestInit = {}): Promise<DmChannel> {
   return api(`/dms`, {
     ...options,
     method: "POST",
-    body: JSON.stringify({ others: [userId], type: ChannelType.DM })
+    body: BigJSON.stringify({ others: [userId], type: ChannelType.DM })
   });
 }
 
-export async function createGroupDm(userIds: number[], options: RequestInit = {}): Promise<GroupDmChannel> {
+export async function createGroupDm(userIds: bigint[], options: RequestInit = {}): Promise<GroupDmChannel> {
   return api(`/dms`, {
     ...options,
     method: "POST",
-    body: JSON.stringify({ others: userIds, type: ChannelType.GroupDM })
+    body: BigJSON.stringify({ others: userIds, type: ChannelType.GroupDM })
   });
 }
 
-export async function deleteDmChannel(channelId: number, isGdm: boolean = false, options: RequestInit = {}): Promise<void> {
+export async function deleteDmChannel(channelId: bigint, isGdm: boolean = false, options: RequestInit = {}): Promise<void> {
   return api(`/dms/${channelId}?isGdm=${isGdm}`, { ...options, method: "DELETE" });
 }

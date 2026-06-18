@@ -6,7 +6,7 @@ import {
   getBio,
   getDisplayName,
   getHandle,
-  getPronouns,
+  getPronouns
 } from "../../../lib/utils/UserUtils";
 import { getSs } from "../../../lib/state/Servers";
 import { getUs } from "../../../lib/state/Users";
@@ -15,8 +15,7 @@ import { RenderContext, RenderMarkdown } from "../../../lib/utils/MarkdownRender
 import {
   getUserBadges,
   Badge,
-  BadgeLabels,
-  BadgeIcons,
+  BadgeLabels
 } from "../../../lib/api/SocialApi";
 import { getReviews } from "../../../lib/api/UserApi";
 import { t, useLocale } from "../../../lib/i18n/Index";
@@ -26,6 +25,7 @@ import ReviewsModal, { reviewsCache } from "../modals/ReviewsModal";
 import { formatDate, intToHex, makeMarkdownContext, roleToStyle } from "../../../lib/utils/Funcs";
 import { getAs } from "../../../lib/state/Auth";
 import { ClockIcon } from "../../svgs/other/Icons";
+import { BADGE_ICONS } from "../../svgs/other/BadgeIcons";
 
 interface UserPopoutProps {
   user: User;
@@ -284,7 +284,7 @@ export default function UserPopout({
   const clampedTop = Math.max(0, Math.min(position.top, window.innerHeight - size.height - 50));
 
   const bannerBg = resolvedBannerUrl ? `url(${resolvedBannerUrl})` : undefined;
-  const bannerColor = intToHex(user.bannerColor);
+  const bannerColor = user.bannerColor > -1 ? intToHex(user.bannerColor) : undefined;
   const status = user.onlineStatus ?? OnlineStatus.Offline;
   const statusMeta = STATUS_META[status];
 
@@ -401,20 +401,23 @@ export default function UserPopout({
             justifyContent: "flex-end",
             paddingTop: 6, minHeight: 28
           }}>
-            {badges.map(b => (
-              <span
-                key={b.type}
-                title={BadgeLabels[b.type] ?? t("user.badge_fallback", { type: b.type })}
-                style={{
-                  fontSize: 15,
-                  lineHeight: 1,
-                  cursor: "default",
-                  filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))"
-                }}
-              >
-                {BadgeIcons[b.type] ?? "🏅"}
-              </span>
-            ))}
+            {badges.map(b => {
+              const BadgeIcon = BADGE_ICONS[b.type];
+              return (
+                <span
+                  key={b.type}
+                  title={BadgeLabels[b.type] ?? t("user.badge_fallback", { type: b.type })}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    cursor: "default",
+                    filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.4))"
+                  }}
+                >
+                  {BadgeIcon ? <BadgeIcon size={22} /> : null}
+                </span>
+              );
+            })}
           </div>
         </div>
 

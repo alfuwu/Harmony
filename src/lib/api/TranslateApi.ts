@@ -2,7 +2,7 @@ export async function googleTranslate(
   text: string,
   targetLang: string,
   sourceLang = "auto"
-): Promise<string> {
+): Promise<{ text: string, source: string }> {
   const url =
     `https://translate.googleapis.com/translate_a/single` +
     `?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
@@ -18,5 +18,5 @@ export async function googleTranslate(
     .map(pair => pair[0] ?? "")
     .join("");
 
-  return translated;
+  return { text: translated, source: json[2] ?? "unkown" };
 }

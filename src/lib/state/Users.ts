@@ -2,28 +2,29 @@ import { create } from "zustand";
 import type React from "react";
 import { Member, User } from "../utils/Types";
 import { getNameFont } from "../utils/UserUtils";
+import { getUser, getUsersBulk } from "../api/UserApi";
 
 export interface UserState {
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
-  get: (id: number) => User | undefined;
-  getUser: (id: number) => User | undefined;
+  get: (id: bigint) => User | undefined;
+  getUser: (id: bigint) => User | undefined;
   addUser: (user: User) => void;
   addUsers: (users: User[]) => void;
-  removeUser: (id: number) => void;
-  removeUsers: (ids: number[]) => void;
+  removeUser: (id: bigint) => void;
+  removeUsers: (ids: bigint[]) => void;
   
   members: Member[];
   setMembers: React.Dispatch<React.SetStateAction<Member[]>>;
-  getMember: (id: number | undefined, serverId: number | undefined) => Member | undefined;
-  getMembersFor: (id: number | undefined) => Member[] | undefined;
+  getMember: (id: bigint | undefined, serverId: bigint | undefined) => Member | undefined;
+  getMembersFor: (id: bigint | undefined) => Member[] | undefined;
   addMember: (member: Member) => void;
   addMembers: (members: Member[]) => void;
-  removeMember: (id: number, serverId: number) => void;
-  removeMembers: (members: { id: number; serverId: number }[]) => void;
+  removeMember: (id: bigint, serverId: bigint) => void;
+  removeMembers: (members: { id: bigint; serverId: bigint }[]) => void;
 }
 
-const makeKey = (id: number, serverId: number) => `${serverId}:${id}`;
+const makeKey = (id: bigint, serverId: bigint) => `${serverId}:${id}`;
 
 function registerUserFont(user: User) {
   const [url, isCustom] = getNameFont(user);
@@ -35,7 +36,7 @@ function registerUserFont(user: User) {
 function registerMemberFont(member: Member) {
   if (!member.nameFont)
     return;
-  const [url, isCustom] = getNameFont(member.user, member);
+  const [url, isCustom] = getNameFont(undefined, member); // TODO: fix
   if (!isCustom)
     return;
   registerFont(makeKey(member.userId, member.serverId), member.nameFont, url!);
@@ -99,12 +100,14 @@ export const useUserState = create<UserState>((set, get) => ({
 
   addMember: (member) => {
     registerMemberFont(member);
-    if (member.user) {
-      const existing = get().users.find(u => u.id === member.user!.id);
-      if (!existing)
-        get().addUser(member.user);
-      member.userId = member.user.id;
-      member.user = undefined;
+    if (!get().get(member.userId)) {
+      getUser(member.userId).then(u => {
+        set(state => {
+          const key = makeKey(member.userId, member.serverId);
+          return { users: [ ...state.users, u], members: [...state.members.filter(m => makeKey(m.userId, m.serverId) !== key), member] };
+        });
+      });
+      return;
     }
     set(state => {
       const key = makeKey(member.userId, member.serverId);
@@ -113,15 +116,21 @@ export const useUserState = create<UserState>((set, get) => ({
   },
 
   addMembers: (newMembers) => {
+    const noUsers = [];
+    const state = get();
     for (const m of newMembers) {
-      if (m.user) {
-        const existing = get().users.find(u => u.id === m.user!.id);
-        if (!existing)
-          get().addUser(m.user);
-        m.userId = m.user.id;
-        m.user = undefined;
-      }
+      if (!state.get(m.userId))
+        noUsers.push(m.userId);
       registerMemberFont(m);
+    }
+    if (noUsers.length > 0) {
+      getUsersBulk(noUsers).then(users => {
+        set(state => {
+          const keys = new Set(newMembers.map(m => makeKey(m.userId, m.serverId)));
+          return { users: [...state.users, ...users], members: [...state.members.filter(m => !keys.has(makeKey(m.userId, m.serverId))), ...newMembers] };
+        });
+      });
+      return;
     }
     set(state => {
       const keys = new Set(newMembers.map(m => makeKey(m.userId, m.serverId)));

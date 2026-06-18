@@ -105,6 +105,8 @@ export default function LoginScreen() {
       }
 
       await completeLogin(result.token);
+    } catch (e: any) {
+      setError(e.message ?? "login.login_failed");
     } finally {
       setLoading(false);
     }

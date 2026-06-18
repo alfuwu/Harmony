@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import React, { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { decode } from "blurhash";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -13,13 +13,23 @@ import { AMFLoader } from "three/addons/loaders/AMFLoader.js";
 import { USDZLoader } from "three/addons/loaders/USDZLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { decompress } from "fzstd";
+
+import type { HighlighterCore } from "shiki/core";
+import { superHighlighter, highlighterReady, ensureLanguageLoaded } from "../../lib/utils/MarkdownRenderer";
+import { useShikiHighlighter } from "react-shiki";
+
 import { hostUrl } from "../../App";
 import TextDocument from "../svgs/other/TextDocument";
 import { Attachment } from "../../lib/utils/Types";
 import { t } from "../../lib/i18n/Index";
-import { CloseIcon, FilmIcon } from "../svgs/other/Icons";
+import { ArchiveIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, CodeBracketsIcon, CubeIcon, FilmIcon, FolderIcon, GenericFileIcon, ImageFileIcon, MusicNoteIcon, SVGFileIcon, TableGridIcon } from "../svgs/other/Icons";
+import { userSettings } from "../../lib/state/Auth";
+import { Theme } from "../../lib/utils/UserSettings";
 
-type AttachmentKind = "image" | "video" | "audio" | "text" | "model" | "other";
+type AttachmentKind =
+  | "image" | "video" | "audio" | "text"
+  | "code"  | "svg" | "csv" | "zip"
+  | "model" | "other";
 type ModelFormat =
   | "gltf" | "obj" | "stl"
   | "collada" | "vrml" | "fbx" | "ply" | "vox"
@@ -31,13 +41,98 @@ const TEXT_CONTENT_TYPES = new Set([
   "application/json", "application/xml", "application/javascript",
   "text/plaintext", "text/plain"
 ]);
-const MAX_TEXT_PREVIEW = 4096;
+
+const CODE_CONTENT_TYPES = new Set([
+  "application/json", "application/xml", "application/javascript",
+  "application/typescript", "application/x-sh",
+  "text/javascript", "text/x-python", "text/x-typescript", "text/x-sql",
+  "text/markdown","text/x-markdown"
+]);
+
+const CODE_EXTENSIONS = new Set([
+  // JS / TS
+  "ts","tsx","js","jsx","mjs","cjs","mts","cts",
+  // Web
+  "css","scss","sass","less","styl","html","htm","vue","svelte","astro",
+  // Data / config
+  "json","jsonc","json5","xml","yaml","yml","toml","ini","cfg","env",
+  // Systems
+  "rs","go","cpp","cc","cxx","c","h","hpp","cs","java","kt","kts","swift",
+  // Scripting
+  "py","pyw","rb","php","lua","r","jl","m","pl","pm",
+  // Shell
+  "sh","bash","zsh","fish","ps1","bat","cmd",
+  // Query / schema
+  "sql","graphql","gql","prisma","proto","thrift",
+  // Mobile / functional
+  "dart","ex","exs","hs","elm","clj","cljs","ml","mli","fs","fsx",
+  "lisp","el","scala","groovy","gradle",
+  // Build / infra
+  "tf","tfvars","dockerfile","makefile","mk","cmake",
+  // Shader
+  "glsl","hlsl","wgsl",
+  // Mixed
+  "mdx",
+  // Markdown
+  "md", "markdown"
+]);
+
+const ZIP_EXTS = new Set(["zip", "jar", "war", "ear"]);
+const ZIP_TYPES = new Set([
+  "application/zip", "application/x-zip-compressed",
+  "application/x-zip", "application/java-archive"
+]);
+
+const PREVIEW_LINES = 8;
+const PREVIEW_LINE_PX = 22;
+const PREVIEW_HEIGHT = PREVIEW_LINES * PREVIEW_LINE_PX + 32;
+const ROW_H = 28;
+const CSV_H = 320;
+const OVERSCAN = 15;
+const MAX_ZIP_ENTRIES = 300;
+
+const WAVEFORM_H = 64;
+const BAR_GAP = 1.5;
+const MIN_BAR_W = 1;
+const VIEWER_W = 400;
+const VIEWER_H = 300;
+const SPEEDS = [1, 1.5, 2] as const;
+type Speed = typeof SPEEDS[number];
+
+const expandBtnStyle: React.CSSProperties = {
+  width: "100%", padding: "6px 12px",
+  background: "var(--bg-1)", border: "none", borderTop: "1px solid var(--border)",
+  color: "var(--text-4)", fontSize: 12, cursor: "pointer",
+  display: "flex", alignItems: "center", justifyContent: "center", gap: 4
+};
+
+const BROWSER_UNSUPPORTED: Partial<Record<ModelFormat, string>> = {
+  blend: "Blender (.blend) files cannot be rendered in the browser.",
+  alembic: "Alembic (.abc) files cannot be rendered in the browser.",
+  dwg: "AutoCAD DWG (.dwg) files cannot be rendered in the browser.",
+  usdc: "USD Crate (.usdc/.usd binary) cannot be rendered in the browser. Convert to USDZ for web viewing."
+};
 
 function stripGuidPrefix(fileName: string): string {
   return fileName.replace(
     /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}_/i,
     ""
   );
+}
+
+function getExt(fileName: string): string {
+  const idx = fileName.lastIndexOf(".");
+  return idx === -1 ? "" : fileName.slice(idx + 1).toLowerCase();
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function getAttachmentUrl(fileName: string): string {
+  return `${hostUrl}/api/attachments/${encodeURIComponent(fileName)}`;
 }
 
 async function downloadFile(url: string, displayName: string) {
@@ -57,6 +152,138 @@ async function downloadFile(url: string, displayName: string) {
   } catch {
     window.open(url, "_blank");
   }
+}
+
+function langFromExt(ext: string): string {
+  const map: Record<string, string> = {
+    ts:"typescript", tsx:"tsx", js:"javascript", jsx:"jsx",
+    mjs:"javascript", cjs:"javascript", mts:"typescript", cts:"typescript",
+    py:"python", pyw:"python", rb:"ruby", php:"php",
+    java:"java", kt:"kotlin", kts:"kotlin", swift:"swift",
+    go:"go", rs:"rust", cpp:"cpp", cc:"cpp", cxx:"cpp",
+    c:"c", h:"c", hpp:"cpp", cs:"csharp",
+    css:"css", scss:"scss", sass:"sass", less:"less",
+    html:"html", htm:"html", xml:"xml", vue:"vue", svelte:"svelte",
+    json:"json", jsonc:"jsonc", yaml:"yaml", yml:"yaml", toml:"toml",
+    ini:"ini", sh:"bash", bash:"bash", zsh:"bash", fish:"fish",
+    ps1:"powershell", bat:"batch", cmd:"batch",
+    sql:"sql", graphql:"graphql", gql:"graphql",
+    md:"markdown", mdx:"mdx",
+    lua:"lua", r:"r", jl:"julia", dart:"dart",
+    ex:"elixir", exs:"elixir", hs:"haskell", elm:"elm",
+    clj:"clojure", cljs:"clojurescript", scala:"scala",
+    groovy:"groovy", tf:"terraform", tfvars:"terraform",
+    proto:"protobuf", glsl:"glsl", hlsl:"hlsl", wgsl:"wgsl",
+    dockerfile:"dockerfile", makefile:"makefile",
+    env:"dotenv", prisma:"prisma", fs:"fsharp", fsx:"fsharp"
+  } as const;
+  return map[ext] ?? "text";
+}
+
+/** RFC 4180-compatible CSV / TSV parser. */
+function parseDelimited(text: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+  const len = text.length;
+ 
+  while (i < len) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') {
+        field += '"';
+        i += 2;
+        continue;
+      }
+      if (ch === '"') {
+        inQuotes = false;
+        i++;
+        continue;
+      }
+      field += ch; i++;
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+        i++;
+        continue;
+      }
+      if (text.startsWith(delimiter, i)) {
+        row.push(field); field = ""; i += delimiter.length;
+        continue;
+      }
+      if (ch === "\r" && text[i + 1] === "\n") {
+        row.push(field); rows.push(row); field = ""; row = []; i += 2;
+        continue;
+      }
+      if (ch === "\n" || ch === "\r") {
+        row.push(field); rows.push(row); field = ""; row = []; i++;
+        continue;
+      }
+      field += ch; i++;
+    }
+  }
+  if (field !== "" || row.length > 0) {
+    row.push(field);
+    if (row.some(f => f.trim() !== ""))
+      rows.push(row);
+  }
+  return rows;
+}
+
+function sanitizeSVG(svgText: string): string {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, "image/svg+xml");
+  if (doc.querySelector("parsererror"))
+    return "";
+  doc.querySelectorAll("script, foreignObject").forEach(el => el.remove());
+  const onAttr = /^on/i;
+  const jsProto = /^\s*javascript:/i;
+  doc.querySelectorAll("*").forEach(el => {
+    for (const attr of Array.from(el.attributes)) {
+      if (onAttr.test(attr.name)) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+      if ((attr.name === "href" || attr.name === "xlink:href") && jsProto.test(attr.value))
+        el.removeAttribute(attr.name);
+    }
+  });
+  const root = doc.documentElement;
+  root.setAttribute("style", (root.getAttribute("style") ?? "") + ";max-width:100%;height:auto;");
+  return new XMLSerializer().serializeToString(root);
+}
+
+function useRemoteText(fileName: string): {
+  content: string | null; loading: boolean; error: boolean;
+} {
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    fetch(getAttachmentUrl(fileName))
+      .then(r => {
+        if (!r.ok)
+          throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      }).then(text => {
+        if (!cancelled) {
+          setContent(text);
+          setLoading(false);
+        }
+      }).catch(()  => {
+        if (!cancelled) {
+          setError(true);
+          setLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [fileName]);
+  return { content, loading, error };
 }
 
 async function parseHyleusMesh(buffer: ArrayBuffer): Promise<THREE.Group> {
@@ -305,11 +532,18 @@ function parseX3DToObject(xmlText: string): THREE.Group {
   return root;
 }
 
-function getAttachmentKind(contentType: string): AttachmentKind {
-  if (contentType.startsWith("image/")) return "image";
+function getAttachmentKind(contentType: string, fileName: string): AttachmentKind {
+  if (contentType.startsWith("image/")) return contentType.startsWith("image/svg") ? "svg" : "image";
   if (contentType.startsWith("video/")) return "video";
   if (contentType.startsWith("audio/")) return "audio";
   if (contentType.startsWith("model/")) return "model";
+  const ext = getExt(fileName);
+  if (ZIP_TYPES.has(contentType) || ZIP_EXTS.has(ext)) return "zip";
+  if (
+    contentType === "text/csv" || contentType === "application/csv" ||
+    contentType === "text/tab-separated-values" || ext === "csv" || ext === "tsv"
+  ) return "csv";
+  if (CODE_EXTENSIONS.has(ext) || CODE_CONTENT_TYPES.has(contentType)) return "code";
   if (contentType.startsWith("text/") || TEXT_CONTENT_TYPES.has(contentType)) return "text";
   return "other";
 }
@@ -403,26 +637,15 @@ function FullscreenIcon() {
   );
 }
 
-function CubeIcon({ size = 22 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
-      <path d="M21 16V8a2 2 0 0 0-1-1.73L13 2.27a2 2 0 0 0-2 0L4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73L11 21.73a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73z" />
-      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-      <line x1="12" y1="22.08" x2="12" y2="12" />
-    </svg>
-  );
-}
-
-const WAVEFORM_H = 64;
-const BAR_GAP = 1.5;
-const MIN_BAR_W = 1;
-
-function WaveformBars({ hash, progress = 0, onSeek }: {
-  hash: string; progress?: number; onSeek?: (ratio: number) => void;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
+const WaveformBars = React.forwardRef<HTMLDivElement, {
+  hash: string;
+  progress?: number;
+  onSeek?: (ratio: number) => void;
+  setPressed?: React.Dispatch<React.SetStateAction<boolean>>;
+}>(function WaveformBars({ hash, progress = 0, onSeek, setPressed }, ref) {
+  const internalRef = useRef<HTMLDivElement>(null);
+  const containerRef = (ref as React.RefObject<HTMLDivElement>) ?? internalRef;
   const [containerWidth, setContainerWidth] = useState(160);
-  const [pressed, setPressed] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -482,9 +705,7 @@ function WaveformBars({ hash, progress = 0, onSeek }: {
           overflow: "hidden"
         }}
         onClick={handleClick}
-        onMouseDown={() => setPressed(true)}
-        onMouseUp={() => setPressed(false)}
-        onMouseMove={e => { if (pressed) handleClick(e)}}
+        onMouseDown={() => setPressed?.(true)}
         draggable={false}
       >
         <div draggable={false} style={{
@@ -508,9 +729,7 @@ function WaveformBars({ hash, progress = 0, onSeek }: {
         flex: 1
       }}
       onClick={handleClick}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-      onMouseMove={e => { if (pressed) handleClick(e) }}
+      onMouseDown={() => setPressed?.(true)}
       draggable={false}
     >
       {displayValues.map((v, i) => {
@@ -526,20 +745,19 @@ function WaveformBars({ hash, progress = 0, onSeek }: {
       })}
     </div>
   );
-}
-
-const SPEEDS = [1, 1.5, 2] as const;
-type Speed = typeof SPEEDS[number];
+});
 
 function AudioPlayer({ url, displayName, placeholderHash }: {
   url: string; displayName: string; placeholderHash?: string | null;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const waveRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(0);
+  const [pressed, setPressed] = useState(false);
 
   const speed: Speed = SPEEDS[speedIdx];
   const progress = duration > 0 ? currentTime / duration : 0;
@@ -590,13 +808,23 @@ function AudioPlayer({ url, displayName, placeholderHash }: {
     padding: "3px", borderRadius: 4
   };
 
+  function handleClick(clientX: number, target: HTMLDivElement) {
+    const rect = target.getBoundingClientRect();
+    seekTo(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)));
+  }
+
   return (
-    <div style={{
-      marginTop: 4, display: "flex", alignItems: "center", gap: 10,
-      padding: "8px 12px 8px 10px",
-      background: "var(--bg-2)", border: "1px solid var(--border)",
-      borderRadius: 36, width: 320, boxSizing: "border-box"
-    }}>
+    <div
+      style={{
+        marginTop: 4, display: "flex", alignItems: "center", gap: 10,
+        padding: "8px 12px 8px 10px",
+        background: "var(--bg-2)", border: "1px solid var(--border)",
+        borderRadius: 36, width: 420, boxSizing: "border-box"
+      }}
+      onMouseUp={() => setPressed(false)}
+      onMouseMove={e => { if (pressed && waveRef.current) handleClick(e.clientX, waveRef.current) }}
+      draggable={false}
+    >
       <audio
         ref={audioRef} src={url} preload="metadata"
         onTimeUpdate={() => { if (audioRef.current) setCurrentTime(audioRef.current.currentTime); }}
@@ -618,11 +846,12 @@ function AudioPlayer({ url, displayName, placeholderHash }: {
       </button>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-        <WaveformBars hash={placeholderHash ?? ""} progress={progress} onSeek={seekTo} />
-        <div style={{ fontSize: 11, color: "var(--text-3)", fontVariantNumeric: "tabular-nums" as const }}>
-          {duration ? fmt(currentTime) : '--'}
-          {<span style={{ color: "var(--text-5)", marginLeft: 1 }}>{duration > 0 ? ` / ${fmt(duration)}` : ` / --`}</span>}
-        </div>
+        <WaveformBars hash={placeholderHash ?? ""} progress={progress} onSeek={seekTo} setPressed={setPressed} ref={waveRef} />
+      </div>
+      
+      <div className="uno" style={{ fontSize: 11, color: "var(--text-3)", fontVariantNumeric: "tabular-nums" }}>
+        {duration ? fmt(currentTime) : '--'}
+        {<span style={{ color: "var(--text-5)", marginLeft: 1 }}>{duration > 0 ? ` / ${fmt(duration)}` : ` / --`}</span>}
       </div>
 
       <button
@@ -747,6 +976,7 @@ function VideoPlayer({ url, displayName, width, height, placeholderHash }: {
         if (playing)
           scheduleHide();
       }}
+      onDoubleClick={e => e.stopPropagation()}
     >
       {!loaded && placeholderHash && width && height && (
         <BlurhashPlaceholder hash={placeholderHash} width={width} height={height} />
@@ -837,21 +1067,6 @@ function VideoPlayer({ url, displayName, width, height, placeholderHash }: {
       </div>
     </div>
   );
-}
-
-const VIEWER_W = 400;
-const VIEWER_H = 300;
-
-const BROWSER_UNSUPPORTED: Partial<Record<ModelFormat, string>> = {
-  blend: "Blender (.blend) files cannot be rendered in the browser.",
-  alembic: "Alembic (.abc) files cannot be rendered in the browser.",
-  dwg: "AutoCAD DWG (.dwg) files cannot be rendered in the browser.",
-  usdc: "USD Crate (.usdc/.usd binary) cannot be rendered in the browser. Convert to USDZ for web viewing."
-};
-
-function getExt(fileName: string): string {
-  const idx = fileName.lastIndexOf(".");
-  return idx === -1 ? "" : fileName.slice(idx + 1).toLowerCase();
 }
 
 function ModelViewer({ url, fileName, contentType }: {
@@ -1459,18 +1674,495 @@ function ImageAttachment({ attachment }: { attachment: Attachment }) {
 
 function FileIcon({ kind }: { kind: AttachmentKind }) {
   const glyphs: Record<AttachmentKind, string | ReactNode> = {
-    image: "🖼️",
+    image: <ImageFileIcon size={16} />,
     video: <FilmIcon size={16} />,
-    audio: "🎵",
-    text:  <TextDocument />,
-    other: "📎",
-    model: <span style={{ display: "flex", alignItems: "center", color: "var(--text-3)" }}><CubeIcon size={22} /></span>
+    audio: <MusicNoteIcon size={16} />,
+    model: <CubeIcon size={22} style={{ display: "flex", alignItems: "center", color: "var(--text-3)" }} />,
+    text: <TextDocument size={16} />,
+    svg: <SVGFileIcon size={16} />,
+    code: <CodeBracketsIcon size={16} />,
+    csv: <TableGridIcon size={16} />,
+    zip: <ArchiveIcon size={16} />,
+    other: <GenericFileIcon size={16} />
   };
   return <span style={{ fontSize: 22, lineHeight: 1 }}>{glyphs[kind]}</span>;
 }
 
-export function getAttachmentUrl(fileName: string): string {
-  return `${hostUrl}/api/attachments/${encodeURIComponent(fileName)}`;
+function AttachmentCodeBlock({ content, language, expanded, light }: { content: string; language: string; expanded: boolean; light: boolean; }) {
+  const [hlInstance, setHlInstance] = useState<HighlighterCore | undefined>(superHighlighter);
+  useEffect(() => {
+    if (superHighlighter)
+      return;
+    let alive = true;
+    highlighterReady.then(() => { if (alive) setHlInstance(superHighlighter); });
+    return () => { alive = false; };
+  }, []);
+ 
+  const [confirmedLang, setConfirmedLang] = useState("text");
+  useEffect(() => {
+    let cancelled = false;
+    setConfirmedLang("text");
+    ensureLanguageLoaded(language).then(loaded => {
+      if (!cancelled)
+        setConfirmedLang(loaded ? language : "text");
+    });
+    return () => { cancelled = true; };
+  }, [language, hlInstance]);
+ 
+  const shikiTheme = light ? "github-light" : "github-dark";
+  const text = expanded ? content : content.split('\n').slice(0, PREVIEW_LINES).join('\n');
+ 
+  const highlighted = useShikiHighlighter(
+    text,
+    confirmedLang,
+    shikiTheme,
+    {
+      showLineNumbers: true,
+      highlighter: hlInstance
+    }
+  );
+ 
+  return (
+    <div data-slot="container" className="rs-root not-prose rs-default-styles shiki" style={{ margin: 0 }}>
+      {highlighted ?? (
+        <pre className={`shiki ${shikiTheme}`} tabIndex={0} style={{ background: light ? "#fff" : "#24292e", color: light ? "#24292e" : "#e1e4e8" }}>
+          <code className="rs-has-line-numbers">
+            {text.split("\n").map((line, i) => (
+              <span key={i} className="line rs-line-number"><span>{line + "\n"}</span></span>
+            ))}
+          </code>
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function CodeAttachment({ attachment }: { attachment: Attachment }) {
+  const url = attachment.localUrl ?? getAttachmentUrl(attachment.fileName);
+  const displayName = stripGuidPrefix(attachment.fileName);
+  const ext = getExt(displayName);
+  const language = langFromExt(ext);
+ 
+  const { content, loading, error } = useRemoteText(attachment.fileName);
+  const [expanded, setExpanded] = useState(false);
+  const [fakeExpanded, setFakeExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+ 
+  const lineCount = useMemo(() => content?.split("\n").length ?? 0, [content]);
+  const needsExpand = lineCount > PREVIEW_LINES;
+  const hiddenLines = Math.max(0, lineCount - PREVIEW_LINES);
+
+  const theme = userSettings()?.theme;
+  const light = theme === Theme.Light ||
+    theme === Theme.System && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+ 
+  useEffect(() => {
+    if (expanded)
+      setFakeExpanded(expanded);
+    else
+      setTimeout(() => setFakeExpanded(expanded), 200);
+  }, [expanded]);
+
+  function copy() {
+    if (!content)
+      return;
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+ 
+  return (
+    <div style={{ marginTop: 4, width: "fit-content", maxWidth: "100%", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", background: "var(--bg-2)" }} onDoubleClick={e => e.stopPropagation()}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)" }}>
+        <span className="uno" style={{ color: "var(--text-3)", flexShrink: 0, display: "flex" }}>
+          <FileIcon kind="code" />
+        </span>
+        <span className="uno" style={{ flex: 1, fontSize: 13, marginRight: 25, fontWeight: 600, color: "var(--text-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {displayName}
+        </span>
+        {content !== null && (
+          <span className="uno" style={{ fontSize: 11, color: "var(--text-2)", fontFamily: "monospace", flexShrink: 0 }}>
+            {language}
+          </span>
+        )}
+        {content !== null && (
+          <button onClick={copy} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 4, flexShrink: 0, background: "var(--bg-1)", border: "1px solid var(--border)", color: copied ? "var(--accent-1)" : "var(--text-2)", cursor: "pointer" }}>
+            {copied ? t("copied") : t("copy")}
+          </button>
+        )}
+        <span className="dl-btn" onClick={() => downloadFile(url,displayName)} title={t("attachments.download")} style={{ color: "var(--text-3)", padding: 5, flexShrink: 0, cursor: "pointer", display: "flex" }}>
+          <DownloadIcon />
+        </span>
+      </div>
+ 
+      <div className="multiline-code" style={{ height: expanded ? 600 : PREVIEW_HEIGHT, overflow: expanded ? "auto" : "hidden", transition: "height 0.2s ease" }}>
+        {loading && <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--text-5)" }}>Loading...</div>}
+        {error && <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--red-2)" }}>Failed to load file</div>}
+        {content !== null && <AttachmentCodeBlock content={content} language={language} expanded={expanded} light={light} />}
+        {fakeExpanded && !expanded && <div style={{ width: "100%", height: "100%", background: light ? "#fff" : "#24292e"}} />}
+      </div>
+ 
+      {content !== null && needsExpand && (
+        <button onClick={() => setExpanded(e => !e)} style={expandBtnStyle}>
+          {expanded
+            ? <><ChevronUpIcon />Show less</>
+            : <><ChevronDownIcon />Show {hiddenLines} more line{hiddenLines !== 1 ? "s" : ""}</>}
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+function TextAttachment({ attachment }: { attachment: Attachment }) {
+  const url = attachment.localUrl ?? getAttachmentUrl(attachment.fileName);
+  const displayName = stripGuidPrefix(attachment.fileName);
+ 
+  const { content, loading, error } = useRemoteText(attachment.fileName);
+  const [expanded, setExpanded] = useState(false);
+ 
+  const lines = useMemo(() => content?.split("\n") ?? [], [content]);
+  const needsExpand = lines.length > PREVIEW_LINES;
+  const hiddenLines = Math.max(0, lines.length - PREVIEW_LINES);
+ 
+  const visible = !expanded && needsExpand
+    ? lines.slice(0, PREVIEW_LINES).join("\n")
+    : (content ?? "");
+ 
+  return (
+    <div style={{ marginTop: 4, width: "fit-content", maxWidth: "100%", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", background: "var(--bg-2)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)" }}>
+        <span className="uno" style={{ color: "var(--text-3)", flexShrink: 0, display: "flex" }}>
+          <TextDocument />
+        </span>
+        <span className="uno" style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "var(--text-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {displayName}
+        </span>
+        <span className="dl-btn" onClick={() => downloadFile(url,displayName)} title={t("attachments.download")} style={{ color: "var(--text-4)", padding: 5, flexShrink: 0, cursor: "pointer", display: "flex" }}>
+          <DownloadIcon />
+        </span>
+      </div>
+ 
+      <div style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text-3)", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: 12, maxHeight: expanded ? 400 : "none", overflowY: "auto" }}>
+        {loading && <span style={{ color: "var(--text-5)" }}>Loading...</span>}
+        {error && <span style={{ color: "var(--red-2)" }}>Failed to load file</span>}
+        {!loading && !error && visible}
+      </div>
+ 
+      {content !== null && needsExpand && (
+        <button onClick={() => setExpanded(e => !e)} style={expandBtnStyle}>
+          {expanded
+            ? <><ChevronUpIcon />   Show less</>
+            : <><ChevronDownIcon /> Show {hiddenLines} more line{hiddenLines !== 1 ? "s" : ""}</>}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SVGAttachment({ attachment }: { attachment: Attachment }) {
+  const url = attachment.localUrl ?? getAttachmentUrl(attachment.fileName);
+  const displayName = stripGuidPrefix(attachment.fileName);
+ 
+  const { content, loading, error } = useRemoteText(attachment.fileName);
+  const [modalOpen, setModalOpen] = useState(false);
+ 
+  const sanitized = useMemo(() => (content ? sanitizeSVG(content) : null), [content]);
+  const hasContent = sanitized !== null && sanitized !== "";
+ 
+  return (
+    <>
+      <div style={{ marginTop: 4, maxWidth: 400 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: hasContent ? "8px 8px 0 0" : 8 }}>
+          <span className="uno" style={{ color: "var(--text-3)", display: "flex", flexShrink: 0 }}>
+            <SVGFileIcon size={16} />
+          </span>
+          <span className="uno" style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "var(--text-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {displayName}
+          </span>
+          <span className="dl-btn" onClick={() => downloadFile(url, displayName)} title={t("attachments.download")} style={{ color: "var(--text-4)", padding: 5, cursor: "pointer", display: "flex" }}>
+            <DownloadIcon />
+          </span>
+        </div>
+ 
+        {loading && (
+          <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--text-5)", background: "var(--bg-1)", border: "1px solid var(--border)", borderTop: "none", borderRadius: "0 0 8px 8px" }}>Loading…</div>
+        )}
+        {error && (
+          <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--red-2)", background: "var(--bg-1)", border: "1px solid var(--border)", borderTop: "none", borderRadius: "0 0 8px 8px" }}>Failed to load SVG</div>
+        )}
+        {sanitized === "" && content !== null && (
+          <div style={{ padding: "12px", fontSize: 12, color: "var(--text-5)", background: "var(--bg-1)", border: "1px solid var(--border)", borderTop: "none", borderRadius: "0 0 8px 8px" }}>Could not render SVG safely</div>
+        )}
+        {hasContent && (
+          <div
+            onClick={() => setModalOpen(true)}
+            style={{ background: "var(--bg-1)", border: "1px solid var(--border)", borderTop: "none", borderRadius: "0 0 8px 8px", padding: 12, cursor: "zoom-in", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 80, maxHeight: 280, overflow: "hidden" }}
+            dangerouslySetInnerHTML={{ __html: sanitized! }}
+          />
+        )}
+      </div>
+ 
+      {modalOpen && hasContent && (
+        <div onClick={() => setModalOpen(false)} onDoubleClick={e => e.stopPropagation()}
+          style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.9)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ maxWidth: "90vw", maxHeight: "90vh", overflow: "auto", background: "var(--bg-1)", borderRadius: 8, padding: 24 }}
+            dangerouslySetInnerHTML={{ __html: sanitized! }}
+          />
+          <span className="dl-btn" onClick={e => { e.stopPropagation(); setModalOpen(false); }}
+            style={{ position: "fixed", top: 16, left: 16, width: 36, height: 36, borderRadius: "50%", background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>
+            <CloseIcon />
+          </span>
+        </div>
+      )}
+    </>
+  );
+}
+
+function CSVAttachment({ attachment }: { attachment: Attachment }) {
+  const url = attachment.localUrl ?? getAttachmentUrl(attachment.fileName);
+  const displayName = stripGuidPrefix(attachment.fileName);
+  const delimiter = getExt(displayName) === "tsv" ? "\t" : ",";
+
+  const { content, loading, error } = useRemoteText(attachment.fileName);
+  const [scrollTop, setScrollTop] = useState(0);
+
+  const rows = useMemo(() => {
+    if (!content) return [];
+    return parseDelimited(content, delimiter).filter(row => row.some(c => c.trim() !== ""));
+  }, [content, delimiter]);
+
+  const headers  = rows[0] ?? [];
+  const dataRows = rows.slice(1);
+
+  const start  = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const end = Math.min(dataRows.length, start + Math.ceil(CSV_H / ROW_H) + OVERSCAN * 2);
+  const padTop = start * ROW_H;
+  const padBot = Math.max(0, (dataRows.length - end) * ROW_H);
+
+  const thStyle: React.CSSProperties = {
+    padding: "6px 10px", textAlign: "left", fontWeight: 600,
+    color: "var(--text-3)", borderBottom: "1px solid var(--border)",
+    background: "var(--bg-3)", whiteSpace: "nowrap", fontSize: 12,
+    position: "sticky", top: 0,
+    zIndex: 1
+  };
+  const tdStyle: React.CSSProperties = {
+    padding: "4px 10px", color: "var(--text-3)", fontSize: 12,
+    maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+    height: ROW_H, boxSizing: "border-box"
+  };
+
+  return (
+    <div
+      style={{ marginTop: 4, maxWidth: "50vw", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", background: "var(--bg-2)" }}
+      onDoubleClick={e => e.stopPropagation()}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)" }}>
+        <span className="uno" style={{ color: "var(--text-3)", display: "flex", flexShrink: 0 }}>
+          <TableGridIcon size={16} />
+        </span>
+        <span className="uno" style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "var(--text-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {displayName}
+        </span>
+        {rows.length > 0 && (
+          <span className="uno" style={{ fontSize: 11, color: "var(--text-2)", flexShrink: 0 }}>
+            {dataRows.length} row{dataRows.length !== 1 ? "s" : ""} · {headers.length} col{headers.length !== 1 ? "s" : ""}
+          </span>
+        )}
+        <span className="dl-btn" onClick={() => downloadFile(url, displayName)} title={t("attachments.download")} style={{ color: "var(--text-3)", padding: 5, cursor: "pointer", display: "flex", flexShrink: 0 }}>
+          <DownloadIcon />
+        </span>
+      </div>
+
+      {loading && <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--text-5)" }}>Loading…</div>}
+      {error   && <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--red-2)" }}>Failed to load</div>}
+      {rows.length === 0 && !loading && !error && (
+        <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--text-5)" }}>No data</div>
+      )}
+
+      {rows.length > 0 && (
+        <div
+          style={{ overflowX: "auto", overflowY: "auto", maxHeight: CSV_H }}
+          onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
+        >
+          <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "auto", minWidth: "100%" }}>
+            <thead>
+              <tr>
+                {headers.map((h, i) => (
+                  <th key={i} style={thStyle}>
+                    {h || <span style={{ color: "var(--text-5)" }}>col {i + 1}</span>}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {padTop > 0 && (
+                <tr><td colSpan={headers.length} style={{ height: padTop, padding: 0, border: "none" }} /></tr>
+              )}
+
+              {dataRows.slice(start, end).map((row, ri) => {
+                const idx = start + ri;
+                return (
+                  <tr key={idx} style={{ background: idx % 2 === 0 ? "transparent" : "var(--bg-1)" }}>
+                    {headers.map((_, ci) => (
+                      <td key={ci} style={{ ...tdStyle, borderBottom: "1px solid var(--border)" }} title={row[ci] ?? ""}>
+                        {row[ci] ?? ""}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+
+              {padBot > 0 && (
+                <tr><td colSpan={headers.length} style={{ height: padBot, padding: 0, border: "none" }} /></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ZipEntry { path: string; name: string; isDir: boolean; size: number; depth: number; }
+ 
+function buildZipTree(files: Record<string, any>): ZipEntry[] {
+  const entries: ZipEntry[] = [];
+  const seenDirs = new Set<string>();
+ 
+  function ensureDir(dirPath: string) {
+    if (seenDirs.has(dirPath))
+      return;
+    seenDirs.add(dirPath);
+    const parts = dirPath.split("/").filter(Boolean);
+    entries.push({ path: dirPath + "/", name: parts[parts.length - 1] ?? dirPath, isDir: true, size: 0, depth: parts.length - 1 });
+  }
+ 
+  for (const [path, file] of Object.entries(files)) {
+    if (file.dir) {
+      ensureDir(path.replace(/\/$/, ""));
+    } else {
+      const parts = path.split("/").filter(Boolean);
+      for (let d = 1; d < parts.length; d++)
+        ensureDir(parts.slice(0, d).join("/"));
+      entries.push({
+        path, name: parts[parts.length-1] ?? path, isDir: false,
+        size: file._data?.uncompressedSize ?? 0,
+        depth: parts.length - 1
+      });
+    }
+  }
+ 
+  entries.sort((a,b) => a.path.localeCompare(b.path, undefined, { sensitivity: "base" }));
+  return entries;
+}
+ 
+function ZipAttachment({ attachment }: { attachment: Attachment }) {
+  const url = attachment.localUrl ?? getAttachmentUrl(attachment.fileName);
+  const displayName = stripGuidPrefix(attachment.fileName);
+ 
+  const [clicked, setClicked] = useState(false);
+  const [entries, setEntries] = useState<ZipEntry[]|null>(null);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string|null>(null);
+ 
+  useEffect(() => {
+    if (!clicked)
+      return;
+    let cancelled = false;
+    setLoading(true);
+    setErrorMsg(null);
+    (async () => {
+      try {
+        const [{ default: JSZip }, res] = await Promise.all([import("jszip"), fetch(url)]);
+        if (!res.ok)
+          throw new Error(`HTTP ${res.status}`);
+        const buf = await res.arrayBuffer();
+        if (cancelled)
+          return;
+        const zip = await JSZip.loadAsync(buf);
+        if (cancelled)
+          return;
+        setEntries(buildZipTree(zip.files).slice(0, MAX_ZIP_ENTRIES));
+      } catch (e) {
+        if (!cancelled)
+          setErrorMsg(e instanceof Error ? e.message : "Failed to read ZIP");
+      } finally {
+        if (!cancelled)
+          setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [clicked, url]);
+ 
+  const fileCount = entries?.filter(e => !e.isDir).length ?? 0;
+  const totalSize = entries?.filter(e => !e.isDir).reduce((s, e) => s + e.size, 0) ?? 0;
+ 
+  if (!clicked) {
+    return (
+      <div onClick={() => setClicked(true)} onDoubleClick={e => e.stopPropagation()}
+        style={{ marginTop: 4, maxWidth: 400, borderRadius: 10, background: "var(--bg-2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer", transition: "border-color 0.15s ease" }}
+        onMouseEnter={e => ( e.currentTarget.style.borderColor="var(--accent-1)" )}
+        onMouseLeave={e => ( e.currentTarget.style.borderColor="var(--border)" )}>
+        <span style={{ color: "var(--text-3)", flexShrink: 0, display: "flex" }}><ArchiveIcon size={24} /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayName}</div>
+          <div style={{ fontSize: 11, color: "var(--text-5)" }}>Click to inspect ZIP contents</div>
+        </div>
+        <span className="dl-btn" onClick={e => { e.stopPropagation(); downloadFile(url, displayName); }} style={{ color: "var(--text-4)", padding: 5, display: "flex" }}>
+          <DownloadIcon />
+        </span>
+      </div>
+    );
+  }
+ 
+  return (
+    <div style={{ marginTop: 4, maxWidth: 480, border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", background: "var(--bg-2)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)" }}>
+        <span style={{ color: "var(--text-3)", display: "flex", flexShrink: 0 }}><ArchiveIcon size={16} /></span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "var(--text-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{displayName}</span>
+        {entries && (
+          <span style={{ fontSize: 11, color: "var(--text-5)", flexShrink: 0 }}>
+            {fileCount} file{fileCount!==1?"s":""}
+            {totalSize>0?` · ${formatBytes(totalSize)}`:""}
+          </span>
+        )}
+        <span className="dl-btn" onClick={() => downloadFile(url, displayName)} title={t("attachments.download")} style={{ color: "var(--text-4)", cursor: "pointer", display: "flex", flexShrink: 0 }}>
+          <DownloadIcon />
+        </span>
+      </div>
+ 
+      {loading  && <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--text-5)" }}>Reading ZIP…</div>}
+      {errorMsg && <div style={{ padding: "16px 12px", fontSize: 12, color: "var(--red-2)" }}>{errorMsg}</div>}
+ 
+      {entries && (
+        <div style={{ maxHeight: 320, overflowY: "auto", padding: "4px 0" }}>
+          {entries.map(entry => (
+            <div key={entry.path} style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 3, paddingBottom: 3, paddingLeft: entry.depth*16+10, paddingRight: 12 }}>
+              <span style={{ color: entry.isDir?"var(--accent-1)":"var(--text-5)", flexShrink: 0, display: "flex" }}>
+                {entry.isDir ? <FolderIcon size={14} /> : <GenericFileIcon size={14} />}
+              </span>
+              <span style={{ flex: 1, fontSize: 12, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: entry.isDir?600:400 }}>
+                {entry.name}
+              </span>
+              {!entry.isDir && entry.size>0 && (
+                <span style={{ fontSize: 11, color: "var(--text-5)", fontVariantNumeric: "tabular-nums" as const, flexShrink: 0 }}>
+                  {formatBytes(entry.size)}
+                </span>
+              )}
+            </div>
+          ))}
+          {(entries.length >= MAX_ZIP_ENTRIES) && (
+            <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-5)", fontStyle: "italic" }}>
+              Only first {MAX_ZIP_ENTRIES} entries shown
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface AttachmentProps {
@@ -1479,41 +2171,11 @@ interface AttachmentProps {
 }
 
 export default function MessageAttachment({ attachment, sending }: AttachmentProps) {
-  const kind = getAttachmentKind(attachment.contentType);
+  const kind = getAttachmentKind(attachment.contentType, attachment.fileName);
   const isPending = sending || !!attachment.localUrl;
   const displayName = stripGuidPrefix(attachment.fileName);
 
-  const [expanded, setExpanded] = useState(false);
-  const [textContent, setTextContent] = useState<string | null>(null);
-  const [textLoading, setTextLoading] = useState(false);
-  const [textError, setTextError] = useState(false);
-
   const url = attachment.localUrl ?? getAttachmentUrl(attachment.fileName);
-
-  async function loadText() {
-    if (textContent !== null || textLoading)
-      return;
-    setTextLoading(true);
-    setTextError(false);
-    try {
-      const res = await fetch(getAttachmentUrl(attachment.fileName));
-      if (!res.ok)
-        throw new Error(`Request failed: ${res.status}`);
-      setTextContent(await res.text());
-    } catch (e) {
-      console.error("Failed to load text attachment", e);
-      setTextError(true);
-    } finally {
-      setTextLoading(false);
-    }
-  }
-
-  function toggleExpand() {
-    const next = !expanded;
-    setExpanded(next);
-    if (next)
-      loadText();
-  }
 
   if (isPending) {
     const progress = attachment.progress;
@@ -1605,52 +2267,20 @@ export default function MessageAttachment({ attachment, sending }: AttachmentPro
     );
   }
 
-  if (kind === "text") {
-    return (
-      <div className="attachment-text" style={{
-        marginTop: 4, maxWidth: 480,
-        border: "1px solid var(--border)", borderRadius: 8,
-        background: "var(--bg-2)", overflow: "hidden"
-      }}>
-        <button
-          onClick={toggleExpand}
-          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 12px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}
-        >
-          <FileIcon kind={kind} />
-          <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "var(--text-3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {displayName}
-          </span>
-          <button
-            onClick={e => { e.stopPropagation(); downloadFile(url, displayName); }}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-4)", fontSize: 12, padding: 0 }}
-          >
-            {t("attachments.download")}
-          </button>
-          <span style={{ color: "var(--text-5)", fontSize: 12 }}>{expanded ? "▲" : "▼"}</span>
-        </button>
-        {expanded && (
-          <div style={{
-            borderTop: "1px solid var(--border)", padding: 8, maxHeight: 300,
-            overflow: "auto", fontFamily: "monospace", fontSize: 12,
-            color: "var(--text-3)", whiteSpace: "pre-wrap", wordBreak: "break-word"
-          }}>
-            {textLoading && t("attachments.loading")}
-            {textError   && t("attachments.load_error")}
-            {textContent !== null && (
-              textContent.length > MAX_TEXT_PREVIEW ? (
-                <>
-                  {textContent.slice(0, MAX_TEXT_PREVIEW)}
-                  <div style={{ marginTop: 8, color: "var(--text-5)", fontStyle: "italic" }}>
-                    {t("attachments.truncated")}
-                  </div>
-                </>
-              ) : textContent
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
+  if (kind === "svg")
+    return <SVGAttachment attachment={attachment} />;
+  
+  if (kind === "csv")
+    return <CSVAttachment attachment={attachment} />;
+  
+  if (kind === "zip")
+    return <ZipAttachment attachment={attachment} />;
+  
+  if (kind === "code")
+    return <CodeAttachment attachment={attachment} />;
+  
+  if (kind === "text")
+    return <TextAttachment attachment={attachment} />;
 
   return (
     <div className="attachment-file" style={{

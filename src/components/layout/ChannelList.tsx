@@ -5,19 +5,22 @@ import { getAs } from "../../lib/state/Auth";
 import { getUs } from "../../lib/state/Users";
 import { getMs } from "../../lib/state/Messages";
 import { useLoadingState } from "../../lib/state/Loading";
-import { getChannelIcon } from "../../lib/utils/ChannelUtils";
+import { getChannelIcon, getLastMessage } from "../../lib/utils/ChannelUtils";
 import { ChannelType, AbstractChannel } from "../../lib/utils/Types";
 import { canManageChannels, canCreateInvites, isOwner } from "../../lib/utils/PermissionUtils";
 import { deleteChannel } from "../../lib/api/ChannelApi";
 import { getMessages } from "../../lib/api/MessageApi";
 import { updateSettings } from "../../lib/api/UserApi";
-import { connection, joinChannel } from "../../lib/api/SignalrClient";
+import { joinChannel } from "../../lib/client/GatewayClient";
 import { useCacheState, CacheKey } from "../../lib/state/Cache";
 import { t, useLocale } from "../../lib/i18n/Index";
 import { SkeletonChannelList } from "./Skeleton";
 import ContextMenu, { ContextMenuItem } from "./ContextMenu";
 import CreateChannelModal from "./modals/CreateChannelModal";
-import { BellIcon, BellOffIcon, EyeIcon, EyeOffIcon, HashIcon, InviteIcon, PlusIcon, TrashIcon } from "../svgs/other/Icons";
+import ViewRawModal from "./modals/ViewRawModal";
+import { BellIcon, BellOffIcon, ChevronRightIcon, CodeBracketsIcon, EyeIcon, EyeOffIcon, HashIcon, InviteIcon, PlusIcon, TrashIcon } from "../svgs/other/Icons";
+import UnreadBadge from "./misc/UnreadBadge";
+import { useUnread } from "../../lib/state/Unread";
 
 export default function ChannelList() {
   useLocale();
@@ -28,8 +31,9 @@ export default function ChannelList() {
   const { getMember } = getUs();
   const { addMessages } = getMs();
   const { channelsLoading, setMessagesLoading } = useLoadingState();
+  const { isUnread, hasMention } = useUnread();
 
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<number>>(new Set());
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<bigint>>(new Set());
   const [showHidden, setShowHidden] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; channel: AbstractChannel } | null>(null);
   const [createChannelOpen, setCreateChannelOpen] = useState(false);
@@ -39,8 +43,10 @@ export default function ChannelList() {
   const canInvite = canCreateInvites(me, currentServer);
   const serverOwner = isOwner(me, currentServer);
 
-  const hidden = userSettings?.hiddenChannels ?? [];
-  const muted = userSettings?.mutedChannels ?? [];
+  const [rawOpen, setRawOpen] = useState<AbstractChannel | null>(null);
+
+  const hidden: bigint[] = []; //userSettings?.hiddenChannels ?? [];
+  const muted: bigint[] = []; //userSettings?.mutedChannels ?? [];
 
   const serverChannels = channels.filter(c => c.serverId === currentServer?.id);
   const visibleChannels = serverChannels.filter(c => !hidden.includes(c.id));
@@ -54,13 +60,13 @@ export default function ChannelList() {
     .filter(c => c.type !== ChannelType.Category && !c.parentId)
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  function getChildren(categoryId: number) {
+  function getChildren(categoryId: bigint) {
     return visibleChannels
       .filter(c => c.parentId === categoryId && c.type !== ChannelType.Category)
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }
 
-  function toggleCategory(id: number) {
+  function toggleCategory(id: bigint) {
     setCollapsedCategories(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -73,7 +79,6 @@ export default function ChannelList() {
       return;
     setCurrentChannel(c);
     joinChannel(c.id);
-    connection?.invoke("JoinChannel", c.id).catch(() => {});
     localStorage.setItem("currentChannelId", String(c.id));
 
     setMessagesLoading(true);
@@ -104,7 +109,7 @@ export default function ChannelList() {
     }
   }
 
-  async function toggleHideChannel(channelId: number) {
+  async function toggleHideChannel(channelId: bigint) {
     if (!userSettings)
       return;
     const isHidden = hidden.includes(channelId);
@@ -122,7 +127,7 @@ export default function ChannelList() {
     }
   }
 
-  async function toggleMuteChannel(channelId: number) {
+  async function toggleMuteChannel(channelId: bigint) {
     if (!userSettings)
       return;
     const isMuted = muted.includes(channelId);
@@ -151,7 +156,7 @@ export default function ChannelList() {
     const isHidden = hidden.includes(channel.id);
     const items: ContextMenuItem[] = [];
 
-    if (canManage || serverOwner) {
+    if (canManage) {
       items.push({
         label: t("channel.delete"), icon: <TrashIcon size={14} />, danger: true,
         onClick: () => handleDeleteChannel(channel)
@@ -162,7 +167,7 @@ export default function ChannelList() {
       });
     }
 
-    if (canInvite || serverOwner) {
+    if (canInvite) {
       items.push({
         label: t("channel.copy_invite"), icon: <InviteIcon size={14} />,
         onClick: () => {
@@ -189,6 +194,10 @@ export default function ChannelList() {
         label: t("channel.copy_id"), icon: <HashIcon size={14} />,
         onClick: () => navigator.clipboard.writeText(String(channel.id))
       });
+      items.push({
+        label: "View Raw", icon: <CodeBracketsIcon size={14} />,
+        onClick: () => setRawOpen(channel)
+      });
     }
 
     return items;
@@ -199,6 +208,8 @@ export default function ChannelList() {
       return null;
     const isSelected = currentChannel?.id === c.id;
     const isMuted = muted.includes(c.id);
+    const unread = isUnread(c.id, getLastMessage(c.id));
+    const mention = hasMention(c.id);
     return (
       <div
         key={c.id}
@@ -214,6 +225,9 @@ export default function ChannelList() {
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
           {c.name ?? t("channel.unnamed")}
         </span>
+        {(mention || unread) && !isSelected && (
+          <UnreadBadge mention={mention} style={{ marginLeft: "auto" }} />
+        )}
         {isMuted && (
           <BellOffIcon size={12} style={{ opacity: 0.6, flexShrink: 0 }} />
         )}
@@ -263,7 +277,7 @@ export default function ChannelList() {
                   }}
                 >
                   <span style={{ marginRight: 4, transition: "transform 150ms", transform: collapsed ? "rotate(-90deg)" : "none" }}>
-                    ›
+                    <ChevronRightIcon size={14} />
                   </span>
                   {cat.name}
                   {(canManage || serverOwner) && (
@@ -272,7 +286,7 @@ export default function ChannelList() {
                       onClick={(e) => { e.stopPropagation(); setCreateChannelOpen(true); }}
                       title={t("channel.create_in_category")}
                     >
-                      ＋
+                      
                     </span>
                   )}
                 </div>
@@ -295,7 +309,7 @@ export default function ChannelList() {
                 }}
               >
                 <span style={{ marginRight: 4, transition: "transform 150ms", transform: showHidden ? "rotate(0deg)" : "rotate(-90deg)" }}>
-                  ›
+                  <ChevronRightIcon size={14} />
                 </span>
                 {t("channel.hidden_count", { count: hiddenChannels.length })}
               </div>
@@ -341,6 +355,14 @@ export default function ChannelList() {
           open={createChannelOpen}
           serverId={currentServer.id}
           onClose={() => setCreateChannelOpen(false)}
+        />
+      )}
+      
+      {rawOpen && (
+        <ViewRawModal
+          title="json.raw_channel"
+          data={rawOpen}
+          onClose={() => { setRawOpen(null); setCtxMenu(null); }}
         />
       )}
     </div>

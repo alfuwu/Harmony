@@ -3,7 +3,7 @@ import { COLORS } from './MarkdownAST';
 import type { InlineNode, BlockNode, DocumentAST, DecoToken, TextNode, TableRowNode, TableCellNode } from './MarkdownAST';
 import { Language } from './UserSettings';
 
-const MARKDOWN_SYMBOLS = "[*_@|`~<\\^\-:#>&=#]!";
+const MARKDOWN_SYMBOLS = "[*_@|`~<\\^\-:#>&=#]!%";
 
 class InlineParser {
   private pos = 0;
@@ -217,6 +217,12 @@ class InlineParser {
         return n;
     }
 
+    if (this.at('%%')) {
+      const n = this.trySpan('%%', 'glitch', true);
+      if (n)
+        return n;
+    }
+
     if (this.at('||')) {
       const n = this.trySpan('||', 'spoiler');
       if (n)
@@ -224,7 +230,12 @@ class InlineParser {
     }
 
     if (c === '^') {
-      const n = this.trySpan('^', 'superscript');
+      if (this.at('^^')) {
+        const n = this.trySpan('^^', 'float', true);
+        if (n)
+          return n;
+      }
+      const n = this.trySpan('^', 'superscript', true);
       if (n)
         return n;
     }
@@ -397,35 +408,35 @@ class InlineParser {
     const roleM = /^<@&(\d+)>/.exec(rest);
     if (roleM) {
       this.eat(roleM[0].length);
-      return { type: 'mentionRole', id: Number(roleM[1]) };
+      return { type: 'mentionRole', id: BigInt(roleM[1]) };
     }
 
     // User: <@N>
     const userM = /^<@(-?\d+)>/.exec(rest);
     if (userM) {
       this.eat(userM[0].length);
-      return { type: 'mentionUser', id: Number(userM[1]) };
+      return { type: 'mentionUser', id: BigInt(userM[1]) };
     }
 
     // Server: <#&N>
     const srvM = /^<#&(-?\d+)>/.exec(rest);
     if (srvM) {
       this.eat(srvM[0].length);
-      return { type: 'mentionServer', id: Number(srvM[1]) };
+      return { type: 'mentionServer', id: BigInt(srvM[1]) };
     }
 
     // Channel: <#N>
     const chanM = /^<#(-?\d+)>/.exec(rest);
     if (chanM) {
       this.eat(chanM[0].length);
-      return { type: 'mentionChannel', id: Number(chanM[1]) };
+      return { type: 'mentionChannel', id: BigInt(chanM[1]) };
     }
 
     // Custom emoji: <[a]:name:id>
     const ceM = /^<(a)?:([\p{L}\p{Nd}_\-\.~]{2,}):(\d+)/u.exec(rest);
     if (ceM) {
       this.eat(ceM[0].length);
-      return { type: 'emoji', id: Number(ceM[3]), name: ceM[2], animated: !!ceM[1] };
+      return { type: 'emoji', id: BigInt(ceM[3]), name: ceM[2], animated: !!ceM[1] };
     }
 
     // Bracketed URL: <url>

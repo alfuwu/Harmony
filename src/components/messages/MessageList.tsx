@@ -31,6 +31,7 @@ import UserPopout from "../layout/popouts/UserPopout";
 import ContextMenu, { ContextMenuItem } from "../layout/ContextMenu";
 import MessageInput, { MessageInputHandle } from "./MessageInput";
 import EmojiPickerPopout from "../layout/popouts/EmojiPickerPopout";
+import ViewRawModal from "../layout/modals/ViewRawModal";
 import Twemoji from "react-twemoji";
 import { EmojiStyle } from "../../lib/utils/UserSettings";
 import { SkeletonMessages } from "../layout/Skeleton";
@@ -38,7 +39,10 @@ import { t, useLocale } from "../../lib/i18n/Index";
 import { Name } from "../layout/Generic";
 import { makeMarkdownContext } from "../../lib/utils/Funcs";
 import MessageAttachment from "./MessageAttachment";
-import { BookmarkIcon, CopyIcon, EditIcon, HashIcon, PinIcon, ReplyIcon, SmileIcon, TrashIcon } from "../svgs/other/Icons";
+import { BookmarkIcon, CodeBracketsIcon, CopyIcon, EditIcon, HashIcon, PinIcon, ReplyIcon, SmileIcon, TranslateIcon, TrashIcon } from "../svgs/other/Icons";
+import { useTranslations } from "../../lib/state/Translations";
+import { localeFromLanguage } from "../../lib/i18n/LocaleMap";
+import { bigIntMin } from "../../lib/utils/BigIntUtils";
 
 const MERGE_WINDOW  = 7 * 60 * 1000; // 7 minutes in ms
 const SCROLL_THRESHOLD = 120;
@@ -108,14 +112,17 @@ export default function MessageList() {
   const { messages, getMessage, addMessages, removeMessage, updateMessage } = ms;
   const { messagesLoading } = useLoadingState();
   const { open, close } = usePopoutState();
+  const { entries, translate, dismiss } = useTranslations();
+  
+  const [rawOpen, setRawOpen] = useState<Message | null>(null);
 
   const container = useRef<HTMLDivElement>(null);
 
   const wasAtBottomRef = useRef(true);
 
-  const messageRefs = useRef(new Map<number, HTMLDivElement>());
+  const messageRefs = useRef(new Map<bigint, HTMLDivElement>());
 
-  const [highlightedMessage, setHighlightedMessage] = useState<number | null>(null);
+  const [highlightedMessage, setHighlightedMessage] = useState<bigint | null>(null);
 
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const hasMoreRef = useRef(true);
@@ -132,11 +139,16 @@ export default function MessageList() {
     y: number;
     msg: Message;
   } | null>(null);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<bigint | null>(null);
   const [editContent, setEditContent] = useState<string | null | undefined>("");
 
   const inputRef = useRef<MessageInputHandle>(null);
-  const spoilerState = useRef<Map<number, boolean>>(new Map());
+  const spoilerStates = useRef<Map<bigint, { current: Map<number, boolean> }>>(new Map());
+  const getSpoilerState = (msgId: bigint) => {
+    if (!spoilerStates.current.has(msgId))
+      spoilerStates.current.set(msgId, { current: new Map() });
+    return spoilerStates.current.get(msgId)!;
+  };
 
   const reMember = getMember(user!.id, currentServer?.id);
   const me = currentServer
@@ -171,7 +183,7 @@ export default function MessageList() {
     prevScrollHeightRef.current = 0;
   }, [currentChan?.id]);
 
-  const loadMoreMessages = useCallback(async (around?: number, amount?: number) => {
+  const loadMoreMessages = useCallback(async (around?: bigint, amount?: number) => {
     if (
       isLoadingMoreRef.current ||
       !hasMoreRef.current ||
@@ -185,7 +197,7 @@ export default function MessageList() {
     isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
 
-    const oldestMsg = around ? Math.min(channelMessages[0].id, Math.floor(around + amount / 2)) : channelMessages[0].id;
+    const oldestMsg = around ? bigIntMin(channelMessages[0].id, around + BigInt(amount / 2)) : channelMessages[0].id;
     prevScrollHeightRef.current = container.current.scrollHeight;
     restoringScrollRef.current = true;
 
@@ -330,7 +342,7 @@ export default function MessageList() {
     });
   }
 
-  async function jumpToMessage(messageId: number) {
+  async function jumpToMessage(messageId: bigint) {
     let msg = get(messageId);
 
     if (!msg) {
@@ -440,6 +452,10 @@ export default function MessageList() {
     }
   }
 
+  async function doTranslate(msg: Message) {
+    await translate(msg.id, msg.content, localeFromLanguage(userSettings?.language));
+  }
+
   function buildCtxItems(msg: Message): ContextMenuItem[] {
     const isMine = msg.authorId === user?.id;
     const isAlreadyReplying = currentChan
@@ -449,7 +465,7 @@ export default function MessageList() {
 
     items.push({
       label: t("messages.react"),
-      icon: <SmileIcon size={14} />,
+      icon: <SmileIcon size={16} />,
       onClick: () => {
         const id = `emoji-picker-${msg.id}`;
         open({
@@ -467,14 +483,14 @@ export default function MessageList() {
 
     items.push({
       label: isAlreadyReplying ? t("messages.reply.cancel") : t("messages.reply"),
-      icon: <ReplyIcon size={14} />,
+      icon: <ReplyIcon size={16} />,
       onClick: () => handleReply(msg)
     });
 
     if (isMine) {
       items.push({
         label: t("messages.edit"),
-        icon: <EditIcon size={14} />,
+        icon: <EditIcon size={16} />,
         onClick: () => startEditing(msg, true)
       });
     }
@@ -482,36 +498,42 @@ export default function MessageList() {
     if (canPin) {
       items.push({
         label: t(msg.isPinned ? "messages.unpin" : "messages.pin"),
-        icon: <PinIcon size={14} />,
+        icon: <PinIcon size={16} />,
         onClick: () => handlePin(msg)
       });
     }
 
     items.push({
       label: t("messages.quotebook"),
-      icon: <BookmarkIcon size={14} />,
+      icon: <BookmarkIcon size={16} />,
       onClick: () => handleAddToQuotebook(msg)
     });
 
     items.push({
       label: t("messages.copy"),
-      icon: <CopyIcon size={14} />,
+      icon: <CopyIcon size={16} />,
       onClick: () => navigator.clipboard.writeText(msg.content)
     });
 
     if (userSettings?.developerMode) {
+      items.push({ label: "", onClick: () => {}, divider: true });
       items.push({
         label: t("messages.copy_id"),
-        icon: <HashIcon size={14} />,
+        icon: <HashIcon size={16} />,
         onClick: () => navigator.clipboard.writeText(String(msg.id))
       });
+      items.push({
+        label: "View Raw",
+        icon: <CodeBracketsIcon size={16} />,
+        onClick: () => setRawOpen(msg)
+      })
     }
 
     if (isMine || canDeleteOthers || canEditOther) {
       items.push({ label: "", onClick: () => {}, divider: true });
       items.push({
         label: t("messages.delete"),
-        icon: <TrashIcon size={14} />,
+        icon: <TrashIcon size={16} />,
         danger: true,
         onClick: () => handleDelete(msg)
       });
@@ -591,6 +613,7 @@ export default function MessageList() {
 
           const isHovered = messageHover === getId(msg) || ctxMenu?.msg.id === msg.id;
           const isEditing = editingId === msg.id;
+          const translation = entries.get(msg.id);
 
           return (
             <div
@@ -637,7 +660,7 @@ export default function MessageList() {
                     const repAvatar = getAvatar(repAuthor, repMember);
 
                     return (
-                      <div className="reply">
+                      <div key={r} className="reply">
                         <div className={"reply-bar" + (i === 0 ? " first" : "")} />
                         <img
                           className="avatar uno int"
@@ -650,7 +673,7 @@ export default function MessageList() {
                           user={repAuthor}
                           member={repMember}
                           md={markdownData}
-                          spoilerState={spoilerState}
+                          spoilerState={getSpoilerState(-repAuthor.id)}
                           className="author int"
                           onClick={e => openUserPopout(e.currentTarget, repAuthor, repMember)}
                           onDoubleClick={e => e.stopPropagation()}
@@ -662,7 +685,7 @@ export default function MessageList() {
                           {RenderMarkdown({
                             // TODO: figure out way to determine if message is genuinely deleted or just not in message cache
                             content: reply ? reply.content ?? t("message.unknown") : t("message.deleted"),
-                            spoilerStateRef: spoilerState,
+                            spoilerStateRef: getSpoilerState(r),
                             noBigEmoji: true,
                             forceInline: true,
                             maxLength: 64
@@ -687,7 +710,7 @@ export default function MessageList() {
                       user={author}
                       member={member}
                       md={markdownData}
-                      spoilerState={spoilerState}
+                      spoilerState={getSpoilerState(-author.id)}
                       className="author int"
                       onClick={e => openUserPopout(e.currentTarget, author, member)}
                       onDoubleClick={e => e.stopPropagation()}
@@ -721,7 +744,7 @@ export default function MessageList() {
                     user={author}
                     member={member}
                     md={markdownData}
-                    spoilerState={spoilerState}
+                    spoilerState={getSpoilerState(-author.id)}
                     className="author int"
                     onClick={e => openUserPopout(e.currentTarget, author, member)}
                   />
@@ -782,18 +805,30 @@ export default function MessageList() {
                     </div>
                   </div>
                 ) : (
-                  msg.content && (
+                  msg.content && (<>
                     <span className={"content" + (msg.sending ? " sending" : "")}>
                       {RenderMarkdown({
                         content: msg.content,
-                        spoilerStateRef: spoilerState,
+                        spoilerStateRef: getSpoilerState(msg.id),
                         ...markdownData
                       })}
                       {msg.editedTimestamp && (
                         <span className="edited-mark uno">{t("messages.edited")}</span>
                       )}
                     </span>
-                  )
+                    {translation && translation.text && (
+                      <i className="trans">
+                        <TranslateIcon size={14} style={{ marginRight: 5 }} />
+                        {RenderMarkdown({
+                          content: translation.text,
+                          spoilerStateRef: getSpoilerState(msg.id),
+                          ...markdownData
+                        })}
+                        <br />
+                        (translated from {translation.source} - <a onClick={() => dismiss(msg.id)}>Dismiss</a>)
+                      </i>
+                    )}
+                  </>)
                 )}
 
                 {msg.attachments?.map(a => (
@@ -806,7 +841,7 @@ export default function MessageList() {
                     onDoubleClick={e => e.stopPropagation()}
                   >
                     {msg.reactions.map((reaction, ri) => {
-                      const hasReacted = reaction.reactors.includes(user?.id ?? -1);
+                      const hasReacted = user?.id && reaction.reactors.includes(user.id);
                       return (
                         <button
                           key={ri}
@@ -905,7 +940,7 @@ export default function MessageList() {
               </div>
 
               {isHovered && !isEditing && !!!msg.sending && (
-                <div className="message-actions">
+                <div className="message-actions" onDoubleClick={e => e.stopPropagation()}>
                   <button
                     title={t("messages.react")}
                     onClick={e => {
@@ -925,6 +960,14 @@ export default function MessageList() {
                   >
                     <SmileIcon size={14} />
                   </button>
+                  {msg.content && (
+                    <button
+                      title={"Translate"}
+                      onClick={() => doTranslate(msg)}
+                    >
+                      <TranslateIcon size={14} />
+                    </button>
+                  )}
                   <button
                     title={isPendingReply ? t("messages.reply.cancel") : t("messages.reply")}
                     onClick={() => handleReply(msg)}
@@ -962,6 +1005,14 @@ export default function MessageList() {
         items={buildCtxItems(ctxMenu.msg)}
         position={{ x: ctxMenu.x, y: ctxMenu.y }}
         onClose={() => setCtxMenu(null)}
+      />
+    )}
+
+    {rawOpen && (
+      <ViewRawModal
+        title="json.raw_message"
+        data={rawOpen}
+        onClose={() => { setRawOpen(null); setCtxMenu(null); }}
       />
     )}
   </>);

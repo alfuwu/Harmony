@@ -10,25 +10,25 @@ export interface ChannelState {
   setCurrentChannel: React.Dispatch<React.SetStateAction<AbstractChannel | null>>;
   channels: AbstractChannel[];
   setChannels: React.Dispatch<React.SetStateAction<AbstractChannel[]>>;
-  get: (id: number) => AbstractChannel | undefined;
-  getChannel: (id: number) => AbstractChannel | undefined;
+  get: (id: bigint) => AbstractChannel | undefined;
+  getChannel: (id: bigint) => AbstractChannel | undefined;
   addChannel: (channel: AbstractChannel) => void;
   addChannels: (channels: AbstractChannel[]) => void;
-  removeChannel: (id: number) => void;
-  removeChannels: (ids: number[]) => void;
-  getTyping: (id: number) => number[];
+  removeChannel: (id: bigint) => void;
+  removeChannels: (ids: bigint[]) => void;
+  getTyping: (id: bigint) => bigint[];
   startTyping: (event: Typing) => void;
   stopTyping: (event: Typing) => void;
-  getChannelDraft: (channelId: number) => string;
-  setChannelDraft: (channelId: number, draft: string) => void;
-  getPendingReplies: (channelId: number) => Message[];
-  addPendingReply: (channelId: number, message: Message) => void;
-  removePendingReply: (channelId: number, messageId: number) => void;
-  clearPendingReplies: (channelId: number) => void;
-  getPendingAttachments: (channelId: number) => File[];
-  addPendingAttachment: (channelId: number, file: File) => void;
-  removePendingAttachment: (channelId: number, index: number) => void;
-  clearPendingAttachments: (channelId: number) => void;
+  getChannelDraft: (channelId: bigint) => string;
+  setChannelDraft: (channelId: bigint, draft: string) => void;
+  getPendingReplies: (channelId: bigint) => Message[];
+  addPendingReply: (channelId: bigint, message: Message) => void;
+  removePendingReply: (channelId: bigint, messageId: bigint) => void;
+  clearPendingReplies: (channelId: bigint) => void;
+  getPendingAttachments: (channelId: bigint) => File[];
+  addPendingAttachment: (channelId: bigint, file: File) => void;
+  removePendingAttachment: (channelId: bigint, index: number) => void;
+  clearPendingAttachments: (channelId: bigint) => void;
 }
 
 export const useChannelState = create<ChannelState>((set, get) => ({
@@ -65,81 +65,94 @@ export const useChannelState = create<ChannelState>((set, get) => ({
   removeChannels: (ids) =>
     set(state => ({ channels: state.channels.filter(c => !ids.includes(c.id)) })),
 
-  getTyping: (id) => (get() as any)._typing[id] ?? [],
+  getTyping: (id) => (get() as any)._typing.get(id) ?? [],
 
   startTyping: (event) =>
     set(state => {
-      const typing: Record<number, number[]> = (state as any)._typing ?? {};
-      const prev = typing[event.channelId] ?? [];
-      if (prev.includes(event.userId)) return state;
-      return { _typing: { ...typing, [event.channelId]: [...prev, event.userId] } } as any;
+      const typing: Map<bigint, bigint[]> = (state as any)._typing ?? {};
+      const prev = typing.get(event.channelId) ?? [];
+      if (prev.includes(event.userId))
+        return state;
+      typing.set(event.channelId, [...prev, event.userId]);
+      return { _typing: typing } as any;
     }),
 
   stopTyping: (event) =>
     set(state => {
-      const typing: Record<number, number[]> = (state as any)._typing ?? {};
-      const prev = typing[event.channelId] ?? [];
-      return { _typing: { ...typing, [event.channelId]: prev.filter(id => id !== event.userId) } } as any;
+      const typing: Map<bigint, bigint[]> = (state as any)._typing ?? {};
+      const prev = typing.get(event.channelId) ?? [];
+      typing.set(event.channelId, prev.filter(id => id !== event.userId));
+      return { _typing: typing } as any;
     }),
 
-  getChannelDraft: (channelId) => ((get() as any)._drafts ?? {})[channelId] ?? "",
+  getChannelDraft: (channelId) => ((get() as any)._drafts ?? {}).get(channelId) ?? "",
 
   setChannelDraft: (channelId, draft) =>
-    set(state => ({
-      _drafts: { ...((state as any)._drafts ?? {}), [channelId]: draft },
-    } as any)),
+    set(state => {
+      const drafts = (state as any)._drafts ?? {};
+      drafts.set(channelId, draft);
+      return { _drafts: drafts } as any;
+    }),
 
-  getPendingReplies: (channelId) => ((get() as any)._replies ?? {})[channelId] ?? [],
+  getPendingReplies: (channelId) => ((get() as any)._replies ?? {}).get(channelId) ?? [],
 
   addPendingReply: (channelId, message) =>
     set(state => {
-      const replies: Record<number, Message[]> = (state as any)._replies ?? {};
-      const existing = replies[channelId] ?? [];
-      if (existing.length >= MAX_PENDING_REPLIES) return state;
-      if (existing.some(m => m.id === message.id)) return state;
-      return { _replies: { ...replies, [channelId]: [...existing, message] } } as any;
+      const replies: Map<bigint, Message[]> = (state as any)._replies ?? {};
+      const existing = replies.get(channelId) ?? [];
+      if (existing.length >= MAX_PENDING_REPLIES)
+        return state;
+      if (existing.some(m => m.id === message.id))
+        return state;
+      replies.set(channelId, [...existing, message]);
+      return { _replies: replies } as any;
     }),
 
   removePendingReply: (channelId, messageId) =>
     set(state => {
-      const replies: Record<number, Message[]> = (state as any)._replies ?? {};
-      return {
-        _replies: { ...replies, [channelId]: (replies[channelId] ?? []).filter(m => m.id !== messageId) },
-      } as any;
+      const replies: Map<bigint, Message[]> = (state as any)._replies ?? {};
+      replies.set(channelId, (replies.get(channelId) ?? []).filter(m => m.id !== messageId));
+      return { _replies: replies } as any;
     }),
 
   clearPendingReplies: (channelId) =>
-    set(state => ({
-      _replies: { ...((state as any)._replies ?? {}), [channelId]: [] },
-    } as any)),
+    set(state => {
+      const replies: Map<bigint, Message[]> = (state as any)._replies ?? {};
+      replies.set(channelId, []);
+      return { _replies: replies } as any;
+    }),
 
-  getPendingAttachments: (channelId) => ((get() as any)._attachments ?? {})[channelId] ?? [],
+  getPendingAttachments: (channelId) => ((get() as any)._attachments ?? {}).get(channelId) ?? [],
 
   addPendingAttachment: (channelId, file) =>
     set(state => {
-      const attachments: Record<number, File[]> = (state as any)._attachments ?? {};
-      const existing = attachments[channelId] ?? [];
-      if (existing.length >= MAX_PENDING_ATTACHMENTS) return state;
-      return { _attachments: { ...attachments, [channelId]: [...existing, file] } } as any;
+      const attachments: Map<bigint, File[]> = (state as any)._attachments ?? {};
+      const existing = attachments.get(channelId) ?? [];
+      if (existing.length >= MAX_PENDING_ATTACHMENTS)
+        return state;
+      attachments.set(channelId, [...existing, file]);
+      return { _attachments: attachments } as any;
     }),
 
   removePendingAttachment: (channelId, index) =>
     set(state => {
-      const attachments: Record<number, File[]> = (state as any)._attachments ?? {};
-      const next = [...(attachments[channelId] ?? [])];
+      const attachments: Map<bigint, File[]> = (state as any)._attachments ?? {};
+      const next = [...(attachments.get(channelId) ?? [])];
       next.splice(index, 1);
-      return { _attachments: { ...attachments, [channelId]: next } } as any;
+      return { _attachments: attachments } as any;
     }),
 
   clearPendingAttachments: (channelId) =>
-    set(state => ({
-      _attachments: { ...((state as any)._attachments ?? {}), [channelId]: [] },
-    } as any)),
+    set(state => {
+      const attachments: Map<bigint, File[]> = (state as any)._attachments ?? {};
+      attachments.set(channelId, []);
+      return { _attachments: attachments } as any;
+    }),
 
-  _typing: {} as Record<number, number[]>,
-  _drafts: {} as Record<number, string>,
-  _replies: {} as Record<number, Message[]>,
-  _attachments: {} as Record<number, File[]>,
+  _typing: new Map(),
+  _drafts: new Map(),
+  _replies: new Map(),
+  _attachments: new Map()
 } as ChannelState));
 
 export const getCs = () => useChannelState.getState();

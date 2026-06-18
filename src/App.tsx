@@ -25,11 +25,11 @@ import DmList from "./components/layout/DmList";
 import { t, useLocale, i18n } from "./lib/i18n/Index";
 import { localeFromLanguage } from "./lib/i18n/LocaleMap";
 import { OnlineStatus } from "./lib/utils/Types";
-import { connection } from "./lib/api/SignalrClient";
+import { setStatus } from "./lib/client/GatewayClient";
 
 const IDLE_MS = 5 * 60 * 1000;
 const IS_DEVELOPMENT = window.location.hostname === "localhost";
-export const hostUrl = "http://localhost:5000";
+export const hostUrl = "http://localhost:8080";
 export const rootRef = createRef<HTMLDivElement>();
 
 window.addEventListener("keydown", function (e) {
@@ -68,7 +68,6 @@ function applySettings(settings: UserSettings | null) {
   spoilerNames.forEach(c => body.classList.remove(c));
   body.classList.add(spoilerNames[settings.showSpoilers ?? 1] ?? "showspoilersonclick");
 }
-
 
 function AppInner() {
   useLocale();
@@ -121,7 +120,7 @@ function AppInner() {
         return;
 
       isIdleRef.current = true;
-      connection?.invoke("SetStatus", OnlineStatus.Idle).catch(e => console.log(e));
+      setStatus(OnlineStatus.Idle);
       if (live)
         us.addUser({ ...live, onlineStatus: OnlineStatus.Idle });
     }
@@ -132,7 +131,7 @@ function AppInner() {
 
       if (isIdleRef.current) {
         isIdleRef.current = false;
-        connection?.invoke("SetStatus", OnlineStatus.Online).catch(() => {});
+        setStatus(OnlineStatus.Online);
         const us = useUserState();
         const live = us.get(user!.id);
         if (live)

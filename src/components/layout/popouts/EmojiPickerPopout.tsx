@@ -18,10 +18,19 @@ const FAV_KEY  = "emojiPicker:favorites";
 const GIF_KEY  = "emojiPicker:gifFavorites";
 
 function loadArr<T>(key: string): T[] {
-  try { return JSON.parse(localStorage.getItem(key) ?? "[]"); } catch { return []; }
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? "[]");
+  } catch {
+    return [];
+  }
 }
 function saveArr(key: string, val: unknown[]): void {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+  try {
+    localStorage.setItem(
+      key,
+      JSON.stringify(val)
+    );
+  } catch { }
 }
 
 const CATEGORY_META: Record<string, { icon: string; labelKey: TranslationKeys }> = {
@@ -47,13 +56,13 @@ const KAOMOJI: { labelKey: TranslationKeys; items: string[] }[] = [
   { labelKey: "emoji_picker.kao.other",     items: ["(づ￣ ³￣)づ", "(´・ω・`)", "(°ロ°)", "(¬‿¬)", "(ó﹏ò｡)", "ب_ب", "(｡•́‿•̀｡)"] },
 ];
 
-interface Emoji { id: number; name: string; url: string; }
+interface Emoji { id: bigint; name: string; url: string; }
 interface GifResult { id: string; url: string; preview: string; title: string; }
 
 interface Props {
   position: { top: number; left?: number; right?: number };
   onSelect: (emoji: string, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
-  onSelectCustomEmoji?: (name: string, id: number, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
+  onSelectCustomEmoji?: (name: string, id: bigint, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
   onSelectGif?: (url: string, preview: string, e: React.MouseEvent<HTMLDivElement | HTMLButtonElement, MouseEvent>) => void;
 }
 

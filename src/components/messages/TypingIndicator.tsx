@@ -6,8 +6,8 @@ import { useUserState } from "../../lib/state/Users";
 import { Name } from "../layout/Generic";
 
 interface TypingIndicatorProps {
-  channelId: number | undefined;
-  currentUserId: number | undefined;
+  channelId: bigint | undefined;
+  currentUserId: bigint | undefined;
 }
 
 export default function TypingIndicator({ channelId, currentUserId }: TypingIndicatorProps) {

@@ -66,7 +66,7 @@ class I18nManager {
         return part;
 
       const value = params[match[1] as keyof typeof params];
-      return value !== undefined ? value : part;
+      return value !== undefined ? typeof value === "bigint" ? String(value) : value : part;
     });
   }
 }

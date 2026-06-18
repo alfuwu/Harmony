@@ -1,49 +1,50 @@
 import { hostUrl } from "../../App";
 import { useAuthState } from "../state/Auth";
+import { BigJSON } from "../utils/JSON";
 import { Emoji, Message } from "../utils/Types";
 import { api, binapi, raw } from "./Http";
 
 export async function sendMessage(
-  channelId: number,
+  channelId: bigint,
   content: string,
-  nonce: number,
-  references: number[],
-  attachmentIds: number[],
+  nonce: bigint,
+  references: bigint[],
+  attachmentIds: bigint[],
   options: RequestInit = {}
 ): Promise<Message> {
   return {
     ...await api(`/channels/${channelId}/messages`, {
       ...options,
       method: "POST",
-      body: JSON.stringify({
+      body: BigJSON.stringify({
         content,
         nonce,
-        mentions: [...content.matchAll(/<@(-?\d+)>/g)].map(m => Number(m[1])),
-        mentionsRoles: [...content.matchAll(/<@&(-?\d+)>/g)].map(m => Number(m[1])),
+        mentions: [...content.matchAll(/<@(-?\d+)>/g)].map(m => BigInt(m[1])),
+        mentionsRoles: [...content.matchAll(/<@&(-?\d+)>/g)].map(m => BigInt(m[1])),
         mentionsEveryone: content.includes("@everyone") || content.includes("@here"),
         references,
         ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}),
       }),
     }),
-    sending: false,
+    sending: false
   };
 }
 
-export async function getMessages(channelId: number, before: number = -1, amount?: number, options: RequestInit = {}): Promise<Message[]> {
-  return api(`/channels/${channelId}/messages?before=${before}` + (amount && amount !== 50 ? `&limit=${amount}` : ''), {
+export async function getMessages(channelId: bigint, before: bigint = -1n, amount?: number, options: RequestInit = {}): Promise<Message[]> {
+  return api(`/channels/${channelId}/messages` + (before && before > -1 ? `?before=${before}` : '') + (amount && amount !== 50 ? `&limit=${amount}` : ''), {
     ...options,
     method: "GET"
   });
 }
 
-export async function deleteMessage(channelId: number, messageId: number, options: RequestInit = {}): Promise<void> {
+export async function deleteMessage(channelId: bigint, messageId: bigint, options: RequestInit = {}): Promise<void> {
   return api(`/channels/${channelId}/messages/${messageId}`, {
     ...options,
     method: "DELETE"
   });
 }
 
-export async function editMessage(channelId: number, messageId: number, newContent: string, options: RequestInit = {}): Promise<Message> {
+export async function editMessage(channelId: bigint, messageId: bigint, newContent: string, options: RequestInit = {}): Promise<Message> {
   return api(`/channels/${channelId}/messages/${messageId}`, {
     ...options,
     method: "PATCH",
@@ -51,26 +52,26 @@ export async function editMessage(channelId: number, messageId: number, newConte
   });
 }
 
-export async function pinMessage(channelId: number, messageId: number, options: RequestInit = {}): Promise<Message> {
+export async function pinMessage(channelId: bigint, messageId: bigint, options: RequestInit = {}): Promise<Message> {
   return api(`/channels/${channelId}/messages/${messageId}/pin`, {
     ...options,
     method: "POST"
   });
 }
 
-export async function react(channelId: number, messageId: number, emoji: Omit<Emoji, "id"> & { id?: number | null }, options: RequestInit = {}): Promise<void> {
+export async function react(channelId: bigint, messageId: bigint, emoji: Omit<Emoji, "id"> & { id?: bigint | null }, options: RequestInit = {}): Promise<void> {
   return api(`/channels/${channelId}/messages/${messageId}/reactions`, {
     ...options,
     method: "PUT",
-    body: JSON.stringify(emoji)
+    body: BigJSON.stringify(emoji)
   });
 }
 
-export async function unreact(channelId: number, messageId: number, emoji: Omit<Emoji, "id"> & { id?: number | null }, options: RequestInit = {}): Promise<void> {
+export async function unreact(channelId: bigint, messageId: bigint, emoji: Omit<Emoji, "id"> & { id?: bigint | null }, options: RequestInit = {}): Promise<void> {
   return api(`/channels/${channelId}/messages/${messageId}/reactions`, {
     ...options,
     method: "DELETE",
-    body: JSON.stringify(emoji)
+    body: BigJSON.stringify(emoji)
   });
 }
 
@@ -82,7 +83,7 @@ export async function uploadAttachment(
   file: File,
   onProgress?: (percent: number) => void,
   options: RequestInit = {}
-): Promise<{ id: number; fileName: string }> {
+): Promise<{ id: bigint; fileName: string }> {
   if (!onProgress) {
     const formData = new FormData();
     formData.append("file", file);

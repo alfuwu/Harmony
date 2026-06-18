@@ -1,12 +1,12 @@
-import { getAs } from "../../lib/state/Auth";
-import { getCs } from "../../lib/state/Channels";
-import { getMs } from "../../lib/state/Messages";
-import { getUs } from "../../lib/state/Users";
+import { useAuthState } from "../../lib/state/Auth";
+import { useChannelState } from "../../lib/state/Channels";
+import { useMessageState } from "../../lib/state/Messages";
+import { useUserState } from "../../lib/state/Users";
 import { useLoadingState } from "../../lib/state/Loading";
 import { getAvatar, getDisplayName } from "../../lib/utils/UserUtils";
 import { AbstractChannel, ChannelType, DmChannel, GroupDmChannel, OnlineStatus } from "../../lib/utils/Types";
 import { getMessages } from "../../lib/api/MessageApi";
-import { connection, joinChannel } from "../../lib/api/SignalrClient";
+import { joinChannel } from "../../lib/client/GatewayClient";
 import { useCacheState, CacheKey } from "../../lib/state/Cache";
 import { t, useLocale } from "../../lib/i18n/Index";
 
@@ -15,18 +15,18 @@ const STATUS_COLORS: Record<OnlineStatus, string> = {
   [OnlineStatus.Idle]: "var(--idle)",
   [OnlineStatus.Focusing]: "var(--blue-2)",
   [OnlineStatus.DND]: "var(--dnd)",
-  [OnlineStatus.Offline]: "var(--offline)",
+  [OnlineStatus.Offline]: "var(--offline)"
 };
 
 export default function DmList() {
   useLocale();
-  const { user, userSettings } = getAs();
-  const channelState = getCs();
-  const { get } = getUs();
-  const { addMessages } = getMs();
+  const { user } = useAuthState();
+  const channelState = useChannelState();
+  const { get } = useUserState();
+  const { addMessages } = useMessageState();
   const { setMessagesLoading } = useLoadingState();
 
-  const hidden = userSettings?.hiddenChannels ?? [];
+  const hidden: bigint[] = [];//userSettings?.hiddenChannels ?? [];
 
   const dmChannels = channelState.channels
     .filter(c => {
@@ -35,7 +35,7 @@ export default function DmList() {
         !(c as DmChannel).isDeleted &&
         !hidden.includes(c.id);
     })
-    .sort((a, b) => (b.lastMessage ?? 0) - (a.lastMessage ?? 0));
+    .sort((a, b) => Number(a > b) - Number(a < b));
 
   async function handleSelect(c: AbstractChannel) {
     if (channelState.currentChannel?.id === c.id)
@@ -43,7 +43,6 @@ export default function DmList() {
 
     channelState.setCurrentChannel(c);
     joinChannel(c.id);
-    connection?.invoke("JoinChannel", c.id).catch(() => {});
 
     setMessagesLoading(true);
     const cache = useCacheState.getState();
@@ -100,7 +99,7 @@ export default function DmList() {
         }
 
         const dm = c as DmChannel;
-        const otherId = dm.members?.find(id => id !== user?.id);
+        const otherId = dm.dmMembers?.find(id => id !== user?.id);
         const other = otherId !== undefined ? get(otherId) : undefined;
         const name = other ? getDisplayName(other) : t("user.unknown");
         const avatar = getAvatar(other ?? null);

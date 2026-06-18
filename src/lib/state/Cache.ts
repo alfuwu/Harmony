@@ -10,9 +10,9 @@ interface CacheEntry {
 export const CacheKey = {
   servers: "servers",
   dms: "dms",
-  channels: (serverId: number) => `channels:${serverId}`,
-  members: (serverId: number) => `members:${serverId}`,
-  messages: (channelId: number) => `messages:${channelId}`
+  channels: (serverId: bigint) => `channels:${serverId}`,
+  members: (serverId: bigint) => `members:${serverId}`,
+  messages: (channelId: bigint) => `messages:${channelId}`
 } as const;
 
 export interface CacheState {

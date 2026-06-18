@@ -32,10 +32,12 @@ import {
   deleteRole as apiDeleteRole,
   getBans,
   unbanMember,
+  assignRole,
 } from "../../../lib/api/ServerApi";
 import { t, useLocale } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
 import { AlertTriangleIcon, BanIcon, EditIcon, FilmIcon, HomeIcon, InviteIcon, SearchIcon, SmileIcon, StarIcon, TrashIcon, UsersIcon } from "../../svgs/other/Icons";
+import { BigJSON } from "../../../lib/utils/JSON";
 
 // ═══════════════════════════════════════════════════════════
 // Permission definitions
@@ -275,12 +277,12 @@ const PERM_GROUPS: { label: TranslationKeys; keys: string[] }[] = [
   },
 ];
 
-function hasBit(permissions: number, bit: bigint): boolean {
+function hasBit(permissions: bigint, bit: bigint): boolean {
   return (BigInt(permissions) & bit) !== 0n;
 }
-function toggleBit(permissions: number, bit: bigint): number {
+function toggleBit(permissions: bigint, bit: bigint): bigint {
   const p = BigInt(permissions);
-  return Number((p & bit) !== 0n ? p & ~bit : p | bit);
+  return (p & bit) !== 0n ? p & ~bit : p | bit;
 }
 function hexToInt(hex: string): number {
   const clean = hex.replace("#", "");
@@ -508,10 +510,10 @@ function Tag({
 // ═══════════════════════════════════════════════════════════
 
 interface BanEntry {
-  userId: number;
-  serverId: number;
+  userId: bigint;
+  serverId: bigint;
   reason?: string;
-  bannedBy: number;
+  bannedBy: bigint;
   bannedAt: string;
 }
 
@@ -521,7 +523,7 @@ interface RoleEditorState {
   color: number;
   colors: number[];
   displayType: RoleDisplayType;
-  permissions: number;
+  permissions: bigint;
   position: number;
   permissionPriority: number;
 }
@@ -585,22 +587,22 @@ export default function ServerSettingsModal({
 
   // ── Roles state ────────────────────────────────────────
   const [localRoles, setLocalRoles] = useState<Role[]>([]);
-  const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
+  const [selectedRoleId, setSelectedRoleId] = useState<bigint | null>(null);
   const [roleTab, setRoleTab] = useState<"display" | "permissions">("display");
   const [roleEditor, setRoleEditor] = useState<RoleEditorState | null>(null);
   const [roleEditorDirty, setRoleEditorDirty] = useState(false);
   const [roleCreating, setRoleCreating] = useState(false);
   const [roleSaving, setRoleSaving] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<bigint | null>(null);
 
   // ── Members state ──────────────────────────────────────
   const [memberSearch, setMemberSearch] = useState("");
-  const [expandedMemberId, setExpandedMemberId] = useState<number | null>(null);
+  const [expandedMemberId, setExpandedMemberId] = useState<bigint | null>(null);
 
   // ── Bans state ─────────────────────────────────────────
   const [bans, setBans] = useState<BanEntry[]>([]);
   const [bansLoading, setBansLoading] = useState(false);
-  const [unbanningId, setUnbanningId] = useState<number | null>(null);
+  const [unbanningId, setUnbanningId] = useState<bigint | null>(null);
 
   // ── Danger zone ────────────────────────────────────────
   const [deleteConfirm, setDeleteConfirm] = useState("");
@@ -679,7 +681,7 @@ export default function ServerSettingsModal({
         color: role.color ?? 0,
         colors: role.colors ?? [],
         displayType: role.displayType ?? RoleDisplayType.Normal,
-        permissions: role.permissions ?? 0,
+        permissions: role.permissions ?? 0n,
         position: role.position ?? 0,
         permissionPriority: (role as any).permissionPriority ?? 0,
       });
@@ -884,7 +886,7 @@ export default function ServerSettingsModal({
     }
   }
 
-  async function deleteRole(roleId: number) {
+  async function deleteRole(roleId: bigint) {
     if (!currentServer) return;
     try {
       await apiDeleteRole(currentServer.id, roleId);
@@ -901,7 +903,7 @@ export default function ServerSettingsModal({
     }
   }
 
-  async function reorderRole(roleId: number, direction: "up" | "down") {
+  async function reorderRole(roleId: bigint, direction: "up" | "down") {
     if (!currentServer) return;
     const idx = localRoles.findIndex((r) => r.id === roleId);
     if (idx === -1) return;
@@ -929,7 +931,7 @@ export default function ServerSettingsModal({
   }
 
   // ── Unban ──────────────────────────────────────────────
-  async function handleUnban(userId: number) {
+  async function handleUnban(userId: bigint) {
     if (!currentServer) return;
     setUnbanningId(userId);
     try {
@@ -2472,7 +2474,7 @@ export default function ServerSettingsModal({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {getDisplayName(member.user, member)}
+                      {getDisplayName(get(member.userId), member)}
                     </div>
                     <div
                       style={{
@@ -2574,17 +2576,11 @@ export default function ServerSettingsModal({
                                     `/servers/${currentServer.id}/roles/revoke`,
                                     {
                                       method: "POST",
-                                      body: JSON.stringify({ userId: u.id, roleId: role.id }),
+                                      body: BigJSON.stringify({ userId: u.id, roleId: role.id }),
                                     }
                                   );
                                 } else {
-                                  await api(
-                                    `/servers/${currentServer.id}/roles/assign`,
-                                    {
-                                      method: "POST",
-                                      body: JSON.stringify({ userId: u.id, roleId: role.id }),
-                                    }
-                                  );
+                                  assignRole(currentServer.id, u.id, role.id);
                                 }
                               } catch (e: any) {
                                 setSaveError(e.message ?? t("server.failed_update_role"));

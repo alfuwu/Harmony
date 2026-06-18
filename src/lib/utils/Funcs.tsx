@@ -41,10 +41,10 @@ export function getDateLocale(language?: number | null): string | undefined {
 }
 
 export function isMentioned(msg: {
-  mentions?: number[] | null;
-  mentionRoles?: number[] | null;
+  mentions?: bigint[] | null;
+  mentionRoles?: bigint[] | null;
   mentionsEveryone?: boolean | null;
-}, userId: number, serverId: number | undefined): boolean {
+}, userId: bigint, serverId: bigint | undefined): boolean {
   if (msg.mentionsEveryone)
     return true;
   if (msg.mentions?.includes(userId))
@@ -60,7 +60,7 @@ export function isMentioned(msg: {
 export function sendDesktopNotification(
   authorName: string,
   content: string,
-  channelId: number,
+  channelId: bigint,
   mention: boolean
 ) {
   if (Notification.permission !== 'granted')
@@ -118,6 +118,10 @@ export function toHash(string: string) {
 
 export function intToHex(n: number) {
   return `#${(n >>> 0).toString(16).padStart(6, "0")}`;
+}
+
+export function hexToInt(hex: string): number {
+  return parseInt(hex.replace("#", ""), 16) || 0;
 }
 
 export function isGradientRole(role: Role): boolean {

@@ -38,7 +38,7 @@ interface RoleSection {
 function buildSections(members: Member[], roles: Role[], us: UserState): { sections: RoleSection[]; offline: Member[] } {
   const sorted = [...roles].sort((a, b) => b.position - a.position);
 
-  const byRole = new Map<number | null, { online: Member[]; offline: Member[] }>();
+  const byRole = new Map<bigint | null, { online: Member[]; offline: Member[] }>();
   byRole.set(null, { online: [], offline: [] });
   for (const r of sorted)
     byRole.set(r.id, { online: [], offline: [] });
@@ -291,7 +291,7 @@ export default function MemberList() {
                 {renderRoleHeader(role, online.length)}
                 {online
                   .slice()
-                  .sort((a, b) => getDisplayName(a.user, a).localeCompare(getDisplayName(b.user, b)))
+                  .sort((a, b) => getDisplayName(get(a.userId), a).localeCompare(getDisplayName(get(b.userId), b)))
                   .map(renderMemberRow)}
               </div>
             ))}
@@ -317,7 +317,7 @@ export default function MemberList() {
                 </div>
                 {showOffline && offline
                   .slice()
-                  .sort((a, b) => getDisplayName(a.user, a).localeCompare(getDisplayName(b.user, b)))
+                  .sort((a, b) => getDisplayName(get(a.userId), a).localeCompare(getDisplayName(get(b.userId), b)))
                   .map(renderMemberRow)}
               </div>
             )}

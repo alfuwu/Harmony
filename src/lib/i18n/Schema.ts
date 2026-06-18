@@ -726,5 +726,5 @@ export const defaultTranslations = {
 };
 
 export type TranslationKeys = keyof typeof defaultTranslations;
-export type TranslationParams = Record<string, string | number>;
-export type TranslationParamsReact = Record<string, string | number | ReactNode>;
+export type TranslationParams = Record<string, string | number | bigint>;
+export type TranslationParamsReact = Record<string, string | number | bigint | ReactNode>;

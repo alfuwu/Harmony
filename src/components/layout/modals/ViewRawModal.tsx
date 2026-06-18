@@ -1,6 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
+import { useShikiHighlighter } from "react-shiki";
+import { userSettings } from "../../../lib/state/Auth";
+import { Theme } from "../../../lib/utils/UserSettings";
+import { HighlighterCore } from "shiki";
+import { ensureLanguageLoaded, highlighterReady, superHighlighter } from "../../../lib/utils/MarkdownRenderer";
+import { CloseIcon, CodeBracketsIcon } from "../../svgs/other/Icons";
+import { BigJSON } from "../../../lib/utils/JSON";
 
 interface Props {
   title?: TranslationKeys;
@@ -11,13 +18,51 @@ interface Props {
 export default function RawViewModal({ title, data, onClose }: Props) {
   useLocale();
   const [copied, setCopied] = useState(false);
-  const json = JSON.stringify(data, null, 2);
+  const json = BigJSON.stringify(data, null, 2);
+
+  const [hlInstance, setHlInstance] = useState<HighlighterCore | undefined>(superHighlighter);
+  useEffect(() => {
+    if (superHighlighter)
+      return; // already ready at mount
+    let alive = true;
+    highlighterReady.then(() => {
+      if (alive)
+        setHlInstance(superHighlighter);
+    });
+    return () => { alive = false; };
+  }, []);
 
   function copy() {
     navigator.clipboard.writeText(json);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
+
+  const [confirmedLang, setConfirmedLang] = useState<string>('text');
+  
+  useEffect(() => {
+    let cancelled = false;
+    setConfirmedLang('text');
+    ensureLanguageLoaded('json').then(loaded => {
+      if (!cancelled)
+        setConfirmedLang(loaded ? 'json' : 'text');
+    });
+    return () => { cancelled = true; };
+  }, [hlInstance]);
+
+  const settings = userSettings();
+
+  const light = settings?.theme === Theme.Light ||
+      settings?.theme === Theme.System && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+  
+  const shikiTheme = light ? "github-light" : "github-dark";
+
+  const highlighter = useShikiHighlighter(
+    json,
+    confirmedLang,
+    shikiTheme,
+    { highlighter: hlInstance }
+  );
 
   return (
     <div className="modal-backdrop open" onClick={onClose}>
@@ -42,7 +87,12 @@ export default function RawViewModal({ title, data, onClose }: Props) {
           borderBottom: "1px solid var(--border)",
           flexShrink: 0
         }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)" }}>{t(title ?? "json.raw_title")}</span>
+          <span className="uno" style={{ color: "var(--text-3)", marginRight: 12, display: "flex" }}>
+            <CodeBracketsIcon />
+          </span>
+          <span className="uno" style={{ fontSize: 15, fontWeight: 700, color: "var(--text-2)", flexGrow: 1 }}>
+            {t(title ?? "json.raw_title")}
+          </span>
           <div style={{ display: "flex", gap: 8 }}>
             <button
               onClick={copy}
@@ -69,24 +119,20 @@ export default function RawViewModal({ title, data, onClose }: Props) {
                 fontSize: 14, cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center"
               }}
-            >✕</button>
+            >
+              <CloseIcon size={16} />
+            </button>
           </div>
         </div>
-        <pre style={{
-          flex: 1,
-          overflow: "auto",
-          margin: 0,
-          padding: "14px 16px",
-          fontSize: 12,
-          fontFamily: "'Fira Code', Consolas, monospace",
-          color: "var(--text-3)",
-          lineHeight: 1.6,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          background: "var(--bg-1)"
-        }}>
-          {json}
-        </pre>
+        <div className="raw-modal multiline-code">
+          {highlighter ?? (
+            <pre className={`shiki ${shikiTheme}`} tabIndex={0} style={{ backgroundColor: light ? "#fff" : "#24292e", color: light ? "#24292e" : "#e1e4e8" }}>
+              <code>
+                {json.split('\n').map((line, i) => <span key={i} className="line"><span>{line + '\n'}</span></span>)}
+              </code>
+            </pre>
+          )}
+        </div>
       </div>
     </div>
   );

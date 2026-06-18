@@ -7,12 +7,12 @@ export interface ServerState {
   setCurrentServer: React.Dispatch<React.SetStateAction<Server | null>>;
   servers: Server[];
   setServers: React.Dispatch<React.SetStateAction<Server[]>>;
-  get: (id?: number | null) => Server | undefined;
-  getServer: (id?: number | null) => Server | undefined;
+  get: (id?: bigint | null) => Server | undefined;
+  getServer: (id?: bigint | null) => Server | undefined;
   addServer: (server: Server) => void;
   addServers: (servers: Server[]) => void;
-  removeServer: (id?: number | null) => void;
-  removeServers: (ids: (number | null | undefined)[]) => void;
+  removeServer: (id?: bigint | null) => void;
+  removeServers: (ids: (bigint | null | undefined)[]) => void;
 }
 
 export const useServerState = create<ServerState>((set, get) => ({

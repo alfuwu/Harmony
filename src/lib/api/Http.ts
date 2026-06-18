@@ -1,5 +1,6 @@
 import { hostUrl } from "../../App";
 import { getAs } from "../state/Auth";
+import { BigJSON } from "../utils/JSON";
 
 export async function api(path: string, options: RequestInit = {}) {
   return binapi(path, { ...options, headers: { "Content-Type": "application/json", ...options.headers }});
@@ -14,7 +15,7 @@ export async function binapi(path: string, options: RequestInit = {}) {
     throw new Error(await res.text());
   }
   if (res.status !== 204)
-    return res.json();
+    return BigJSON.parse(await res.text());
 }
 
 export async function raw(path: string, options: RequestInit = {}, retry: number = 0) {

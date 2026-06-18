@@ -11,7 +11,7 @@ import { formatDate } from "../../../lib/utils/Funcs";
 import { t } from "../../../lib/i18n/Index";
 import { TranslationKeys } from "../../../lib/i18n/Schema";
 
-export const reviewsCache = new Map<number, Review[]>();
+export const reviewsCache = new Map<bigint, Review[]>();
 
 interface ReviewsModalProps {
   user: User;
@@ -43,7 +43,7 @@ export default function ReviewsModal({
   const inputRef = useRef<MessageInputHandle>(null);
   const myReview = reviews.find(r => r.authorId === currentUser?.id);
 
-  const setReviews = (user: number, reviews: Review[]) => {
+  const setReviews = (user: bigint, reviews: Review[]) => {
     reviewsCache.set(user, reviews);
     setReviewsInternal(reviews);
     setPreviews(reviews);

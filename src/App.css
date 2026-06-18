@@ -429,6 +429,13 @@ textarea,
   margin-left: 5px;
 }
 
+.bmr {
+  margin-right: 16px;
+}
+.bml {
+  margin-left: 16px;
+}
+
 /* displays */
 .hide {
   display: none;
@@ -458,6 +465,11 @@ textarea,
 /* text colors */
 .dangerous {
   color: var(--red-3);
+}
+
+
+.trans {
+  opacity: 0.5;
 }
 
 /* modal backdrop */
@@ -543,6 +555,23 @@ textarea,
 .modal-buttons .create-btn {
   background: black;
   color: white;
+}
+
+.raw-modal {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.6em;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background-color: var(--bg-1);
+}
+.raw-modal pre {
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 /* user settings */
@@ -816,7 +845,7 @@ textarea,
   flex-grow: 1;
 }
 .message-list {
-  padding: 0 6px 0 8px;
+  padding: 10px 6px 0 8px;
   max-height: 100%;
   min-width: 0;
   overflow-x: hidden;
@@ -1687,7 +1716,6 @@ code {
 .multiline-code::-webkit-scrollbar-thumb {
   height: 5px;
 }
-/* Reset <code> elements that may appear inside the Shiki output. */
 .multiline-code code {
   background: none;
   border: none;
@@ -1927,9 +1955,8 @@ ul li {
   animation: marquee-scroll 4s linear infinite;
 }
 
-.wobbly, .shaky {
+.wobbly, .shaky, .glitch {
   display: inline-block;
-  contain: paint;
 }
 
 .wobbly .char {
@@ -1941,6 +1968,19 @@ ul li {
 .shaky .char {
   display: inline-block;
   animation: shake var(--speed) infinite steps(2);
+}
+
+.float {
+  display: inline-block;
+  animation: float-rise 3s ease-in-out infinite;
+}
+
+.glitch .char {
+  position: relative;
+  display: inline-block;
+  animation: glitch-step var(--speed) steps(1) infinite;
+  animation-delay: var(--delay);
+  will-change: transform;
 }
 
 /* Inline math rendered by KaTeX */
@@ -2006,9 +2046,9 @@ span.list::before {
   text-decoration-line: none !important;
 }
 
-.mds .marquee-track {
+/*.mds .marquee-track {
   animation: none !important;
-}
+}*/
 
 @keyframes marquee-scroll {
   from { transform: translateX(100%); }
@@ -2027,6 +2067,32 @@ span.list::before {
   50% { transform: translate(calc(var(--amp) * -1), var(--amp)); }
   75% { transform: translate(var(--amp), var(--amp)); }
   100% { transform: translate(0, 0); }
+}
+
+@keyframes float-rise {
+  25% { transform: translateY(-0.35em); }
+  75% { transform: translateY(0.35em); }
+}
+
+@keyframes glitch-step {
+  0%   { transform: none; text-shadow: none; opacity: 1; }
+  7%   { transform: translateX(calc(var(--amp, 3px) * -1)) skewX(-8deg);
+         text-shadow: 3px 0 #0ff, -2px 0 #ff2050; }
+  9%   { transform: translateX(var(--amp, 3px));
+         text-shadow: -3px 0 #0ff; }
+  11%  { transform: none; text-shadow: none; }
+  33%  { transform: translateX(var(--amp, 3px)) skewX(5deg);
+         text-shadow: -3px 0 #0ff, 2px 0 #ff2050; }
+  35%  { transform: none; text-shadow: none; }
+  53%  { opacity: 1; }
+  54%  { opacity: 0; }
+  55%  { opacity: 1; transform: translateX(calc(var(--amp, 3px) * -1)) skewX(2deg); }
+  56%  { transform: none; }
+  77%  { transform: scaleX(1.08) translateX(calc(var(--amp, 3px) * -1));
+         text-shadow: 2px 0 #ff2050, -3px 0 #0ff; }
+  79%  { transform: none; text-shadow: none; }
+
+  100% { transform: none; text-shadow: none; opacity: 1; }
 }
 
 @keyframes rxnSlideOut {
@@ -2368,7 +2434,7 @@ body[data-server-icon-shape="square"] .server-icon   { border-radius: 0; }
 
 @supports (not (-moz-appearance: none)) {
   /* Chromium does not support many complex gradients, but Firefox does.
-   * Note that this is only when ENCOMPASSED by a gradient, not when the markdown symbol itself encompasses the gradient.
+   * Note that this is only when ENCOMPASSED by a gradient, not when the markdown style itself encompasses the gradient.
    * Why that is? I couldn't tell you. It merely is.
    * Marquees, LaTeX, shaky, wobbly, ... are all affected.
    */
@@ -2388,6 +2454,10 @@ body[data-server-icon-shape="square"] .server-icon   { border-radius: 0; }
     -webkit-background-clip: initial;
     background-clip: initial;
     background: none;
+  }
+
+  .colored.gradient {
+    color: transparent !important; /* weird chromium bug */
   }
 }
 

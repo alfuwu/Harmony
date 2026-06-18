@@ -34,25 +34,30 @@ export function computePermissions(
   server: Server,
   channel?: Channel | null
 ): bigint {
-  if (server.ownerId === member.userId) return 0xFFFFFFFFFFFFFFFFn;
+  if (server.ownerId === member.userId)
+    return 0xFFFFFFFFFFFFFFFFn;
 
   const memberRoles = server.roles
     .filter(r => member.roles.includes(r.id))
     .sort((a, b) => b.position - a.position);
 
   let perms = 0n;
-  for (const role of memberRoles) {
+  for (const role of memberRoles)
     perms |= BigInt(role.permissions);
-  }
 
-  if (perms & Permission.Administrator) return 0xFFFFFFFFFFFFFFFFn;
+  if (perms & Permission.Administrator)
+    return 0xFFFFFFFFFFFFFFFFn;
 
   if (channel) {
     const overrides: any[] = (channel as any).overrides ?? [];
     for (const role of [...memberRoles].reverse()) {
       const over = overrides.find((o: any) => o.roleId === role.id);
-      if (!over) continue;
-      if (over.hardDeny) { perms &= ~BigInt(over.deny); continue; }
+      if (!over)
+        continue;
+      if (over.hardDeny) {
+        perms &= ~BigInt(over.deny);
+        continue;
+      }
       perms &= ~BigInt(over.deny);
       perms |= BigInt(over.allow);
     }
